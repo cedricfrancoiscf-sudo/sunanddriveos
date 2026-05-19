@@ -1,0 +1,66 @@
+// Schéma base master — companies, super_admins, billing_events
+// Une seule base master pour toutes les sociétés
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../generated/master"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_MASTER_URL")
+}
+
+// Plan d'abonnement SaaS
+enum Plan {
+  starter
+  pro
+  enterprise
+}
+
+// Société cliente de SunanddriveOS
+model Company {
+  id                   String         @id @default(cuid())
+  name                 String
+  slug                 String         @unique // Identifiant URL-safe, sert de nom DB tenant
+  logoUrl              String?
+  primaryColor         String         @default("#01696e")
+  secondaryColor       String         @default("#04292a")
+  plan                 Plan           @default(starter)
+  stripeCustomerId     String?        @unique
+  stripeSubscriptionId String?        @unique
+  tenantDbUrl          String         // URL base de données tenant chiffrée
+  icalToken            String?        @unique // Token public lien iCal accessoires
+  isActive             Boolean        @default(true)
+  trialEndsAt          DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  billingEvents        BillingEvent[]
+
+  @@map("companies")
+}
+
+// Super administrateur global (accès toutes sociétés)
+model SuperAdmin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("super_admins")
+}
+
+// Événements de facturation Stripe
+model BillingEvent {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type          String   // subscription_created, payment_succeeded, payment_failed, etc.
+  stripeEventId String   @unique
+  data          Json
+  processedAt   DateTime @default(now())
+
+  @@map("billing_events")
+}

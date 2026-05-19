@@ -1,0 +1,47 @@
+# Environnement — JAMAIS committer
+.env
+.env.local
+.env.*.local
+
+# Dépendances
+node_modules/
+**/node_modules/
+
+# Build
+dist/
+build/
+frontend/dist/
+backend/dist/
+
+# Prisma généré
+backend/src/generated/
+**/generated/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+uploads/
+backend/uploads/
+
+# SSL
+ssl/
+*.pem
+*.key
+*.crt
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+
+# TypeScript
+*.tsbuildinfo
+
+# Coverage
+coverage/

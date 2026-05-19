@@ -1,0 +1,103 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "error": "Une erreur est survenue",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "close": "Fermer",
+    "confirm": "Confirmer",
+    "back": "Retour",
+    "next": "Suivant",
+    "previous": "Précédent",
+    "search": "Rechercher",
+    "filter": "Filtrer",
+    "export": "Exporter",
+    "import": "Importer",
+    "yes": "Oui",
+    "no": "Non",
+    "unknown": "Inconnu",
+    "all": "Tous"
+  },
+  "auth": {
+    "login": "Connexion",
+    "logout": "Déconnexion",
+    "email": "Adresse email",
+    "password": "Mot de passe",
+    "forgotPassword": "Mot de passe oublié ?",
+    "resetPassword": "Réinitialiser le mot de passe",
+    "invitation": "Invitation",
+    "acceptInvitation": "Accepter l'invitation",
+    "createPassword": "Créer votre mot de passe",
+    "loginTitle": "Connexion à SunanddriveOS",
+    "loginSubtitle": "Sun and Drive — La liberté à quatre roues"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "vehicles": "Flotte",
+    "rentals": "Locations",
+    "messages": "Messages",
+    "sequences": "Séquences",
+    "planning": "Planning",
+    "maintenance": "Entretiens",
+    "technicalControl": "Contrôle technique",
+    "vehicleChecks": "Fiches contrôle",
+    "documents": "Documents",
+    "accessories": "Accessoires",
+    "export": "Exports",
+    "users": "Utilisateurs",
+    "settings": "Paramètres",
+    "billing": "Abonnement",
+    "superadmin": "Super Admin"
+  },
+  "vehicles": {
+    "fleet": "Flotte",
+    "vehicle": "Véhicule",
+    "addVehicle": "Ajouter un véhicule",
+    "importFromGetaround": "Importer depuis Getaround",
+    "healthScore": "Score santé",
+    "mileage": "Kilométrage",
+    "licensePlate": "Immatriculation",
+    "available": "Disponible",
+    "unavailable": "Indisponible",
+    "blocked": "Bloqué"
+  },
+  "rentals": {
+    "rental": "Location",
+    "rentals": "Locations",
+    "driver": "Locataire",
+    "revenue": "CA",
+    "km": "Km parcourus",
+    "occupancyRate": "Taux d'occupation",
+    "status": {
+      "booked": "Réservée",
+      "active": "En cours",
+      "completed": "Terminée",
+      "cancelled": "Annulée"
+    }
+  },
+  "messages": {
+    "messages": "Messages",
+    "unanswered": "Sans réponse",
+    "aiSuggestion": "Suggestion IA",
+    "approve": "Approuver",
+    "send": "Envoyer",
+    "cancel": "Annuler",
+    "pendingApproval": "En attente d'approbation"
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "monthlyRevenue": "CA du mois",
+    "occupancyRate": "Taux d'occupation",
+    "activeRentals": "Locations en cours",
+    "alerts": "Alertes"
+  },
+  "errors": {
+    "network": "Erreur réseau — vérifier la connexion",
+    "unauthorized": "Session expirée — reconnexion requise",
+    "forbidden": "Accès non autorisé",
+    "notFound": "Ressource introuvable",
+    "server": "Erreur serveur — réessayer plus tard"
+  }
+}

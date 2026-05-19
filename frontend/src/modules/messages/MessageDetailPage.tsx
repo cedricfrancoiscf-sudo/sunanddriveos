@@ -1,0 +1,335 @@
+import React, { useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { messagesApi, aiApi, type Message } from './messagesApi';
+
+function Bubble({ msg, isLast }: { msg: { direction: string; content: string; sentAt: string | null; status: string; aiSuggestion: string | null; createdAt: string }; isLast: boolean }): React.JSX.Element {
+  const isInbound = msg.direction === 'inbound';
+
+  return (
+    <div className={`flex ${isInbound ? 'justify-start' : 'justify-end'}`}>
+      <div className={`max-w-[80%] ${isInbound ? '' : 'items-end flex flex-col'}`}>
+        <div
+          className={`rounded-2xl px-4 py-3 text-sm ${
+            isInbound
+              ? 'rounded-tl-sm bg-gray-100 text-gray-800'
+              : 'rounded-tr-sm text-white'
+          }`}
+          style={!isInbound ? { backgroundColor: '#01696e' } : undefined}
+        >
+          {msg.content}
+        </div>
+        <p className="mt-1 px-1 text-xs text-gray-400">
+          {msg.sentAt
+            ? format(new Date(msg.sentAt), 'dd/MM HH:mm', { locale: fr })
+            : format(new Date(msg.createdAt), 'dd/MM HH:mm', { locale: fr })}
+          {!isInbound && (
+            <span className="ml-2 capitalize text-gray-300">{msg.status}</span>
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function AnalysisCard({ analysis }: { analysis: NonNullable<Message['aiAnalysis']> }): React.JSX.Element {
+  const flags = [
+    analysis.isCarSeatRequest && { label: 'Siège auto demandé', color: 'bg-purple-100 text-purple-700' },
+    analysis.isIncidentReport && { label: 'Incident signalé', color: 'bg-red-100 text-red-700' },
+    analysis.isDissatisfaction && { label: 'Insatisfaction', color: 'bg-orange-100 text-orange-700' },
+    analysis.isUrgent && { label: '⚡ Urgent', color: 'bg-red-200 text-red-800 font-bold' },
+  ].filter(Boolean) as { label: string; color: string }[];
+
+  return (
+    <div className="rounded-xl border border-[#01696e]/20 bg-[#01696e]/5 p-4">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#01696e]">Analyse IA</p>
+      <p className="mb-2 text-sm text-gray-700">{analysis.intent}</p>
+      {flags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {flags.map((f) => (
+            <span key={f.label} className={`rounded-full px-2 py-0.5 text-xs ${f.color}`}>
+              {f.label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function MessageDetailPage(): React.JSX.Element {
+  const { id } = useParams<{ id: string }>();
+  const qc = useQueryClient();
+  const [replyContent, setReplyContent] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const { data: message, isLoading } = useQuery({
+    queryKey: ['message', id],
+    queryFn: () => messagesApi.get(id!),
+    enabled: Boolean(id),
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (content: string) => messagesApi.approve(id!, content || undefined),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['message', id] });
+      void qc.invalidateQueries({ queryKey: ['messages'] });
+      void qc.invalidateQueries({ queryKey: ['inbox-summary'] });
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => messagesApi.cancel(id!),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['message', id] }); },
+  });
+
+  const markSentMutation = useMutation({
+    mutationFn: () => messagesApi.markSent(id!),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['message', id] });
+      void qc.invalidateQueries({ queryKey: ['inbox-summary'] });
+    },
+  });
+
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  async function handleAnalyze(): Promise<void> {
+    if (!message || message.direction !== 'inbound') return;
+    setIsAnalyzing(true);
+    try {
+      await aiApi.analyze(message.content, {
+        messageId: message.id,
+        rentalId: message.rentalId,
+        vehicleId: message.rental.vehicle.id,
+      });
+      void qc.invalidateQueries({ queryKey: ['message', id] });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
+  async function handleGenerate(): Promise<void> {
+    if (!message) return;
+    setIsGenerating(true);
+    try {
+      const lastInbound = message.rental.messages
+        ?.slice()
+        .reverse()
+        .find((m) => m.direction === 'inbound');
+      if (!lastInbound) return;
+
+      const { suggestion } = await aiApi.suggest(message.rentalId, lastInbound.content);
+      setReplyContent(suggestion);
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-20">
+        <div
+          className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
+          style={{ borderColor: '#01696e', borderTopColor: 'transparent' }}
+        />
+      </div>
+    );
+  }
+
+  if (!message) {
+    return (
+      <div className="p-6">
+        <p className="text-red-600">Message introuvable.</p>
+        <Link to="/messages" className="mt-2 inline-block text-sm text-[#01696e]">← Retour</Link>
+      </div>
+    );
+  }
+
+  const thread = message.rental.messages ?? [];
+  const isPending = message.status === 'pending_approval';
+  const isApproved = message.status === 'approved';
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-3 lg:px-6">
+        <div className="flex items-center gap-3">
+          <Link to="/messages" className="text-gray-400 hover:text-gray-600">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </Link>
+          <div className="flex-1">
+            <p className="font-semibold text-gray-900">{message.rental.driverName}</p>
+            <p className="text-xs text-gray-500">
+              {message.rental.vehicle.make} {message.rental.vehicle.model} · {message.rental.vehicle.licensePlate} ·{' '}
+              {format(new Date(message.rental.startAt), 'dd/MM', { locale: fr })} →{' '}
+              {format(new Date(message.rental.endAt), 'dd/MM/yy', { locale: fr })}
+            </p>
+          </div>
+          <Link
+            to={`/rentals/${message.rentalId}`}
+            className="text-xs text-[#01696e] hover:underline"
+          >
+            Voir la location →
+          </Link>
+        </div>
+      </div>
+
+      {/* Thread */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6">
+        <div className="mx-auto max-w-2xl space-y-3">
+          {thread.map((m, i) => (
+            <Bubble key={m.id} msg={m} isLast={i === thread.length - 1} />
+          ))}
+        </div>
+      </div>
+
+      {/* Zone réponse / approbation */}
+      <div className="shrink-0 border-t border-gray-200 bg-white p-4 lg:p-6">
+        <div className="mx-auto max-w-2xl space-y-3">
+          {/* Analyse IA du dernier message entrant */}
+          {message.direction === 'inbound' && (
+            message.aiAnalysis ? (
+              <AnalysisCard analysis={message.aiAnalysis} />
+            ) : (
+              <button type="button" onClick={() => void handleAnalyze()} disabled={isAnalyzing}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#01696e]/20 bg-[#01696e]/5 py-2.5 text-sm font-medium text-[#01696e] hover:bg-[#01696e]/10 disabled:opacity-60 transition">
+                {isAnalyzing ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent border-[#01696e]" />
+                ) : (
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                )}
+                {isAnalyzing ? 'Analyse en cours...' : 'Analyser avec IA'}
+              </button>
+            )
+          )}
+
+          {/* Message en attente d'approbation — on affiche le contenu éditable */}
+          {(isPending || isApproved) && (
+            <>
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="text-xs font-medium text-gray-500">
+                    {isPending ? 'Suggestion à approuver' : 'Message approuvé'}
+                  </label>
+                  {isPending && (
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerate()}
+                      disabled={isGenerating}
+                      className="flex items-center gap-1 text-xs font-medium text-[#01696e] hover:underline disabled:opacity-60"
+                    >
+                      {isGenerating ? (
+                        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-t-transparent border-[#01696e]" />
+                      ) : (
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      )}
+                      {isGenerating ? 'Génération...' : 'Régénérer avec IA'}
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  value={replyContent || message.content}
+                  onChange={(e) => setReplyContent(e.target.value)}
+                  rows={4}
+                  readOnly={isApproved}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20 read-only:bg-gray-50 read-only:text-gray-500"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                {isPending && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => approveMutation.mutate(replyContent || message.content)}
+                      disabled={approveMutation.isPending}
+                      className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
+                      style={{ backgroundColor: '#01696e' }}
+                    >
+                      {approveMutation.isPending ? 'Approbation...' : 'Approuver'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cancelMutation.mutate()}
+                      disabled={cancelMutation.isPending}
+                      className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      Annuler
+                    </button>
+                  </>
+                )}
+                {isApproved && (
+                  <button
+                    type="button"
+                    onClick={() => markSentMutation.mutate()}
+                    disabled={markSentMutation.isPending}
+                    className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
+                    style={{ backgroundColor: '#01696e' }}
+                  >
+                    {markSentMutation.isPending ? '...' : 'Marquer comme envoyé'}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Réponse libre si le message est entrant et envoyé/aucun brouillon */}
+          {message.direction === 'inbound' && message.status === 'sent' && (
+            <div className="space-y-2">
+              <textarea
+                value={replyContent}
+                onChange={(e) => setReplyContent(e.target.value)}
+                placeholder="Rédiger une réponse..."
+                rows={3}
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleGenerate()}
+                  disabled={isGenerating}
+                  className="flex items-center gap-1.5 rounded-xl border border-[#01696e]/30 px-3 py-2 text-sm font-medium text-[#01696e] hover:bg-[#01696e]/5 disabled:opacity-60"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  {isGenerating ? 'Génération...' : 'Suggérer avec IA'}
+                </button>
+                {replyContent && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void messagesApi.create(message.rentalId, replyContent);
+                      setReplyContent('');
+                      void qc.invalidateQueries({ queryKey: ['message', id] });
+                    }}
+                    className="flex-1 rounded-xl py-2 text-sm font-semibold text-white"
+                    style={{ backgroundColor: '#01696e' }}
+                  >
+                    Créer le brouillon
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Message envoyé ou annulé — lecture seule */}
+          {(message.status === 'sent' && message.direction === 'outbound') && (
+            <p className="text-center text-xs text-gray-400">
+              Message envoyé le {message.sentAt ? format(new Date(message.sentAt), 'dd/MM/yyyy à HH:mm', { locale: fr }) : '—'}
+            </p>
+          )}
+          {message.status === 'cancelled' && (
+            <p className="text-center text-xs text-gray-400">Message annulé</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

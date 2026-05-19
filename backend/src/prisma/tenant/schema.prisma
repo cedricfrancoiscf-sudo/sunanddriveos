@@ -1,0 +1,478 @@
+// Schéma base tenant — données opérationnelles par société
+// Une base indépendante par société (slug = nom de la DB)
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../generated/tenant"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_TENANT_URL")
+}
+
+enum UserRole {
+  admin
+  exploitation
+  comptable
+  carkeeper
+  third_party_owner
+}
+
+enum RentalStatus {
+  booked
+  active
+  completed
+  cancelled
+}
+
+enum EvaluationStatus {
+  pending
+  posted
+  blocked
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+enum MessageStatus {
+  pending_approval
+  approved
+  sent
+  cancelled
+}
+
+enum CheckResult {
+  pass
+  advisory
+  fail
+}
+
+enum SequenceStatus {
+  pending
+  sent
+  cancelled
+}
+
+enum DocumentType {
+  insurance
+  registration
+  lease
+  technical_control
+  other
+}
+
+enum IncidentType {
+  damage
+  theft
+  accident
+  vandalism
+  other
+}
+
+enum IncidentStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+model User {
+  id               String           @id @default(cuid())
+  email            String           @unique
+  passwordHash     String?
+  name             String
+  role             UserRole
+  isActive         Boolean          @default(true)
+  invitationToken  String?          @unique
+  invitationExpiry DateTime?
+  resetToken       String?          @unique
+  resetExpiry      DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  thirdPartyOwner  ThirdPartyOwner?
+  notifications    Notification[]
+  vehicleChecks    VehicleCheck[]
+  approvedMessages Message[]        @relation("ApprovedBy")
+
+  @@map("users")
+}
+
+model GetaroundAccount {
+  id         String    @id @default(cuid())
+  name       String    // Libellé du compte (ex: "Compte principal", "Compte Lyon")
+  apiKeyHash String    // Clé API chiffrée AES-256
+  isActive   Boolean   @default(true)
+  lastSyncAt DateTime?
+  syncStatus String?   // success | error | syncing
+  syncError  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  vehicles   Vehicle[]
+
+  @@map("getaround_accounts")
+}
+
+model Vehicle {
+  id                 String            @id @default(cuid())
+  getaroundId        String?           @unique
+  getaroundAccountId String?
+  getaroundAccount   GetaroundAccount? @relation(fields: [getaroundAccountId], references: [id])
+  licensePlate       String            @unique
+  make               String
+  model              String
+  year               Int
+  color              String?
+  photoUrl           String?
+  parkingZone        String?           // Zone de stationnement (ex: "Zone A - Parking Nord")
+  currentMileage     Int               @default(0)
+  healthScore        Int               @default(100)
+  isActive           Boolean           @default(true)
+  thirdPartyOwnerId  String?
+  thirdPartyOwner    ThirdPartyOwner?  @relation(fields: [thirdPartyOwnerId], references: [id])
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  rentals            Rental[]
+  maintenances       Maintenance[]
+  technicalControls  TechnicalControl[]
+  vehicleChecks      VehicleCheck[]
+  documents          VehicleDocument[]
+  incidents          Incident[]
+  blockings          Blocking[]
+  accessories           AccessoryVehicle[]
+  carSeatRequests       CarSeatRequest[]
+  accessoryReservations AccessoryReservation[]
+
+  @@map("vehicles")
+}
+
+model Rental {
+  id                  String              @id @default(cuid())
+  getaroundId         String              @unique
+  vehicleId           String
+  vehicle             Vehicle             @relation(fields: [vehicleId], references: [id])
+  driverName          String
+  driverEmail         String?
+  driverGetaroundId   String?
+  startAt             DateTime
+  endAt               DateTime
+  startMileage        Int?
+  endMileage          Int?
+  kmDriven            Int?                // endMileage - startMileage (calculé)
+  grossRevenue        Float?              // CA brut facturé locataire
+  ownerPayout         Float?              // Virement propriétaire
+  driverMessFee       Float?              // Frais messagerie → bloquer évaluation
+  damageCompensation  Float?              // Compensation dommage → créer incident
+  gasRefillFee        Float?              // Frais carburant → noter
+  lateReturnFee       Float?              // Frais retard → noter
+  status              RentalStatus        @default(booked)
+  evaluationStatus    EvaluationStatus    @default(pending)
+  evaluationRating    Int?
+  evaluationComment   String?
+  invoiceData         Json?               // Données brutes facture Getaround
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  messages            Message[]
+  sequenceExecutions  SequenceExecution[]
+  incidents             Incident[]
+  carSeatRequests       CarSeatRequest[]
+  accessoryReservations AccessoryReservation[]
+
+  @@map("rentals")
+}
+
+model Message {
+  id           String           @id @default(cuid())
+  getaroundId  String?          @unique
+  rentalId     String
+  rental       Rental           @relation(fields: [rentalId], references: [id])
+  direction    MessageDirection
+  content      String
+  sentAt       DateTime?
+  aiAnalysis   Json?            // Détection siège auto, sinistre, insatisfaction
+  aiSuggestion String?          // Réponse générée par Claude
+  status       MessageStatus    @default(pending_approval)
+  approvedById String?
+  approvedBy   User?            @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+  cancelledAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@map("messages")
+}
+
+model MessageSequence {
+  id           String              @id @default(cuid())
+  name         String
+  triggerEvent String              // rental.booked | rental.car_checked_in | rental.car_checked_out
+  delayMinutes Int                 @default(0)
+  content      String              // Template : {{driver_name}}, {{vehicle}}, {{start_date}}
+  isActive     Boolean             @default(true)
+  vehicleId    String?             // null = applicable à toute la flotte
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  executions   SequenceExecution[]
+
+  @@map("message_sequences")
+}
+
+model SequenceExecution {
+  id           String          @id @default(cuid())
+  rentalId     String
+  rental       Rental          @relation(fields: [rentalId], references: [id])
+  sequenceId   String
+  sequence     MessageSequence @relation(fields: [sequenceId], references: [id])
+  scheduledAt  DateTime
+  executedAt   DateTime?
+  status       SequenceStatus  @default(pending)
+  messageId    String?
+  errorMessage String?
+  createdAt    DateTime        @default(now())
+
+  @@map("sequence_executions")
+}
+
+model Maintenance {
+  id                 String    @id @default(cuid())
+  vehicleId          String
+  vehicle            Vehicle   @relation(fields: [vehicleId], references: [id])
+  type               String    // vidange | freins | pneus | courroie | filtres | autre
+  performedAt        DateTime
+  mileageAtService   Int
+  nextServiceDate    DateTime?
+  nextServiceMileage Int?
+  cost               Float?
+  provider           String?
+  notes              String?
+  documentUrl        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("maintenances")
+}
+
+model TechnicalControl {
+  id          String      @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle     @relation(fields: [vehicleId], references: [id])
+  performedAt DateTime
+  expiryAt    DateTime    // Date d'expiration du CT
+  result      CheckResult
+  points      Json?       // Points de contrôle défavorables/majeurs
+  center      String?
+  cost        Float?
+  documentUrl String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("technical_controls")
+}
+
+model VehicleCheck {
+  id             String      @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle     @relation(fields: [vehicleId], references: [id])
+  checkedById    String
+  checkedBy      User        @relation(fields: [checkedById], references: [id])
+  checkedAt      DateTime
+  status         String      @default("draft") // draft | completed | synced
+  // 9 sections exactes de la fiche contrôle Sun and Drive
+  lighting       Json        // 7 points éclairage
+  levels         Json        // 5 niveaux liquides
+  glazingMirrors Json        // 5 vitrages et rétroviseurs
+  wipers         Json        // 3 essuie-glaces
+  tires          Json        // 4 pneumatiques
+  braking        Json        // 3 freinage
+  engineBattery  Json        // 5 moteur et batterie
+  safety         Json        // 5 sécurité
+  roadTest       Json        // 4 essai routier
+  notes          String?
+  photos         Json        @default("[]") // URLs photos smartphone
+  overallResult  CheckResult @default(pass)
+  isSynced       Boolean     @default(false) // Synchronisé depuis IndexedDB hors ligne
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@map("vehicle_checks")
+}
+
+model VehicleDocument {
+  id           String       @id @default(cuid())
+  vehicleId    String
+  vehicle      Vehicle      @relation(fields: [vehicleId], references: [id])
+  type         DocumentType
+  name         String
+  fileUrl      String
+  expiryDate   DateTime?
+  reminderDays Int          @default(30) // Alerte X jours avant expiration
+  isExpired    Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("vehicle_documents")
+}
+
+model Incident {
+  id                 String         @id @default(cuid())
+  vehicleId          String
+  vehicle            Vehicle        @relation(fields: [vehicleId], references: [id])
+  rentalId           String?
+  rental             Rental?        @relation(fields: [rentalId], references: [id])
+  type               IncidentType
+  description        String
+  status             IncidentStatus @default(open)
+  cost               Float?
+  insuranceReference String?
+  photos             Json           @default("[]")
+  resolution         String?
+  resolvedAt         DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@map("incidents")
+}
+
+model Blocking {
+  id                        String   @id @default(cuid())
+  vehicleId                 String
+  vehicle                   Vehicle  @relation(fields: [vehicleId], references: [id])
+  getaroundUnavailabilityId String?  @unique
+  startAt                   DateTime
+  endAt                     DateTime
+  reason                    String?
+  type                      String   // maintenance | incident | administrative | other
+  createdById               String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("blockings")
+}
+
+model Accessory {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  quantity    Int               @default(1)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  vehicles      AccessoryVehicle[]
+  reservations  AccessoryReservation[]
+
+  @@map("accessories")
+}
+
+model AccessoryVehicle {
+  vehicleId   String
+  accessoryId String
+  vehicle     Vehicle   @relation(fields: [vehicleId], references: [id])
+  accessory   Accessory @relation(fields: [accessoryId], references: [id])
+  assignedAt  DateTime  @default(now())
+
+  @@id([vehicleId, accessoryId])
+  @@map("accessory_vehicles")
+}
+
+model AccessoryReservation {
+  id          String    @id @default(cuid())
+  accessoryId String
+  accessory   Accessory @relation(fields: [accessoryId], references: [id])
+  rentalId    String
+  rental      Rental    @relation(fields: [rentalId], references: [id])
+  vehicleId   String
+  vehicle     Vehicle   @relation(fields: [vehicleId], references: [id])
+  status      String    @default("pending") // pending | confirmed | returned | cancelled
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("accessory_reservations")
+}
+
+model CarSeat {
+  id             String           @id @default(cuid())
+  name           String           // ex: "Groupe 0+ (0-13 kg)"
+  minWeightKg    Float            // Poids minimum enfant supporté
+  maxWeightKg    Float            // Poids maximum enfant supporté
+  totalStock     Int              @default(0)
+  availableStock Int              @default(0)
+  outOfService   Int              @default(0)
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  requests       CarSeatRequest[]
+
+  @@map("car_seats")
+}
+
+model CarSeatRequest {
+  id            String    @id @default(cuid())
+  vehicleId     String
+  vehicle       Vehicle   @relation(fields: [vehicleId], references: [id])
+  rentalId      String?
+  rental        Rental?   @relation(fields: [rentalId], references: [id])
+  carSeatId     String?
+  carSeat       CarSeat?  @relation(fields: [carSeatId], references: [id])
+  childWeightKg Float?    // Poids de l'enfant en kg
+  requestedAt   DateTime  @default(now())
+  status        String    @default("pending") // pending | confirmed | denied | returned
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("car_seat_requests")
+}
+
+model ThirdPartyOwner {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id])
+  name            String
+  email           String
+  phone           String?
+  contractDetails Json?
+  paymentDetails  Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  vehicles        Vehicle[]
+
+  @@map("third_party_owners")
+}
+
+model Notification {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  type              String   // ct_expiry | maintenance_due | message_received | blocking_requested
+  title             String
+  body              String
+  isRead            Boolean  @default(false)
+  relatedEntityType String?  // vehicle | rental | maintenance | technical_control
+  relatedEntityId   String?
+  createdAt         DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model CompanySettings {
+  id                   String   @id @default(cuid())
+  primaryColor         String   @default("#01696e")
+  secondaryColor       String   @default("#04292a")
+  accentColor          String   @default("#0199a1")
+  logoUrl              String?
+  // Mode IA par type de message : auto | approval | manual
+  aiModeCarSeat        String   @default("approval")
+  aiModeIncident       String   @default("manual")
+  aiModeGeneral        String   @default("approval")
+  aiTone               String   @default("vouvoiement")
+  maintenancePolicies  Json     @default("{}")
+  notificationSettings Json     @default("{}")
+  getaroundWebhookPath String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("company_settings")
+}

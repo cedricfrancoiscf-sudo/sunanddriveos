@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Variables CSS dynamiques — modifiables via paramètres société */
+:root {
+  --color-primary: #01696e;
+  --color-secondary: #04292a;
+  --color-accent: #0199a1;
+  --color-deep: #085659;
+  --color-bg: #ffffff;
+  --color-text: #000000;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: 'Montserrat', system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-size: 1rem; /* minimum 16px sur mobile */
+    line-height: 1.5;
+    overflow-x: hidden;
+  }
+
+  /* Zone sûre iPhone (notch, home indicator) */
+  #root {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@layer components {
+  /* Bouton tactile minimum 44px — accessibilité mobile */
+  .btn {
+    @apply min-h-[44px] px-4 py-2 rounded-lg font-semibold text-base transition-colors;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary text-white hover:bg-primary-dark active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply btn border-2 border-primary text-primary hover:bg-primary hover:text-white;
+  }
+
+  /* Carte de contenu */
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-4;
+  }
+}

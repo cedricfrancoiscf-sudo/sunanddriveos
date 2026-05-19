@@ -1,0 +1,57 @@
+{
+  "name": "sunanddriveos-backend",
+  "version": "0.1.0",
+  "description": "API backend SunanddriveOS — gestion flotte Getaround",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsup src/server.ts --format cjs --dts",
+    "start": "node dist/server.js",
+    "migrate": "tsx src/prisma/migrate.ts",
+    "seed": "tsx src/prisma/seed/master.ts",
+    "generate:master": "prisma generate --schema=src/prisma/master/schema.prisma",
+    "generate:tenant": "prisma generate --schema=src/prisma/tenant/schema.prisma",
+    "generate": "npm run generate:master && npm run generate:tenant",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@prisma/client": "^5.22.0",
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.16",
+    "pdfkit": "^0.15.2",
+    "sharp": "^0.33.5",
+    "stripe": "^17.3.1",
+    "winston": "^3.17.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/morgan": "^1.9.9",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.10.0",
+    "@types/nodemailer": "^6.4.17",
+    "@types/pdfkit": "^0.13.6",
+    "prisma": "^5.22.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

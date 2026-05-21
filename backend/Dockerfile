@@ -15,6 +15,8 @@ RUN npm run build
 # ─── Image de production ───────────────────────────────────────
 FROM node:20-slim AS production
 
+RUN apt-get update -y && apt-get install -y openssl libssl-dev && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 ENV NODE_ENV=production
 

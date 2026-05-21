@@ -11,7 +11,7 @@ import {
   deleteVehicle,
 } from './vehicles.service';
 
-const router = Router();
+const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 const createSchema = z.object({

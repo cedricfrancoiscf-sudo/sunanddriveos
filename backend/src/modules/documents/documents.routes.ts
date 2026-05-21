@@ -6,7 +6,7 @@ import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 
-const router = Router();
+const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 const storage = multer.diskStorage({

@@ -13,7 +13,7 @@ import {
   syncAccountRentals,
 } from './getaround-sync.service';
 
-const router = Router();
+const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 const adminOnly = requireRole('admin');

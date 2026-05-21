@@ -12,7 +12,7 @@ import {
   executePendingSequences,
 } from './sequences.service';
 
-const router = Router();
+const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 const sequenceSchema = z.object({

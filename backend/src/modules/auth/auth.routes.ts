@@ -5,7 +5,7 @@ import { requireAuth, requireSuperAdmin } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { loginUser, loginSuperAdmin } from './auth.service';
 
-const router = Router();
+const router: Router = Router();
 
 const loginSchema = z.object({
   email: z.string().email(),

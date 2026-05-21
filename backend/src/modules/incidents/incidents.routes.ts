@@ -4,7 +4,7 @@ import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 
-const router = Router();
+const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 const INCIDENT_TYPES = ['damage', 'theft', 'accident', 'vandalism', 'other'] as const;

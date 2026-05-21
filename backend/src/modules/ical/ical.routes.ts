@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { generateAccessoriesIcal } from './ical.service';
 
-const router = Router();
+const router: Router = Router();
 
 // GET /ical/:token/accessories.ics — route publique, pas de JWT
 // Compatible Google Agenda, Apple Calendar, Outlook (abonnement calendrier)

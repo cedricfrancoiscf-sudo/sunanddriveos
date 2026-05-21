@@ -4,7 +4,7 @@ import { requireAuth, requireSuperAdmin } from '../../middleware/auth';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
 
-const router = Router();
+const router: Router = Router();
 router.use(requireAuth, requireSuperAdmin);
 
 const PLANS = ['starter', 'pro', 'enterprise'] as const;

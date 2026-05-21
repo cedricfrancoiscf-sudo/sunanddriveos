@@ -6,7 +6,7 @@ import { getTenantClient } from '../../prisma/client';
 import { analyzeMessage, suggestReply, suggestCarSeatReply } from './ai.service';
 import { createOutboundMessage } from '../messages/messages.service';
 
-const router = Router();
+const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 // POST /api/v1/ai/analyze — analyse un message entrant

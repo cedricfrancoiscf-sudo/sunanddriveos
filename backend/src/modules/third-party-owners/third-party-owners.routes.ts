@@ -6,7 +6,7 @@ import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
 
-const router = Router();
+const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 const contractSchema = z.object({

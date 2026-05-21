@@ -5,7 +5,7 @@ import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import { listMaintenances, createMaintenance, updateMaintenance, deleteMaintenance } from './maintenance.service';
 
-const router = Router();
+const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 const schema = z.object({

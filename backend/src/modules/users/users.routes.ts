@@ -6,7 +6,7 @@ import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
 
-const router = Router();
+const router: Router = Router();
 
 const ROLES = ['admin', 'exploitation', 'comptable', 'carkeeper', 'third_party_owner'] as const;
 

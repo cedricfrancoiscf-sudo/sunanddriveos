@@ -18,13 +18,3 @@ COPY nginx.frontend.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 
-# ─── Image de développement — hot reload Vite ────────────────
-FROM node:20-alpine AS dev
-
-WORKDIR /app
-RUN npm install -g pnpm
-COPY package*.json ./
-RUN pnpm install || npm install
-COPY . .
-EXPOSE 5173
-CMD ["pnpm", "dev", "--host", "0.0.0.0"]

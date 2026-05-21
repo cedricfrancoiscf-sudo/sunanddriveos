@@ -29,10 +29,14 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/src/prisma ./src/prisma
 
+# Copier le CLI Prisma depuis le builder
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+
 # Dossier uploads persistant via volume Docker
 RUN mkdir -p uploads
 
 EXPOSE 4000
 
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["node dist/server.js"]
+CMD ["./node_modules/.bin/prisma migrate deploy --schema=./src/prisma/master/schema.prisma && node dist/server.js"]

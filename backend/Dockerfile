@@ -1,5 +1,5 @@
 # Image multi-stage — build TypeScript puis runtime minimal
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 RUN npm install -g pnpm
@@ -13,9 +13,7 @@ RUN npm run generate
 RUN npm run build
 
 # ─── Image de production ───────────────────────────────────────
-FROM node:20-alpine AS production
-
-RUN apk add --no-cache openssl1.1-compat
+FROM node:20-slim AS production
 
 WORKDIR /app
 ENV NODE_ENV=production

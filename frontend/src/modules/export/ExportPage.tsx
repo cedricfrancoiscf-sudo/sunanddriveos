@@ -53,7 +53,7 @@ const EXPORTS: ExportConfig[] = [
 const thisYear = new Date().getFullYear();
 const thisMonth = String(new Date().getMonth() + 1).padStart(2, '0');
 const DEFAULT_FROM = `${thisYear}-${thisMonth}-01`;
-const DEFAULT_TO = new Date().toISOString().split('T')[0];
+const DEFAULT_TO = new Date().toISOString().split('T')[0] ?? '';
 
 export default function ExportPage(): React.JSX.Element {
   const [from, setFrom] = useState(DEFAULT_FROM);

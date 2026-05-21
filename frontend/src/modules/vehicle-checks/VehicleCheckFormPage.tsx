@@ -73,7 +73,7 @@ export default function VehicleCheckFormPage(): React.JSX.Element {
   function setPoint(sectionKey: SectionKey, idx: number, field: 'ok' | 'note', value: boolean | string) {
     setCheckData(prev => {
       const section = [...prev[sectionKey]];
-      section[idx] = { ...section[idx], [field]: value };
+      section[idx] = { ...section[idx]!, [field]: value };
       return { ...prev, [sectionKey]: section };
     });
   }
@@ -92,7 +92,7 @@ export default function VehicleCheckFormPage(): React.JSX.Element {
 
   const result = computeResult(checkData);
   const totalFails = Object.values(checkData).flat().filter(p => !p.ok).length;
-  const section = SECTIONS[activeSection];
+  const section = SECTIONS[activeSection]!;
   const sectionData = checkData[section.key];
 
   return (
@@ -138,7 +138,7 @@ export default function VehicleCheckFormPage(): React.JSX.Element {
           <h2 className="mb-4 text-base font-semibold text-gray-900">{section.label}</h2>
           <div className="space-y-3">
             {section.points.map((label, idx) => {
-              const point = sectionData[idx];
+              const point = sectionData[idx]!;
               return (
                 <div key={idx} className={`rounded-xl border p-3 transition ${point.ok ? 'border-gray-200 bg-white' : 'border-red-200 bg-red-50'}`}>
                   <div className="flex items-center justify-between gap-3">
@@ -172,13 +172,13 @@ export default function VehicleCheckFormPage(): React.JSX.Element {
             {activeSection > 0 && (
               <button type="button" onClick={() => setActiveSection(i => i - 1)}
                 className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                ← {SECTIONS[activeSection - 1].label}
+                ← {SECTIONS[activeSection - 1]!.label}
               </button>
             )}
             {activeSection < SECTIONS.length - 1 ? (
               <button type="button" onClick={() => setActiveSection(i => i + 1)}
                 className="ml-auto rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: '#01696e' }}>
-                {SECTIONS[activeSection + 1].label} →
+                {SECTIONS[activeSection + 1]!.label} →
               </button>
             ) : (
               <div className="ml-auto flex-1 space-y-3">

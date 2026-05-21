@@ -10,7 +10,7 @@ interface RentalStats { totalRevenue: number; occupancyRate: number; rentalCount
 interface ActiveRental { id: string; driverName: string; startAt: string; endAt: string; vehicle: { make: string; model: string; licensePlate: string }; }
 interface Alert { id: string; type: string; label: string; severity: 'high' | 'medium'; link: string; }
 
-function KpiCard({ label, value, sub, link }: { label: string; value: string; sub?: string; link?: string }): React.JSX.Element {
+function KpiCard({ label, value, sub, link }: { label: string; value: string; sub?: string | undefined; link?: string | undefined }): React.JSX.Element {
   const inner = (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
       <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{label}</p>

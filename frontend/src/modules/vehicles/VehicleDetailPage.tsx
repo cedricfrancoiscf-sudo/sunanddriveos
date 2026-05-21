@@ -86,7 +86,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
       vehicleId: id!,
       startAt: new Date(data.startAt).toISOString(),
       endAt: new Date(data.endAt).toISOString(),
-      reason: data.reason || undefined,
+      ...(data.reason ? { reason: data.reason } : {}),
       type: data.type,
     }),
     onSuccess: () => {
@@ -167,7 +167,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
 
   const lastCT = vehicle.technicalControls[0];
 
-  return (
+  return (<>
     <div className="p-4 lg:p-6">
       {/* Fil d'Ariane + actions */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -458,5 +458,5 @@ export default function VehicleDetailPage(): React.JSX.Element {
         </div>
       </div>
     )}
-  );
+  </>);
 }

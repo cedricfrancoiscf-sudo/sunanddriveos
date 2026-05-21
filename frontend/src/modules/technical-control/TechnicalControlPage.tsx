@@ -27,7 +27,7 @@ const ctApi = {
   delete: (id: string) => api.delete(`/technical-control/${id}`),
 };
 
-const EMPTY = { vehicleId: '', performedAt: '', expiryAt: '', result: 'pass' as const, center: '', cost: '' };
+const EMPTY = { vehicleId: '', performedAt: '', expiryAt: '', result: 'pass' as 'pass' | 'advisory' | 'fail', center: '', cost: '' };
 
 export default function TechnicalControlPage(): React.JSX.Element {
   const qc = useQueryClient();

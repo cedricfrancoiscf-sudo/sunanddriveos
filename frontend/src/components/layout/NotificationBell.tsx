@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import api from '../../utils/api';
+import { api } from '../../utils/api';
 
 interface Notification {
   id: string;

@@ -125,9 +125,8 @@ export default function MessageListPage(): React.JSX.Element {
     queryKey: ['messages', statusFilter, rentalIdFilter],
     queryFn: () =>
       messagesApi.list({
-        status: statusFilter || undefined,
-        rentalId: rentalIdFilter || undefined,
-        limit: 100,
+        ...(statusFilter ? { status: statusFilter } : {}),
+        ...(rentalIdFilter ? { rentalId: rentalIdFilter } : {}),
       }),
   });
 

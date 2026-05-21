@@ -30,6 +30,15 @@ export interface Message {
     startAt: string;
     endAt: string;
     vehicle: { id: string; make: string; model: string; licensePlate: string };
+    messages?: Array<{
+      id: string;
+      direction: 'inbound' | 'outbound';
+      content: string;
+      sentAt: string | null;
+      status: string;
+      aiSuggestion: string | null;
+      createdAt: string;
+    }>;
   };
 }
 

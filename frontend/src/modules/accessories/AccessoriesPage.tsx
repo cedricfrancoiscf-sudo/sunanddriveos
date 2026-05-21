@@ -445,7 +445,7 @@ function AccessoriesTab(): React.JSX.Element {
                           </select>
                           <button type="button"
                             disabled={!reserveRentalId[a.id] || reserveMutation.isPending}
-                            onClick={() => reserveMutation.mutate({ accessoryId: a.id, rentalId: reserveRentalId[a.id] })}
+                            onClick={() => reserveMutation.mutate({ accessoryId: a.id, rentalId: reserveRentalId[a.id]! })}
                             className="rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
                             style={{ backgroundColor: '#01696e' }}>
                             Réserver
@@ -717,7 +717,7 @@ export default function AccessoriesPage(): React.JSX.Element {
 }
 
 function TabBtn({ label, active, onClick, badge }: {
-  label: string; active: boolean; onClick: () => void; badge?: number;
+  label: string; active: boolean; onClick: () => void; badge?: number | undefined;
 }): React.JSX.Element {
   return (
     <button type="button" onClick={onClick}

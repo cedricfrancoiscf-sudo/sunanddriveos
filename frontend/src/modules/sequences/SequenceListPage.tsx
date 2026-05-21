@@ -262,6 +262,12 @@ export default function SequenceListPage(): React.JSX.Element {
     },
   });
 
+  const TRIGGER_OPTIONS: TriggerEvent[] = [
+    'rental.booked',
+    'rental.car_checked_in',
+    'rental.car_checked_out',
+  ];
+
   // Grouper par déclencheur
   const grouped = TRIGGER_OPTIONS.reduce<Record<TriggerEvent, Sequence[]>>(
     (acc, event) => {
@@ -270,12 +276,6 @@ export default function SequenceListPage(): React.JSX.Element {
     },
     {} as Record<TriggerEvent, Sequence[]>,
   );
-
-  const TRIGGER_OPTIONS: TriggerEvent[] = [
-    'rental.booked',
-    'rental.car_checked_in',
-    'rental.car_checked_out',
-  ];
 
   return (
     <div className="p-4 lg:p-6">

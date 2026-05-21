@@ -48,8 +48,8 @@ export default function VehicleFormPage(): React.JSX.Element {
       ...data,
       year: Number(data.year),
       currentMileage: Number(data.currentMileage),
-      color: data.color || undefined,
-      photoUrl: data.photoUrl || undefined,
+      color: data.color || null,
+      photoUrl: data.photoUrl || null,
     }),
     onSuccess: (v) => {
       void qc.invalidateQueries({ queryKey: ['vehicles'] });
@@ -63,8 +63,8 @@ export default function VehicleFormPage(): React.JSX.Element {
         ...data,
         year: Number(data.year),
         currentMileage: Number(data.currentMileage),
-        color: data.color || undefined,
-        photoUrl: data.photoUrl || undefined,
+        color: data.color || null,
+        photoUrl: data.photoUrl || null,
         healthScore: Number(data.healthScore),
       }),
     onSuccess: () => {

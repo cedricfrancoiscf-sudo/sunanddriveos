@@ -1,5 +1,5 @@
 # Image multi-stage — build TypeScript puis runtime minimal
-FROM node:20-slim AS builder
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 RUN npm install -g pnpm
@@ -13,7 +13,7 @@ RUN npm run generate
 RUN npm run build
 
 # ─── Image de production ───────────────────────────────────────
-FROM node:20-slim AS production
+FROM node:20-bookworm-slim AS production
 
 RUN apt-get update -y && apt-get install -y openssl libssl-dev && rm -rf /var/lib/apt/lists/*
 

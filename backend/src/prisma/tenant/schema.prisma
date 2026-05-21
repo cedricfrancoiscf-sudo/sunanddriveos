@@ -2,8 +2,9 @@
 // Une base indépendante par société (slug = nom de la DB)
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "../../generated/tenant"
+  provider      = "prisma-client-js"
+  output        = "../../generated/tenant"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl"]
 }
 
 datasource db {

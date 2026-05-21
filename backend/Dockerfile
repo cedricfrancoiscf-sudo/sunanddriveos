@@ -2,8 +2,9 @@
 FROM node:20-alpine AS builder
 
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm install -g pnpm
+COPY package*.json pnpm-lock.yaml* ./
+RUN pnpm install || npm install
 
 COPY . .
 # Génération des clients Prisma
@@ -17,8 +18,9 @@ FROM node:20-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 
-COPY package*.json ./
-RUN npm ci --only=production --ignore-scripts
+RUN npm install -g pnpm
+COPY package*.json pnpm-lock.yaml* ./
+RUN pnpm install --prod || npm install --only=production
 
 # Copier le build et les fichiers Prisma
 COPY --from=builder /app/dist ./dist

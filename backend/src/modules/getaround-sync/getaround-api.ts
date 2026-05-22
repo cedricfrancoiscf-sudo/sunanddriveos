@@ -2,38 +2,64 @@ import axios, { type AxiosInstance } from 'axios';
 
 const BASE_URL = 'https://api-eu.getaround.com/owner/v1';
 
-// Champs réellement retournés par GET /cars/{id}.json
+// GET /cars/{id}.json — champs exacts selon OpenAPI spec
 export interface GetaroundCar {
   id: number;
-  state: string;          // 'active' | 'inactive'
+  state: string;          // 'active' | 'inactive' | 'pending_approval' | 'deleted'
   plate_number: string;
   brand: string;
   model: string;
-  display_address?: string;
+  display_address?: string; // deprecated, utiliser address
   address?: string;
 }
 
-// Champs réellement retournés par GET /rentals/{id}.json
+// GET /rentals/{id}.json — champs exacts selon OpenAPI spec (pas de state, pas de driver)
 export interface GetaroundRental {
   id: number;
   car_id: number;
   user_id: number;
   starts_at: string;
   ends_at: string;
-  booked_at?: string;
-  price: number;          // Montant en centimes
-  insurance_fee?: number;
-  state?: string;         // Peut être absent selon le contexte
+  booked_at: string;
+  price: number;          // en centimes (ex: 3500 = 35,00 €)
+  insurance_fee: number;  // en centimes
 }
 
+// GET /users/{id}.json — champs exacts selon OpenAPI spec
 export interface GetaroundUser {
   id: number;
   first_name: string;
   last_name: string;
   phone_number?: string;
+  address_line1?: string;
+  address_line2?: string;
+  postal_code?: string;
+  city?: string;
+  country?: string;
+  birth_date?: string;
+  license_country?: string;
+  license_first_issue_date?: string;
+  license_number?: string;
 }
 
-// Découpe une plage en tranches de 30 jours max (limite API Getaround)
+// GET /rentals/{rental_id}/checkin.json
+export interface GetaroundCheckin {
+  rental_id: number;
+  mileage?: number;
+  fuel_level?: number;
+  occurred_at: string;
+}
+
+// GET /rentals/{rental_id}/checkout.json
+export interface GetaroundCheckout {
+  rental_id: number;
+  mileage: number | null;
+  fuel_level: number | null;
+  distance_driven: number;
+  occurred_at: string;
+}
+
+// Découpe une plage en tranches ≤ 30 jours (limite API Getaround)
 function splitInto30DayWindows(start: Date, end: Date): Array<{ start: Date; end: Date }> {
   const windows: Array<{ start: Date; end: Date }> = [];
   let cursor = new Date(start);
@@ -45,7 +71,7 @@ function splitInto30DayWindows(start: Date, end: Date): Array<{ start: Date; end
   return windows;
 }
 
-// Récupère toutes les pages d'un endpoint paginé
+// Récupère toutes les pages d'un endpoint paginé (retourne des éléments partiels {id} ou {rental_id})
 async function fetchAllPages<T>(
   client: AxiosInstance,
   url: string,
@@ -59,7 +85,6 @@ async function fetchAllPages<T>(
     });
     const items = Array.isArray(res.data) ? res.data : [];
     all.push(...items);
-    // Arrêt si moins d'une page pleine ou pas de header "next"
     const linkHeader = res.headers['link'] as string | undefined;
     if (!linkHeader?.includes('rel="next"') || items.length < 200) break;
     page++;
@@ -79,46 +104,63 @@ export function createGetaroundClient(apiKey: string) {
   });
 
   return {
-    // GET /cars.json — liste toutes les voitures du compte
+    // /cars.json retourne uniquement [{id}] — il faut appeler /cars/{id}.json pour chaque
     async getCars(): Promise<GetaroundCar[]> {
-      return fetchAllPages<GetaroundCar>(client, '/cars.json', {});
+      const ids = await fetchAllPages<{ id: number }>(client, '/cars.json', {});
+      const cars: GetaroundCar[] = [];
+      for (const { id } of ids) {
+        const res = await client.get<GetaroundCar>(`/cars/${id}.json`);
+        cars.push(res.data);
+      }
+      return cars;
     },
 
-    // GET /cars/{id}.json — détail d'une voiture
     async getCar(id: number): Promise<GetaroundCar> {
       const res = await client.get<GetaroundCar>(`/cars/${id}.json`);
       return res.data;
     },
 
-    // GET /rentals.json — locations entre deux dates (tranches ≤ 30j, paginées)
+    // /rentals.json retourne uniquement [{id}] — il faut appeler /rentals/{id}.json pour chaque
+    // start_date et end_date sont OBLIGATOIRES, plage max 30 jours → découpage automatique
     async getRentals(startDate: Date, endDate: Date): Promise<GetaroundRental[]> {
       const windows = splitInto30DayWindows(startDate, endDate);
-      const allRentals: GetaroundRental[] = [];
+
+      // Collecter tous les IDs uniques sur toutes les fenêtres
+      const seenIds = new Set<number>();
       for (const w of windows) {
-        const chunk = await fetchAllPages<GetaroundRental>(client, '/rentals.json', {
+        const chunk = await fetchAllPages<{ id: number }>(client, '/rentals.json', {
           start_date: w.start.toISOString(),
           end_date: w.end.toISOString(),
         });
-        allRentals.push(...chunk);
+        for (const { id } of chunk) seenIds.add(id);
       }
-      // Dédoublonner par id (une location peut apparaître dans deux fenêtres)
-      const seen = new Set<number>();
-      return allRentals.filter(r => {
-        if (seen.has(r.id)) return false;
-        seen.add(r.id);
-        return true;
-      });
+
+      // Récupérer le détail de chaque location
+      const rentals: GetaroundRental[] = [];
+      for (const id of seenIds) {
+        const res = await client.get<GetaroundRental>(`/rentals/${id}.json`);
+        rentals.push(res.data);
+      }
+      return rentals;
     },
 
-    // GET /rentals/{id}.json — détail d'une location
     async getRental(id: number): Promise<GetaroundRental> {
       const res = await client.get<GetaroundRental>(`/rentals/${id}.json`);
       return res.data;
     },
 
-    // GET /users/{id}.json — informations conducteur
     async getUser(id: number): Promise<GetaroundUser> {
       const res = await client.get<GetaroundUser>(`/users/${id}.json`);
+      return res.data;
+    },
+
+    async getCheckin(rentalId: number): Promise<GetaroundCheckin> {
+      const res = await client.get<GetaroundCheckin>(`/rentals/${rentalId}/checkin.json`);
+      return res.data;
+    },
+
+    async getCheckout(rentalId: number): Promise<GetaroundCheckout> {
+      const res = await client.get<GetaroundCheckout>(`/rentals/${rentalId}/checkout.json`);
       return res.data;
     },
   };

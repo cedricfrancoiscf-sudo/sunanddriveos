@@ -1,6 +1,6 @@
 import type { PrismaClient } from '../../generated/tenant';
 import { decrypt, encrypt } from '../../utils/crypto';
-import { createGetaroundClient } from './getaround-api';
+import { createGetaroundClient, type GetaroundRental } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
 
 export interface SyncResult {
@@ -9,6 +9,15 @@ export interface SyncResult {
   created: number;
   updated: number;
   errors: string[];
+}
+
+// L'API Getaround ne retourne pas l'état des locations —
+// on l'infère depuis les dates de début/fin
+function inferStatus(r: GetaroundRental): 'booked' | 'active' | 'completed' {
+  const now = Date.now();
+  if (now < new Date(r.starts_at).getTime()) return 'booked';
+  if (now < new Date(r.ends_at).getTime()) return 'active';
+  return 'completed';
 }
 
 export async function syncAccountVehicles(
@@ -34,6 +43,8 @@ export async function syncAccountVehicles(
   try {
     const apiKey = decrypt(account.apiKeyHash);
     const ga = createGetaroundClient(apiKey);
+
+    // /cars.json → IDs seulement, puis /cars/{id}.json pour chaque
     const cars = await ga.getCars();
 
     for (const car of cars) {
@@ -42,14 +53,14 @@ export async function syncAccountVehicles(
           where: { getaroundId: String(car.id) },
         });
 
-        // Champs disponibles dans l'API Getaround Owner v1 :
-        // id, state, plate_number, brand, model, display_address, address
+        // Champs disponibles dans l'API : id, state, plate_number, brand, model, address
+        // Pas de year, color, picture_url, mileage dans l'API Owner v1
         const vehicleData = {
           getaroundId: String(car.id),
           getaroundAccountId: accountId,
           make: car.brand,
           model: car.model,
-          isActive: car.state !== 'inactive',
+          isActive: car.state === 'active',
           ...(car.plate_number ? { licensePlate: car.plate_number.toUpperCase() } : {}),
         };
 
@@ -95,13 +106,6 @@ export async function syncAllAccounts(db: PrismaClient): Promise<SyncResult[]> {
   return Promise.all(accounts.map((a) => syncAccountVehicles(db, a.id)));
 }
 
-const STATE_MAP: Record<string, 'booked' | 'active' | 'completed' | 'cancelled'> = {
-  booked: 'booked',
-  ongoing: 'active',
-  done: 'completed',
-  cancelled: 'cancelled',
-};
-
 export interface RentalSyncResult {
   accountId: string;
   created: number;
@@ -124,13 +128,13 @@ export async function syncAccountRentals(
   const ga = createGetaroundClient(apiKey);
 
   // Par défaut : 2 ans en arrière → 1 an en avant
-  // La fonction getRentals découpe automatiquement en fenêtres ≤ 30 jours
+  // getRentals découpe automatiquement en fenêtres ≤ 30 jours
   const startDate = from ?? new Date(Date.now() - 2 * 365 * 86_400_000);
   const endDate = to ?? new Date(Date.now() + 365 * 86_400_000);
 
   const rentals = await ga.getRentals(startDate, endDate);
 
-  // Cache conducteurs pour éviter une requête API par location
+  // Cache conducteurs : évite un appel API par location pour le même conducteur
   const userCache = new Map<number, string>();
 
   for (const r of rentals) {
@@ -141,11 +145,11 @@ export async function syncAccountRentals(
       });
 
       if (!vehicle) {
-        result.errors.push(`Location ${r.id}: véhicule ${r.car_id} non trouvé`);
+        result.errors.push(`Location ${r.id}: véhicule ${r.car_id} non trouvé en base`);
         continue;
       }
 
-      // Nom du conducteur via /users/{id}.json (avec cache)
+      // Nom du conducteur via /users/{id}.json (mis en cache par user_id)
       if (!userCache.has(r.user_id)) {
         try {
           const user = await ga.getUser(r.user_id);
@@ -156,21 +160,10 @@ export async function syncAccountRentals(
       }
       const driverName = userCache.get(r.user_id)!;
 
-      // r.state peut être absent → fallback 'completed'
-      const status = STATE_MAP[r.state ?? ''] ?? 'completed';
-      // r.price est en centimes
+      // Status inféré depuis les dates (l'API ne retourne pas de champ state)
+      const status = inferStatus(r);
+      // price est en centimes → convertir en euros
       const grossRevenue = r.price / 100;
-
-      const rentalData = {
-        vehicleId: vehicle.id,
-        driverName,
-        driverEmail: null as string | null,
-        driverGetaroundId: String(r.user_id),
-        startAt: new Date(r.starts_at),
-        endAt: new Date(r.ends_at),
-        grossRevenue,
-        status,
-      };
 
       const existing = await db.rental.findUnique({
         where: { getaroundId: String(r.id) },
@@ -178,16 +171,39 @@ export async function syncAccountRentals(
 
       if (existing) {
         const prevStatus = existing.status;
-        await db.rental.update({ where: { id: existing.id }, data: rentalData });
+        // Ne pas écraser un statut 'cancelled' positionné manuellement
+        const newStatus = existing.status === 'cancelled' ? 'cancelled' : status;
+        await db.rental.update({
+          where: { id: existing.id },
+          data: {
+            vehicleId: vehicle.id,
+            driverName,
+            driverGetaroundId: String(r.user_id),
+            startAt: new Date(r.starts_at),
+            endAt: new Date(r.ends_at),
+            grossRevenue,
+            status: newStatus,
+          },
+        });
         result.updated++;
-        if (prevStatus === 'booked' && status === 'active') {
+        if (prevStatus === 'booked' && newStatus === 'active') {
           void scheduleSequencesForRental(db, existing.id, 'rental.car_checked_in').catch(console.error);
-        } else if (prevStatus === 'active' && status === 'completed') {
+        } else if (prevStatus === 'active' && newStatus === 'completed') {
           void scheduleSequencesForRental(db, existing.id, 'rental.car_checked_out').catch(console.error);
         }
       } else {
         const created = await db.rental.create({
-          data: { ...rentalData, getaroundId: String(r.id) },
+          data: {
+            getaroundId: String(r.id),
+            vehicleId: vehicle.id,
+            driverName,
+            driverEmail: null,
+            driverGetaroundId: String(r.user_id),
+            startAt: new Date(r.starts_at),
+            endAt: new Date(r.ends_at),
+            grossRevenue,
+            status,
+          },
         });
         result.created++;
         if (status === 'booked') {

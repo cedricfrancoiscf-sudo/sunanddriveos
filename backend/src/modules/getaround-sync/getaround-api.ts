@@ -9,8 +9,8 @@ export interface GetaroundCar {
   plate_number: string;
   brand: string;
   model: string;
-  display_address?: string; // deprecated, utiliser address
-  address?: string;
+  display_address: string;  // deprecated, utiliser address
+  address: string;
 }
 
 // GET /rentals/{id}.json — champs exacts selon OpenAPI spec (pas de state, pas de driver)
@@ -30,16 +30,16 @@ export interface GetaroundUser {
   id: number;
   first_name: string;
   last_name: string;
-  phone_number?: string;
-  address_line1?: string;
-  address_line2?: string;
-  postal_code?: string;
-  city?: string;
-  country?: string;
-  birth_date?: string;
-  license_country?: string;
-  license_first_issue_date?: string;
-  license_number?: string;
+  phone_number: string;
+  address_line1: string;
+  address_line2?: string;    // seul champ optionnel selon la spec
+  postal_code: string;
+  city: string;
+  country: string;
+  birth_date: string;
+  license_country: string;
+  license_first_issue_date: string;
+  license_number: string;
 }
 
 // GET /rentals/{rental_id}/checkin.json
@@ -86,7 +86,7 @@ async function fetchAllPages<T>(
     const items = Array.isArray(res.data) ? res.data : [];
     all.push(...items);
     const linkHeader = res.headers['link'] as string | undefined;
-    if (!linkHeader?.includes('rel="next"') || items.length < 200) break;
+    if (!linkHeader?.includes('rel="next"')) break;
     page++;
   }
   return all;

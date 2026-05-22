@@ -72,7 +72,7 @@ export async function syncAccountVehicles(
             data: {
               ...vehicleData,
               licensePlate: car.plate_number?.toUpperCase() ?? `GA-${car.id}`,
-              year: 0, // non fourni par l'API Getaround
+              year: new Date().getFullYear(), // non fourni par l'API Getaround
             },
           });
           result.created++;

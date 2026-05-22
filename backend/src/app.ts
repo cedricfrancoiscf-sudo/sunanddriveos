@@ -120,8 +120,9 @@ export function createApp(): Express {
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[Erreur API]', err.message, err.stack);
     const status = 'status' in err ? (err as { status: number }).status : 500;
+    const isClientError = status >= 400 && status < 500;
     res.status(status).json({
-      error: process.env.NODE_ENV === 'production' ? 'Erreur interne' : err.message,
+      error: isClientError || process.env.NODE_ENV !== 'production' ? err.message : 'Erreur interne',
     });
   });
 

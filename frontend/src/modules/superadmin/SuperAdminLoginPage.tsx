@@ -16,7 +16,7 @@ export default function SuperAdminLoginPage(): React.JSX.Element {
     setError(null);
     setLoading(true);
     try {
-      const base = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+      const base = import.meta.env.VITE_API_URL ?? '';
       const res = await axios.post<{ token: string; user: { id: string; name: string; email: string } }>(
         `${base}/api/v1/auth/superadmin/login`,
         { email, password },

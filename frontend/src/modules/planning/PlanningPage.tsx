@@ -274,7 +274,7 @@ export default function PlanningPage(): React.JSX.Element {
                 <option value="">Sélectionner...</option>
                 {zones.map(zone => (
                   <optgroup key={zone} label={zone}>
-                    {vehiclesByZone[zone].map(v => (
+                    {(vehiclesByZone[zone] ?? []).map(v => (
                       <option key={v.id} value={v.id}>{v.make} {v.model} — {v.licensePlate}</option>
                     ))}
                   </optgroup>
@@ -380,12 +380,12 @@ export default function PlanningPage(): React.JSX.Element {
               <div className="flex border-b border-gray-200 sticky top-[41px] z-10">
                 <div className="w-44 shrink-0 border-r border-gray-200" />
                 <div className="flex-1 min-w-[500px]">
-                  <ZoneHeader zone={zone} count={vehiclesByZone[zone].length} />
+                  <ZoneHeader zone={zone} count={vehiclesByZone[zone]?.length ?? 0} />
                 </div>
               </div>
 
               {/* Lignes véhicules */}
-              {vehiclesByZone[zone].map(v => {
+              {(vehiclesByZone[zone] ?? []).map(v => {
                 const vRentals = rentals.filter(r => r.vehicleId === v.id);
                 const vBlockings = blockings.filter(b => b.vehicleId === v.id);
                 return (

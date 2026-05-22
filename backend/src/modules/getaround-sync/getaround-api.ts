@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = 'https://api.getaround.com/owner/v1';
+const BASE_URL = 'https://api-eu.getaround.com/owner/v1';
 
 export interface GetaroundCar {
   id: number;

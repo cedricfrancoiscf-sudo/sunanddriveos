@@ -42,18 +42,15 @@ export async function syncAccountVehicles(
           where: { getaroundId: String(car.id) },
         });
 
+        // Champs disponibles dans l'API Getaround Owner v1 :
+        // id, state, plate_number, brand, model, display_address, address
         const vehicleData = {
           getaroundId: String(car.id),
           getaroundAccountId: accountId,
           make: car.brand,
           model: car.model,
-          year: car.year_of_production,
-          color: car.color ?? null,
-          photoUrl: car.picture_url ?? null,
-          currentMileage: car.mileage ?? 0,
-          isActive: car.status !== 'inactive',
-          // licensePlate est obligatoire — on garde l'existante si absente dans l'API
-          ...(car.license_plate ? { licensePlate: car.license_plate.toUpperCase() } : {}),
+          isActive: car.state !== 'inactive',
+          ...(car.plate_number ? { licensePlate: car.plate_number.toUpperCase() } : {}),
         };
 
         if (existing) {
@@ -63,7 +60,8 @@ export async function syncAccountVehicles(
           await db.vehicle.create({
             data: {
               ...vehicleData,
-              licensePlate: car.license_plate?.toUpperCase() ?? `GA-${car.id}`,
+              licensePlate: car.plate_number?.toUpperCase() ?? `GA-${car.id}`,
+              year: 0, // non fourni par l'API Getaround
             },
           });
           result.created++;
@@ -125,12 +123,15 @@ export async function syncAccountRentals(
   const apiKey = decrypt(account.apiKeyHash);
   const ga = createGetaroundClient(apiKey);
 
-  const params = {
-    from: (from ?? new Date(Date.now() - 90 * 86_400_000)).toISOString(),
-    to: (to ?? new Date(Date.now() + 30 * 86_400_000)).toISOString(),
-  };
+  // Par défaut : 2 ans en arrière → 1 an en avant
+  // La fonction getRentals découpe automatiquement en fenêtres ≤ 30 jours
+  const startDate = from ?? new Date(Date.now() - 2 * 365 * 86_400_000);
+  const endDate = to ?? new Date(Date.now() + 365 * 86_400_000);
 
-  const rentals = await ga.getRentals(params);
+  const rentals = await ga.getRentals(startDate, endDate);
+
+  // Cache conducteurs pour éviter une requête API par location
+  const userCache = new Map<number, string>();
 
   for (const r of rentals) {
     try {
@@ -144,19 +145,30 @@ export async function syncAccountRentals(
         continue;
       }
 
-      const status = STATE_MAP[r.state] ?? 'completed';
-      const grossRevenue = r.price_amount / 100;
-      const ownerPayout = r.payout_amount ? r.payout_amount / 100 : undefined;
+      // Nom du conducteur via /users/{id}.json (avec cache)
+      if (!userCache.has(r.user_id)) {
+        try {
+          const user = await ga.getUser(r.user_id);
+          userCache.set(r.user_id, `${user.first_name} ${user.last_name}`);
+        } catch {
+          userCache.set(r.user_id, `Conducteur ${r.user_id}`);
+        }
+      }
+      const driverName = userCache.get(r.user_id)!;
+
+      // r.state peut être absent → fallback 'completed'
+      const status = STATE_MAP[r.state ?? ''] ?? 'completed';
+      // r.price est en centimes
+      const grossRevenue = r.price / 100;
 
       const rentalData = {
         vehicleId: vehicle.id,
-        driverName: r.driver.display_name,
-        driverEmail: r.driver.email ?? null,
-        driverGetaroundId: String(r.driver.id),
+        driverName,
+        driverEmail: null as string | null,
+        driverGetaroundId: String(r.user_id),
         startAt: new Date(r.starts_at),
         endAt: new Date(r.ends_at),
         grossRevenue,
-        ownerPayout,
         status,
       };
 
@@ -168,7 +180,6 @@ export async function syncAccountRentals(
         const prevStatus = existing.status;
         await db.rental.update({ where: { id: existing.id }, data: rentalData });
         result.updated++;
-        // Déclenche les séquences sur les transitions de statut
         if (prevStatus === 'booked' && status === 'active') {
           void scheduleSequencesForRental(db, existing.id, 'rental.car_checked_in').catch(console.error);
         } else if (prevStatus === 'active' && status === 'completed') {
@@ -179,7 +190,6 @@ export async function syncAccountRentals(
           data: { ...rentalData, getaroundId: String(r.id) },
         });
         result.created++;
-        // Déclenche les séquences pour une nouvelle location réservée
         if (status === 'booked') {
           void scheduleSequencesForRental(db, created.id, 'rental.booked').catch(console.error);
         }

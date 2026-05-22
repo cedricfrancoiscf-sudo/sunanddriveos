@@ -27,7 +27,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const [rentals, blockings, vehicles] = await Promise.all([
       db.rental.findMany({
         where: { startAt: { lte: to }, endAt: { gte: from }, status: { in: ['booked', 'active'] } },
-        select: { id: true, vehicleId: true, driverName: true, startAt: true, endAt: true, status: true },
+        select: {
+          id: true, vehicleId: true, driverName: true, startAt: true, endAt: true, status: true,
+          _count: { select: { carSeatRequests: true, accessoryReservations: true } },
+        },
       }),
       db.blocking.findMany({
         where: { startAt: { lte: to }, endAt: { gte: from } },
@@ -35,8 +38,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       }),
       db.vehicle.findMany({
         where: { isActive: true },
-        select: { id: true, make: true, model: true, licensePlate: true, photoUrl: true },
-        orderBy: { make: 'asc' },
+        select: { id: true, make: true, model: true, licensePlate: true, photoUrl: true, parkingZone: true },
+        orderBy: [{ parkingZone: 'asc' }, { make: 'asc' }],
       }),
     ]);
 

@@ -38,5 +38,6 @@ RUN mkdir -p uploads
 
 EXPOSE 4000
 
+# Init (migrate + seed) puis démarrage serveur
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["./node_modules/.bin/prisma migrate deploy --schema=./src/prisma/master/schema.prisma && node dist/server.js"]
+CMD ["node dist/init.js && node dist/server.js"]

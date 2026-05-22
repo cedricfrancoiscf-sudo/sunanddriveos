@@ -5,11 +5,11 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsup src/server.ts src/prisma/init.ts --format cjs",
+    "build": "tsup src/server.ts src/init.ts --format cjs",
     "start": "node dist/server.js",
     "migrate": "tsx src/prisma/migrate.ts",
     "seed": "tsx src/prisma/seed/master.ts",
-    "init": "tsx src/prisma/init.ts",
+    "init": "tsx src/init.ts",
     "generate:master": "prisma generate --schema=src/prisma/master/schema.prisma",
     "generate:tenant": "prisma generate --schema=src/prisma/tenant/schema.prisma",
     "generate": "npm run generate:master && npm run generate:tenant",

@@ -4,7 +4,7 @@
 
 import { execSync } from 'child_process';
 import bcrypt from 'bcryptjs';
-import { getMasterClient, getTenantClient } from './client';
+import { getMasterClient, getTenantClient } from './prisma/client';
 
 async function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -27,25 +27,19 @@ async function waitForDb(maxRetries = 20, delayMs = 3000): Promise<void> {
   }
 }
 
-function pushSchema(schema: string, dbUrl: string, label: string): boolean {
+function pushSchema(schema: string, dbUrl: string, label: string): void {
   try {
     console.log(`[Init] Push schema ${label}...`);
     execSync(
       `./node_modules/.bin/prisma db push --schema=${schema} --skip-generate --accept-data-loss`,
       {
         stdio: 'inherit',
-        env: {
-          ...process.env,
-          DATABASE_MASTER_URL: process.env.DATABASE_MASTER_URL,
-          DATABASE_TENANT_URL: dbUrl,
-        },
+        env: { ...process.env, DATABASE_MASTER_URL: process.env.DATABASE_MASTER_URL, DATABASE_TENANT_URL: dbUrl },
       },
     );
     console.log(`[Init] Schema ${label} — OK`);
-    return true;
   } catch (err) {
-    console.error(`[Init] WARN : push schema ${label} échoué (tables peut-être déjà à jour) :`, (err as Error).message?.split('\n')[0]);
-    return false;
+    console.error(`[Init] WARN push ${label} :`, (err as Error).message?.split('\n')[0]);
   }
 }
 
@@ -54,7 +48,7 @@ async function init(): Promise<void> {
   console.log('[Init]  SunanddriveOS — Initialisation au démarrage');
   console.log('[Init] ============================================');
 
-  // 1. Attendre PostgreSQL (bloquant — sans DB le reste ne sert à rien)
+  // 1. Attendre PostgreSQL
   await waitForDb();
 
   // 2. Push schema master
@@ -62,39 +56,36 @@ async function init(): Promise<void> {
 
   const master = getMasterClient();
 
-  // 3. Seed master — SuperAdmin
+  // 3. Seed SuperAdmin
   try {
-    const SUPER_ADMIN_EMAIL = 'admin@sunanddriveos.com';
-    const existingAdmin = await master.superAdmin.findUnique({ where: { email: SUPER_ADMIN_EMAIL } });
-    if (!existingAdmin) {
+    const SA_EMAIL = 'admin@sunanddriveos.com';
+    const existing = await master.superAdmin.findUnique({ where: { email: SA_EMAIL } });
+    if (!existing) {
       const passwordHash = await bcrypt.hash('ChangeMe2024!', 12);
-      await master.superAdmin.create({
-        data: { email: SUPER_ADMIN_EMAIL, passwordHash, name: 'Super Admin' },
-      });
-      console.log(`[Init] SuperAdmin créé : ${SUPER_ADMIN_EMAIL}`);
+      await master.superAdmin.create({ data: { email: SA_EMAIL, passwordHash, name: 'Super Admin' } });
+      console.log(`[Init] SuperAdmin créé : ${SA_EMAIL}`);
     } else {
-      console.log(`[Init] SuperAdmin OK : ${SUPER_ADMIN_EMAIL}`);
+      console.log(`[Init] SuperAdmin OK : ${SA_EMAIL}`);
     }
   } catch (err) {
-    console.error('[Init] WARN : seed SuperAdmin échoué :', (err as Error).message);
+    console.error('[Init] WARN SuperAdmin :', (err as Error).message);
   }
 
-  // 4. Seed master — Société Sun and Drive
+  // 4. Seed société Sun and Drive
   let companies: Array<{ slug: string; tenantDbUrl: string }> = [];
   try {
-    const COMPANY_SLUG = 'sun-and-drive';
-    let company = await master.company.findUnique({ where: { slug: COMPANY_SLUG } });
+    const SLUG = 'sun-and-drive';
+    let company = await master.company.findUnique({ where: { slug: SLUG } });
     if (!company) {
       const dbPassword = process.env.DB_PASSWORD ?? 'sunanddriveos';
-      const tenantDbUrl = `postgresql://sunanddriveos:${dbPassword}@db-master:5432/sunanddriveos_tenant_sun_and_drive`;
       company = await master.company.create({
         data: {
           name: 'Sun and Drive',
-          slug: COMPANY_SLUG,
+          slug: SLUG,
           primaryColor: '#01696e',
           secondaryColor: '#04292a',
           plan: 'pro',
-          tenantDbUrl,
+          tenantDbUrl: `postgresql://sunanddriveos:${dbPassword}@db-master:5432/sunanddriveos_tenant_sun_and_drive`,
           isActive: true,
         },
       });
@@ -102,39 +93,28 @@ async function init(): Promise<void> {
     } else {
       console.log('[Init] Société OK : Sun and Drive');
     }
-
-    companies = await master.company.findMany({
-      where: { isActive: true },
-      select: { slug: true, tenantDbUrl: true },
-    });
+    companies = await master.company.findMany({ where: { isActive: true }, select: { slug: true, tenantDbUrl: true } });
   } catch (err) {
-    console.error('[Init] WARN : seed société échoué :', (err as Error).message);
+    console.error('[Init] WARN société :', (err as Error).message);
   }
 
-  // 5. Push schema tenant + seed utilisateurs
+  // 5. Push schema tenant + seed utilisateur admin
   for (const c of companies) {
     pushSchema('./src/prisma/tenant/schema.prisma', c.tenantDbUrl, `tenant ${c.slug}`);
-
     try {
       const db = getTenantClient(c.tenantDbUrl);
       const existingUser = await db.user.findFirst({ where: { role: 'admin' } });
       if (!existingUser) {
         const passwordHash = await bcrypt.hash('Admin2024!', 12);
         await db.user.create({
-          data: {
-            email: 'admin@sunanddrive.fr',
-            passwordHash,
-            name: 'Administrateur',
-            role: 'admin',
-            isActive: true,
-          },
+          data: { email: 'admin@sunanddrive.fr', passwordHash, name: 'Administrateur', role: 'admin', isActive: true },
         });
-        console.log(`[Init] Utilisateur admin créé pour ${c.slug} : admin@sunanddrive.fr / Admin2024!`);
+        console.log(`[Init] Admin créé pour ${c.slug} : admin@sunanddrive.fr / Admin2024!`);
       } else {
         console.log(`[Init] Utilisateurs OK pour ${c.slug}`);
       }
     } catch (err) {
-      console.error(`[Init] WARN : seed utilisateurs ${c.slug} échoué :`, (err as Error).message);
+      console.error(`[Init] WARN seed ${c.slug} :`, (err as Error).message);
     }
   }
 
@@ -146,7 +126,6 @@ async function init(): Promise<void> {
 init()
   .then(() => process.exit(0))
   .catch((err: unknown) => {
-    // Seule waitForDb peut lever une erreur fatale ici (DB inaccessible)
-    console.error('[Init] ERREUR FATALE — DB inaccessible, impossible de démarrer :', err);
+    console.error('[Init] ERREUR FATALE (DB inaccessible) :', err);
     process.exit(1);
   });

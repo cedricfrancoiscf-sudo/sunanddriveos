@@ -86,6 +86,8 @@ function splitInto30DayWindows(start: Date, end: Date): Array<{ start: Date; end
 }
 
 // Récupère toutes les pages d'un endpoint paginé (retourne des éléments partiels {id} ou {rental_id})
+// Les params sont injectés directement dans l'URL (pas via axios params) pour éviter
+// l'encodage des ":" en "%3A" qui provoque des 422 sur l'API Getaround.
 async function fetchAllPages<T>(
   client: AxiosInstance,
   url: string,
@@ -94,10 +96,11 @@ async function fetchAllPages<T>(
   const all: T[] = [];
   let page = 1;
   while (true) {
-    const fullParams = { ...params, page: String(page), per_page: '200' };
-    const queryString = new URLSearchParams(fullParams).toString();
-    console.log(`[API] GET ${url}?${queryString}`);
-    const res = await client.get<T[]>(url, { params: fullParams });
+    const allParams = { ...params, page: String(page), per_page: '200' };
+    const qs = Object.entries(allParams).map(([k, v]) => `${k}=${v}`).join('&');
+    const fullUrl = `${url}?${qs}`;
+    console.log(`[API] GET ${fullUrl}`);
+    const res = await client.get<T[]>(fullUrl);
     if (!Array.isArray(res.data)) {
       console.error('[API] Réponse inattendue (non-array):', res.status, JSON.stringify(res.data).slice(0, 200));
       break;

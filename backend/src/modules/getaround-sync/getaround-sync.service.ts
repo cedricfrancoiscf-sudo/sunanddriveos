@@ -178,9 +178,10 @@ export async function syncAccountRentals(
       const grossRevenue = r.price / 100;
 
       // Vérifier le statut existant pour ne pas écraser un 'cancelled' manuel
+      // startMileage/endMileage : pour éviter des appels checkin/checkout redondants
       const existingRental = await db.rental.findUnique({
         where: { getaroundId: String(r.id) },
-        select: { id: true, status: true },
+        select: { id: true, status: true, startMileage: true, endMileage: true },
       });
       const prevStatus = existingRental?.status;
       const newStatus = prevStatus === 'cancelled' ? 'cancelled' : status;
@@ -221,6 +222,32 @@ export async function syncAccountRentals(
         } else if (prevStatus === 'active' && newStatus === 'completed') {
           void scheduleSequencesForRental(db, upserted.id, 'rental.car_checked_out').catch(console.error);
         }
+      }
+
+      // Kilométrage depuis checkin/checkout — l'API retourne des dixièmes de km
+      // On ne refetch que si la valeur n'est pas encore stockée
+      if (newStatus !== 'booked' && existingRental?.startMileage == null) {
+        try {
+          const checkin = await ga.getCheckin(r.id);
+          if (checkin.mileage != null) {
+            await db.rental.update({
+              where: { id: upserted.id },
+              data: { startMileage: Math.round(checkin.mileage / 10) },
+            });
+          }
+        } catch { /* 404 normal si checkin pas encore disponible */ }
+      }
+
+      if (newStatus === 'completed' && existingRental?.endMileage == null) {
+        try {
+          const checkout = await ga.getCheckout(r.id);
+          const mileageData: { endMileage?: number; kmDriven?: number } = {};
+          if (checkout.mileage != null) mileageData.endMileage = Math.round(checkout.mileage / 10);
+          if (checkout.distance_driven != null) mileageData.kmDriven = Math.round(checkout.distance_driven / 10);
+          if (Object.keys(mileageData).length > 0) {
+            await db.rental.update({ where: { id: upserted.id }, data: mileageData });
+          }
+        } catch { /* 404 normal si checkout pas encore disponible */ }
       }
     } catch (err) {
       result.errors.push(`Location ${r.id}: ${err instanceof Error ? err.message : 'erreur'}`);

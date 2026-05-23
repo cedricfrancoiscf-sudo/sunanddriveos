@@ -122,7 +122,7 @@ model Vehicle {
   getaroundId        String?           @unique
   getaroundAccountId String?
   getaroundAccount   GetaroundAccount? @relation(fields: [getaroundAccountId], references: [id])
-  licensePlate       String            @unique
+  licensePlate       String
   make               String
   model              String
   year               Int

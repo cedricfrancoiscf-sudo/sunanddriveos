@@ -68,6 +68,12 @@ export interface GetaroundMessage {
   content: string;
 }
 
+// Format ISO8601 attendu par l'API : sans millisecondes, avec offset +00:00
+// Exemple spec : 2018-08-08T00:00:00+00:00 (pas .000Z)
+function toApiDate(d: Date): string {
+  return d.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+}
+
 // Découpe une plage en tranches ≤ 30 jours (limite API Getaround)
 function splitInto30DayWindows(start: Date, end: Date): Array<{ start: Date; end: Date }> {
   const windows: Array<{ start: Date; end: Date }> = [];
@@ -138,8 +144,8 @@ export function createGetaroundClient(apiKey: string) {
       const seenIds = new Set<number>();
       for (const w of windows) {
         const chunk = await fetchAllPages<{ id: number }>(client, '/rentals.json', {
-          start_date: w.start.toISOString(),
-          end_date: w.end.toISOString(),
+          start_date: toApiDate(w.start),
+          end_date: toApiDate(w.end),
         });
         for (const { id } of chunk) seenIds.add(id);
       }

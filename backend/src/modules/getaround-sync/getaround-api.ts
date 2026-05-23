@@ -59,6 +59,15 @@ export interface GetaroundCheckout {
   occurred_at: string;
 }
 
+// GET /rentals/{rental_id}/messages/{id}.json
+export interface GetaroundMessage {
+  id: number;
+  rental_id: number;
+  sending_user_id: number;
+  sent_at: string;
+  content: string;
+}
+
 // Découpe une plage en tranches ≤ 30 jours (limite API Getaround)
 function splitInto30DayWindows(start: Date, end: Date): Array<{ start: Date; end: Date }> {
   const windows: Array<{ start: Date; end: Date }> = [];
@@ -161,6 +170,22 @@ export function createGetaroundClient(apiKey: string) {
 
     async getCheckout(rentalId: number): Promise<GetaroundCheckout> {
       const res = await client.get<GetaroundCheckout>(`/rentals/${rentalId}/checkout.json`);
+      return res.data;
+    },
+
+    // /rentals/{rental_id}/messages.json → [{id}] seulement, puis /messages/{id}.json pour chaque
+    async getMessages(rentalId: number): Promise<GetaroundMessage[]> {
+      const ids = await fetchAllPages<{ id: number }>(client, `/rentals/${rentalId}/messages.json`, {});
+      const messages: GetaroundMessage[] = [];
+      for (const { id } of ids) {
+        const res = await client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`);
+        messages.push(res.data);
+      }
+      return messages;
+    },
+
+    async getMessage(rentalId: number, id: number): Promise<GetaroundMessage> {
+      const res = await client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`);
       return res.data;
     },
   };

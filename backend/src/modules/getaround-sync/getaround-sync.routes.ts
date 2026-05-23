@@ -11,6 +11,7 @@ import {
   syncAccountVehicles,
   syncAllAccounts,
   syncAccountRentals,
+  syncAccountMessages,
 } from './getaround-sync.service';
 
 const router: Router = Router();
@@ -79,17 +80,28 @@ router.post('/sync-all', adminOnly, async (req: Request, res: Response, next: Ne
   } catch (err) { next(err); }
 });
 
-// POST /api/v1/getaround-sync/sync-rentals/:accountId — sync locations d'un compte
+// POST /api/v1/getaround-sync/sync-rentals/:accountId — sync locations puis messages
 router.post('/sync-rentals/:accountId', adminOnly, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { from, to } = req.query as { from?: string; to?: string };
     const db = getTenantClient(req.tenantDbUrl!);
-    const result = await syncAccountRentals(
+    const rentals = await syncAccountRentals(
       db,
       (req.params.accountId as string),
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
     );
+    // Sync messages automatiquement après les locations
+    const messages = await syncAccountMessages(db, (req.params.accountId as string));
+    res.json({ rentals, messages });
+  } catch (err) { next(err); }
+});
+
+// POST /api/v1/getaround-sync/sync-messages/:accountId — sync messages uniquement
+router.post('/sync-messages/:accountId', adminOnly, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const result = await syncAccountMessages(db, (req.params.accountId as string));
     res.json({ result });
   } catch (err) { next(err); }
 });

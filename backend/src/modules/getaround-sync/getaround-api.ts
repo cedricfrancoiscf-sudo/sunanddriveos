@@ -96,7 +96,7 @@ async function fetchAllPages<T>(
   const all: T[] = [];
   let page = 1;
   while (true) {
-    const allParams = { ...params, page: String(page), per_page: '200' };
+    const allParams = { ...params, page: String(page), per_page: '30' };
     const qs = Object.entries(allParams).map(([k, v]) => `${k}=${v}`).join('&');
     const fullUrl = `${url}?${qs}`;
     console.log(`[API] GET ${fullUrl}`);

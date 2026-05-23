@@ -62,12 +62,15 @@ router.delete('/accounts/:id', adminOnly, async (req: Request, res: Response, ne
   } catch (err) { next(err); }
 });
 
-// POST /api/v1/getaround-sync/sync/:accountId — sync un compte
+// POST /api/v1/getaround-sync/sync/:accountId — sync complet : véhicules + locations + messages
 router.post('/sync/:accountId', adminOnly, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
-    const result = await syncAccountVehicles(db, (req.params.accountId as string));
-    res.json({ result });
+    const accountId = req.params.accountId as string;
+    const vehicles = await syncAccountVehicles(db, accountId);
+    const rentals  = await syncAccountRentals(db, accountId);
+    const messages = await syncAccountMessages(db, accountId);
+    res.json({ vehicles, rentals, messages });
   } catch (err) { next(err); }
 });
 

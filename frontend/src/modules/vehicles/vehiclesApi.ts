@@ -66,10 +66,10 @@ export const getaroundSyncApi = {
     api.put(`/getaround-sync/accounts/${accountId}/key`, { apiKey }),
 
   syncAccount: (accountId: string) =>
-    api.post<{ result: { created: number; updated: number; errors: string[] } }>(`/getaround-sync/sync/${accountId}`).then((r) => r.data.result),
+    api.post<{ vehicles: { created: number; updated: number; errors: string[] } }>(`/getaround-sync/sync/${accountId}`).then((r) => r.data.vehicles),
 
   syncRentals: (accountId: string, from?: string, to?: string) =>
-    api.post<{ result: { created: number; updated: number } }>(`/getaround-sync/sync-rentals/${accountId}`, {}, { params: from ? { from, to } : {} }).then((r) => r.data.result),
+    api.post<{ rentals: { created: number; updated: number; errors: string[] } }>(`/getaround-sync/sync-rentals/${accountId}`, {}, { params: from ? { from, to } : {} }).then((r) => r.data.rentals),
 
   syncAll: () =>
     api.post<{ results: Array<{ accountName: string; created: number; updated: number }> }>('/getaround-sync/sync-all').then((r) => r.data.results),

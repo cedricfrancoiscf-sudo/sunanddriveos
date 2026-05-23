@@ -106,12 +106,21 @@ export async function syncAccountVehicles(
   return result;
 }
 
-export async function syncAllAccounts(db: PrismaClient): Promise<SyncResult[]> {
+export async function syncAllAccounts(
+  db: PrismaClient,
+): Promise<Array<{ vehicles: SyncResult; rentals: RentalSyncResult; messages: MessageSyncResult }>> {
   const accounts = await db.getaroundAccount.findMany({
     where: { isActive: true },
     select: { id: true },
   });
-  return Promise.all(accounts.map((a) => syncAccountVehicles(db, a.id)));
+  const results = [];
+  for (const a of accounts) {
+    const vehicles = await syncAccountVehicles(db, a.id);
+    const rentals  = await syncAccountRentals(db, a.id);
+    const messages = await syncAccountMessages(db, a.id);
+    results.push({ vehicles, rentals, messages });
+  }
+  return results;
 }
 
 // ─── 2. Locations ───────────────────────────────────────────────────────────
@@ -153,7 +162,7 @@ export async function syncAccountRentals(
       // Liaison au véhicule via car_id Getaround
       const vehicle = await db.vehicle.findUnique({
         where: { getaroundId: String(r.car_id) },
-        select: { id: true },
+        select: { id: true, currentMileage: true },
       });
 
       if (!vehicle) {
@@ -166,7 +175,8 @@ export async function syncAccountRentals(
         try {
           const user = await ga.getUser(r.user_id);
           userCache.set(r.user_id, `${user.first_name} ${user.last_name}`);
-        } catch {
+        } catch (err) {
+          console.error(`[Sync User] user_id=${r.user_id}`, err);
           userCache.set(r.user_id, `Conducteur ${r.user_id}`);
         }
       }
@@ -235,19 +245,29 @@ export async function syncAccountRentals(
               data: { startMileage: Math.round(checkin.mileage / 10) },
             });
           }
-        } catch { /* 404 normal si checkin pas encore disponible */ }
+        } catch (err) { console.error(`[Sync Checkin] rental=${r.id}`, err); }
       }
 
       if (newStatus === 'completed' && existingRental?.endMileage == null) {
         try {
           const checkout = await ga.getCheckout(r.id);
           const mileageData: { endMileage?: number; kmDriven?: number } = {};
-          if (checkout.mileage != null) mileageData.endMileage = Math.round(checkout.mileage / 10);
+          if (checkout.mileage != null) {
+            mileageData.endMileage = Math.round(checkout.mileage / 10);
+            // Mettre à jour le compteur du véhicule si la valeur progresse
+            const newOdometer = mileageData.endMileage;
+            if (newOdometer > vehicle.currentMileage) {
+              await db.vehicle.update({
+                where: { id: vehicle.id },
+                data: { currentMileage: newOdometer },
+              });
+            }
+          }
           if (checkout.distance_driven != null) mileageData.kmDriven = Math.round(checkout.distance_driven / 10);
           if (Object.keys(mileageData).length > 0) {
             await db.rental.update({ where: { id: upserted.id }, data: mileageData });
           }
-        } catch { /* 404 normal si checkout pas encore disponible */ }
+        } catch (err) { console.error(`[Sync Checkout] rental=${r.id}`, err); }
       }
     } catch (err) {
       result.errors.push(`Location ${r.id}: ${err instanceof Error ? err.message : 'erreur'}`);

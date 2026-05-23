@@ -92,12 +92,20 @@ function SyncModal({
 
   const syncMutation = useMutation({
     mutationFn: (id: string) => getaroundSyncApi.syncAccount(id),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['vehicles'] }); },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['vehicles'] });
+      void qc.invalidateQueries({ queryKey: ['rentals'] });
+      void qc.invalidateQueries({ queryKey: ['messages'] });
+    },
   });
 
   const syncAllMutation = useMutation({
     mutationFn: getaroundSyncApi.syncAll,
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['vehicles'] }); },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['vehicles'] });
+      void qc.invalidateQueries({ queryKey: ['rentals'] });
+      void qc.invalidateQueries({ queryKey: ['messages'] });
+    },
   });
 
   return (

@@ -78,8 +78,10 @@ function GetaroundSection(): React.JSX.Element {
   const syncRentalsMutation = useMutation({
     mutationFn: (id: string) => getaroundSyncApi.syncRentals(id),
     onSuccess: (result, id) => {
+      void qc.invalidateQueries({ queryKey: ['rentals'] });
+      void qc.invalidateQueries({ queryKey: ['messages'] });
       void qc.invalidateQueries({ queryKey: ['onboarding-progress'] });
-      setSyncMsg(prev => ({ ...prev, [`r-${id}`]: `Locations : +${result.created}, ${result.updated} mises à jour` }));
+      setSyncMsg(prev => ({ ...prev, [`r-${id}`]: `Locations : +${result?.created ?? 0}, ${result?.updated ?? 0} mises à jour` }));
       setTimeout(() => setSyncMsg(prev => { const n = { ...prev }; delete n[`r-${id}`]; return n; }), 4000);
     },
   });
@@ -88,6 +90,8 @@ function GetaroundSection(): React.JSX.Element {
     mutationFn: getaroundSyncApi.syncAll,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['vehicles'] });
+      void qc.invalidateQueries({ queryKey: ['rentals'] });
+      void qc.invalidateQueries({ queryKey: ['messages'] });
       void qc.invalidateQueries({ queryKey: ['getaround-accounts'] });
       void qc.invalidateQueries({ queryKey: ['onboarding-progress'] });
     },

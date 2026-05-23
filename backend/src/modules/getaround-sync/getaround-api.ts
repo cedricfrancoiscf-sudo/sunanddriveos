@@ -92,7 +92,11 @@ async function fetchAllPages<T>(
     const res = await client.get<T[]>(url, {
       params: { ...params, page: String(page), per_page: '200' },
     });
-    const items = Array.isArray(res.data) ? res.data : [];
+    if (!Array.isArray(res.data)) {
+      console.error('[API] Réponse inattendue (non-array):', res.status, JSON.stringify(res.data).slice(0, 200));
+      break;
+    }
+    const items = res.data;
     all.push(...items);
     const linkHeader = res.headers['link'] as string | undefined;
     if (!linkHeader?.includes('rel="next"')) break;

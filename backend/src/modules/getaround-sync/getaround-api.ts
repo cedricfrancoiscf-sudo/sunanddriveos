@@ -68,6 +68,11 @@ export interface GetaroundMessage {
   content: string;
 }
 
+// Format exact attendu par l'API Getaround : 2024-01-01T00:00:00Z (sans millisecondes)
+function toGetaroundDate(d: Date): string {
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 // Découpe une plage en tranches ≤ 30 jours (limite API Getaround)
 function splitInto30DayWindows(start: Date, end: Date): Array<{ start: Date; end: Date }> {
   const windows: Array<{ start: Date; end: Date }> = [];
@@ -89,9 +94,10 @@ async function fetchAllPages<T>(
   const all: T[] = [];
   let page = 1;
   while (true) {
-    const res = await client.get<T[]>(url, {
-      params: { ...params, page: String(page), per_page: '200' },
-    });
+    const fullParams = { ...params, page: String(page), per_page: '200' };
+    const queryString = new URLSearchParams(fullParams).toString();
+    console.log(`[API] GET ${url}?${queryString}`);
+    const res = await client.get<T[]>(url, { params: fullParams });
     if (!Array.isArray(res.data)) {
       console.error('[API] Réponse inattendue (non-array):', res.status, JSON.stringify(res.data).slice(0, 200));
       break;
@@ -142,8 +148,8 @@ export function createGetaroundClient(apiKey: string) {
       const seenIds = new Set<number>();
       for (const w of windows) {
         const chunk = await fetchAllPages<{ id: number }>(client, '/rentals.json', {
-          start_date: w.start.toISOString(),
-          end_date: w.end.toISOString(),
+          start_date: toGetaroundDate(w.start),
+          end_date: toGetaroundDate(w.end),
         });
         for (const { id } of chunk) seenIds.add(id);
       }

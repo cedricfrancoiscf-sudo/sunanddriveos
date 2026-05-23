@@ -51,6 +51,9 @@ export async function syncAccountVehicles(
 
     for (const car of cars) {
       try {
+        // Les voitures supprimées côté Getaround ne doivent pas entrer en base
+        if (car.state === 'deleted') continue;
+
         // Champs API : id, state, plate_number, brand, model, address
         // Pas de year, color, picture_url, mileage dans l'API Owner v1
         const commonData = {

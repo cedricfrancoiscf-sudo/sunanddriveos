@@ -101,6 +101,7 @@ async function fetchAllPages<T>(
     const fullUrl = `${url}?${qs}`;
     console.log(`[API] GET ${fullUrl}`);
     const res = await client.get<T[]>(fullUrl);
+    await new Promise(r => setTimeout(r, 300));
     if (!Array.isArray(res.data)) {
       console.error('[API] Réponse inattendue (non-array):', res.status, JSON.stringify(res.data).slice(0, 200));
       break;
@@ -158,9 +159,11 @@ export function createGetaroundClient(apiKey: string) {
       }
 
       // Récupérer le détail de chaque location
+      console.log('[Sync] IDs locations collectés:', seenIds.size);
       const rentals: GetaroundRental[] = [];
       for (const id of seenIds) {
         const res = await client.get<GetaroundRental>(`/rentals/${id}.json`);
+        await new Promise(r => setTimeout(r, 300));
         rentals.push(res.data);
       }
       return rentals;

@@ -146,11 +146,12 @@ export async function syncAccountRentals(
   const apiKey = decrypt(account.apiKeyHash);
   const ga = createGetaroundClient(apiKey);
 
-  // Par défaut : 2 ans en arrière → 1 an en avant
-  // start_date et end_date envoyés en string ISO8601 via .toISOString() — pas d'erreur 422
+  // Par défaut : 2 ans en arrière → 3 mois en avant
   // getRentals découpe automatiquement en fenêtres ≤ 30 jours
   const startDate = from ?? new Date(Date.now() - 2 * 365 * 86_400_000);
-  const endDate = to ?? new Date(Date.now() + 365 * 86_400_000);
+  const defaultEnd = new Date();
+  defaultEnd.setMonth(defaultEnd.getMonth() + 3);
+  const endDate = to ?? defaultEnd;
 
   const rentals = await ga.getRentals(startDate, endDate);
 
@@ -220,6 +221,7 @@ export async function syncAccountRentals(
         select: { id: true },
       });
 
+      console.log('[Sync] Location sauvegardée:', r.id);
       if (!existingRental) {
         result.created++;
         if (status === 'booked') {

@@ -162,9 +162,15 @@ export function createGetaroundClient(apiKey: string) {
       console.log('[Sync] IDs locations collectés:', seenIds.size);
       const rentals: GetaroundRental[] = [];
       for (const id of seenIds) {
-        const res = await client.get<GetaroundRental>(`/rentals/${id}.json`);
-        await new Promise(r => setTimeout(r, 300));
-        rentals.push(res.data);
+        try {
+          console.log('[Sync] Appel détail location:', id);
+          const res = await client.get<GetaroundRental>(`/rentals/${id}.json`);
+          await new Promise(r => setTimeout(r, 300));
+          rentals.push(res.data);
+          console.log('[Sync] Location récupérée:', id);
+        } catch (err) {
+          console.error('[Sync] Erreur détail location', id, err);
+        }
       }
       return rentals;
     },

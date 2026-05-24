@@ -146,9 +146,9 @@ export async function syncAccountRentals(
   const apiKey = decrypt(account.apiKeyHash);
   const ga = createGetaroundClient(apiKey);
 
-  // Par défaut : 2 ans en arrière → 3 mois en avant
+  // Par défaut : 6 mois en arrière → 3 mois en avant (remettre 2 ans quand la sync est stable)
   // getRentals découpe automatiquement en fenêtres ≤ 30 jours
-  const startDate = from ?? new Date(Date.now() - 2 * 365 * 86_400_000);
+  const startDate = from ?? new Date(Date.now() - 180 * 86_400_000);
   const defaultEnd = new Date();
   defaultEnd.setMonth(defaultEnd.getMonth() + 3);
   const endDate = to ?? defaultEnd;

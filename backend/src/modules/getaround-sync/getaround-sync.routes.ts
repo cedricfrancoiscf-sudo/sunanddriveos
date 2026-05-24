@@ -64,6 +64,8 @@ router.delete('/accounts/:id', adminOnly, async (req: Request, res: Response, ne
 
 // POST /api/v1/getaround-sync/sync/:accountId — sync complet : véhicules + locations + messages
 router.post('/sync/:accountId', adminOnly, async (req: Request, res: Response, next: NextFunction) => {
+  req.setTimeout(0);
+  res.setTimeout(0);
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const accountId = req.params.accountId as string;
@@ -76,6 +78,8 @@ router.post('/sync/:accountId', adminOnly, async (req: Request, res: Response, n
 
 // POST /api/v1/getaround-sync/sync-all — sync tous les comptes actifs (véhicules)
 router.post('/sync-all', adminOnly, async (req: Request, res: Response, next: NextFunction) => {
+  req.setTimeout(0);
+  res.setTimeout(0);
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const results = await syncAllAccounts(db);
@@ -85,6 +89,8 @@ router.post('/sync-all', adminOnly, async (req: Request, res: Response, next: Ne
 
 // POST /api/v1/getaround-sync/sync-rentals/:accountId — sync locations puis messages
 router.post('/sync-rentals/:accountId', adminOnly, async (req: Request, res: Response, next: NextFunction) => {
+  req.setTimeout(0);
+  res.setTimeout(0);
   try {
     const { from, to } = req.query as { from?: string; to?: string };
     const db = getTenantClient(req.tenantDbUrl!);

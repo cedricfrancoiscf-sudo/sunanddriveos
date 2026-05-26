@@ -35,6 +35,9 @@ import scoringRoutes from './modules/scoring/scoring.routes';
 import thirdPartyOwnersRoutes from './modules/third-party-owners/third-party-owners.routes';
 import superAdminRoutes from './modules/tenants/tenants.routes';
 import onboardingRoutes from './modules/onboarding/onboarding.routes';
+import vehicleCarkeepersRoutes from './modules/vehicles/vehicle-carkeepers.routes';
+import renterProfileRoutes from './modules/rentals/renter-profile.routes';
+import renterBlacklistRoutes from './modules/blocking/renter-blacklist.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -74,6 +77,9 @@ export function createApp(): Express {
   // Routes auth — login, me, superadmin
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/vehicles', vehiclesRoutes);
+  app.use('/api/v1/vehicles/:vehicleId/carkeepers', vehicleCarkeepersRoutes);
+  // renter-profile AVANT rentals pour éviter conflit /:id
+  app.use('/api/v1/rentals', renterProfileRoutes);
   app.use('/api/v1/rentals', rentalsRoutes);
   app.use('/api/v1/messages', messagesRoutes);
   app.use('/api/v1/ai', aiRoutes);
@@ -98,6 +104,7 @@ export function createApp(): Express {
   app.use('/api/v1/third-party-owners', thirdPartyOwnersRoutes);
   app.use('/api/v1/superadmin', superAdminRoutes);
   app.use('/api/v1/onboarding', onboardingRoutes);
+  app.use('/api/v1/blacklist', renterBlacklistRoutes);
   // Route publique iCal — pas de JWT, compatible abonnement calendriers
   app.use('/ical', icalRoutes);
 

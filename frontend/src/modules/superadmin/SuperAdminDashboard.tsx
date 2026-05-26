@@ -57,8 +57,13 @@ const PLAN_CONFIG: Record<Plan, { label: string; bg: string; text: string }> = {
 
 const PLANS: Plan[] = ['starter', 'pro', 'enterprise'];
 
+function slugify(str: string): string {
+  return str.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 const EMPTY_COMPANY_FORM = {
   name: '', slug: '', tenantDbUrl: '', plan: 'starter' as Plan, trialDays: 14, primaryColor: '#01696e',
+  siret: '', managerName: '', phone: '', contactEmail: '', address: '', city: '', postalCode: '',
 };
 
 const EMPTY_ADMIN_FORM = { name: '', email: '', password: '' };
@@ -429,8 +434,8 @@ function DashboardContent(): React.JSX.Element {
       {/* Modal création société */}
       {showCompanyForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-gray-800 px-6 py-4">
+          <div className="w-full max-w-xl rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-800 px-6 py-4 sticky top-0 bg-gray-900 z-10">
               <h3 className="font-semibold text-white">Nouvelle société</h3>
               <button type="button" onClick={() => setShowCompanyForm(false)} className="text-gray-500 hover:text-gray-300">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -439,43 +444,115 @@ function DashboardContent(): React.JSX.Element {
               </button>
             </div>
             <form onSubmit={e => { e.preventDefault(); createCompany.mutate(companyForm); }}
-              className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Nom *</label>
-                  <input required value={companyForm.name}
-                    onChange={e => setCompanyForm(f => ({ ...f, name: e.target.value }))}
-                    className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Slug * (URL-safe)</label>
-                  <input required value={companyForm.slug} placeholder="ex: sun-and-drive"
-                    onChange={e => setCompanyForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
-                    className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-mono text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
-                </div>
-              </div>
+              className="p-6 space-y-5">
+
+              {/* Infos générales */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">URL base de données tenant *</label>
-                <input required type="url" value={companyForm.tenantDbUrl} placeholder="postgresql://user:pass@host:5432/dbname"
-                  onChange={e => setCompanyForm(f => ({ ...f, tenantDbUrl: e.target.value }))}
-                  className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-mono text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Plan</label>
-                  <select value={companyForm.plan}
-                    onChange={e => setCompanyForm(f => ({ ...f, plan: e.target.value as Plan }))}
-                    className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40">
-                    {PLANS.map(p => <option key={p} value={p}>{PLAN_CONFIG[p].label}</option>)}
-                  </select>
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Informations générales</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Nom de la société *</label>
+                    <input required value={companyForm.name}
+                      onChange={e => setCompanyForm(f => ({ ...f, name: e.target.value, slug: slugify(e.target.value) }))}
+                      className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Plan</label>
+                      <select value={companyForm.plan}
+                        onChange={e => setCompanyForm(f => ({ ...f, plan: e.target.value as Plan }))}
+                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40">
+                        {PLANS.map(p => <option key={p} value={p}>{PLAN_CONFIG[p].label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Durée essai (jours)</label>
+                      <input type="number" min={0} max={365} value={companyForm.trialDays}
+                        onChange={e => setCompanyForm(f => ({ ...f, trialDays: Number(e.target.value) }))}
+                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Durée essai (jours)</label>
-                  <input type="number" min={0} max={365} value={companyForm.trialDays}
-                    onChange={e => setCompanyForm(f => ({ ...f, trialDays: Number(e.target.value) }))}
-                    className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+              </div>
+
+              {/* Infos pro */}
+              <div>
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Informations professionnelles</p>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">SIRET</label>
+                      <input value={companyForm.siret}
+                        onChange={e => setCompanyForm(f => ({ ...f, siret: e.target.value }))}
+                        placeholder="12345678901234"
+                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Nom du gérant</label>
+                      <input value={companyForm.managerName}
+                        onChange={e => setCompanyForm(f => ({ ...f, managerName: e.target.value }))}
+                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Téléphone</label>
+                      <input type="tel" value={companyForm.phone}
+                        onChange={e => setCompanyForm(f => ({ ...f, phone: e.target.value }))}
+                        placeholder="+33 6 00 00 00 00"
+                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Email de contact</label>
+                      <input type="email" value={companyForm.contactEmail}
+                        onChange={e => setCompanyForm(f => ({ ...f, contactEmail: e.target.value }))}
+                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Adresse</label>
+                    <input value={companyForm.address}
+                      onChange={e => setCompanyForm(f => ({ ...f, address: e.target.value }))}
+                      className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                      <label className="block text-xs text-gray-400 mb-1">Ville</label>
+                      <input value={companyForm.city}
+                        onChange={e => setCompanyForm(f => ({ ...f, city: e.target.value }))}
+                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Code postal</label>
+                      <input value={companyForm.postalCode}
+                        onChange={e => setCompanyForm(f => ({ ...f, postalCode: e.target.value }))}
+                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* Config technique (avancé) */}
+              <details className="group">
+                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-500 select-none">
+                  Configuration technique ▸
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Slug (auto-généré)</label>
+                    <input required value={companyForm.slug} placeholder="ex: sun-and-drive"
+                      onChange={e => setCompanyForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
+                      className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-mono text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">URL base de données tenant *</label>
+                    <input required type="url" value={companyForm.tenantDbUrl} placeholder="postgresql://user:pass@host:5432/dbname"
+                      onChange={e => setCompanyForm(f => ({ ...f, tenantDbUrl: e.target.value }))}
+                      className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-mono text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+                  </div>
+                </div>
+              </details>
+
               {createCompany.isError && (
                 <p className="text-sm text-red-400">Erreur : slug déjà utilisé ou données invalides</p>
               )}

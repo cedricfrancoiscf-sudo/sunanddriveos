@@ -2,6 +2,7 @@ import type { PrismaClient, RentalStatus, EvaluationStatus } from '../../generat
 
 export type RentalFilters = {
   vehicleId?: string;
+  vehicleIds?: string[];
   status?: RentalStatus;
   from?: Date;
   to?: Date;
@@ -25,10 +26,11 @@ export type RentalUpdateInput = {
 };
 
 export async function listRentals(db: PrismaClient, filters: RentalFilters = {}) {
-  const { vehicleId, status, from, to, page = 1, limit = 50 } = filters;
+  const { vehicleId, vehicleIds, status, from, to, page = 1, limit = 50 } = filters;
 
   const where = {
     ...(vehicleId ? { vehicleId } : {}),
+    ...(vehicleIds ? { vehicleId: { in: vehicleIds } } : {}),
     ...(status ? { status } : {}),
     ...(from || to
       ? {

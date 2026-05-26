@@ -3,8 +3,10 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { vehiclesApi } from './vehiclesApi';
+import { vehiclesApi, vehicleCarkeepersApi } from './vehiclesApi';
 import { blockingsApi, BLOCKING_TYPE_LABELS, BLOCKING_TYPE_COLORS } from './blockingsApi';
+import { useAuth } from '../../hooks/useAuth';
+import { api } from '../../utils/api';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
   return (
@@ -56,6 +58,8 @@ export default function VehicleDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.isSuperAdmin;
 
   const [blockingModal, setBlockingModal] = useState(false);
   const [blockingForm, setBlockingForm] = useState<BlockingFormData>(emptyForm);
@@ -71,6 +75,32 @@ export default function VehicleDetailPage(): React.JSX.Element {
     queryKey: ['blockings', id],
     queryFn: () => blockingsApi.list(id!),
     enabled: Boolean(id),
+  });
+
+  const { data: carkeepers = [], refetch: refetchCarkeepers } = useQuery({
+    queryKey: ['vehicle-carkeepers', id],
+    queryFn: () => vehicleCarkeepersApi.list(id!),
+    enabled: Boolean(id) && isAdmin,
+  });
+
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get<{ users: Array<{ id: string; name: string; email: string; role: string }> }>('/users').then(r => r.data.users),
+    enabled: isAdmin,
+  });
+
+  const carekeeperUsers = allUsers.filter(u => u.role === 'carkeeper');
+  const assignedIds = new Set(carkeepers.map(c => c.userId));
+  const unassignedCarkeepers = carekeeperUsers.filter(u => !assignedIds.has(u.id));
+
+  const assignCarkeeper = useMutation({
+    mutationFn: (userId: string) => vehicleCarkeepersApi.assign(id!, userId),
+    onSuccess: () => { void refetchCarkeepers(); },
+  });
+
+  const removeCarkeeper = useMutation({
+    mutationFn: (userId: string) => vehicleCarkeepersApi.remove(id!, userId),
+    onSuccess: () => { void refetchCarkeepers(); },
   });
 
   const deleteMutation = useMutation({
@@ -373,6 +403,49 @@ export default function VehicleDetailPage(): React.JSX.Element {
                 ))}
               </div>
             </Section>
+          )}
+
+          {/* Carkeepers assignés — admin only */}
+          {isAdmin && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Carkeepers assignés</h2>
+              {carkeepers.length === 0 ? (
+                <p className="text-sm text-gray-400">Aucun carkeeper assigné</p>
+              ) : (
+                <div className="space-y-2 mb-3">
+                  {carkeepers.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="font-medium text-gray-900">{c.user.name}</p>
+                        <p className="text-xs text-gray-400">{c.user.email}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { if (confirm(`Retirer ${c.user.name} ?`)) removeCarkeeper.mutate(c.userId); }}
+                        className="rounded p-1 text-gray-400 hover:text-red-500"
+                        title="Retirer"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {unassignedCarkeepers.length > 0 && (
+                <select
+                  defaultValue=""
+                  onChange={(e) => { if (e.target.value) { assignCarkeeper.mutate(e.target.value); e.target.value = ''; } }}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30"
+                >
+                  <option value="" disabled>Assigner un carkeeper…</option>
+                  {unassignedCarkeepers.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
           )}
         </div>
       </div>

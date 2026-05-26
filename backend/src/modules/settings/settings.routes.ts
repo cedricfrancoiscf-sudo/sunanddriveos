@@ -1,9 +1,22 @@
+import path from 'path';
+import fs from 'fs';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import multer from 'multer';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
+
+const LOGO_DIR = process.env.UPLOAD_PATH ? path.join(process.env.UPLOAD_PATH, 'logos') : path.join(process.cwd(), 'uploads', 'logos');
+const logoUpload = multer({
+  dest: LOGO_DIR,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (['image/png', 'image/jpeg', 'image/svg+xml'].includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Format non supporté (PNG, JPG, SVG uniquement)'));
+  },
+});
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -46,6 +59,32 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
     }
     res.json({ settings });
   } catch (err) { next(err); }
+});
+
+// POST /api/v1/settings/logo — upload logo (multipart/form-data)
+router.post('/logo', requireRole('admin'), (req: Request, res: Response, next: NextFunction) => {
+  fs.mkdirSync(LOGO_DIR, { recursive: true });
+  logoUpload.single('logo')(req, res, async (err) => {
+    if (err) { res.status(400).json({ error: err.message }); return; }
+    if (!req.file) { res.status(400).json({ error: 'Fichier manquant' }); return; }
+    try {
+      const ext = req.file.mimetype === 'image/svg+xml' ? 'svg' : req.file.mimetype === 'image/png' ? 'png' : 'jpg';
+      const filename = `${randomUUID()}.${ext}`;
+      const destPath = path.join(LOGO_DIR, filename);
+      fs.renameSync(req.file.path, destPath);
+      const baseUrl = (process.env.BACKEND_URL ?? 'http://localhost:4000/api/v1').replace('/api/v1', '');
+      const logoUrl = `${baseUrl}/uploads/logos/${filename}`;
+
+      const db = getTenantClient(req.tenantDbUrl!);
+      let settings = await db.companySettings.findFirst();
+      if (settings) {
+        settings = await db.companySettings.update({ where: { id: settings.id }, data: { logoUrl } });
+      } else {
+        settings = await db.companySettings.create({ data: { logoUrl } });
+      }
+      res.json({ logoUrl });
+    } catch (uploadErr) { next(uploadErr); }
+  });
 });
 
 // GET /api/v1/settings/ical-info — retourne le token et l'URL iCal

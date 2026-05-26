@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
-import { analyzeMessage, suggestReply, suggestCarSeatReply } from './ai.service';
+import { analyzeMessage, suggestReply, suggestCarSeatReply, forecastCashflow, detectMileageAnomalies, getPricingSuggestions } from './ai.service';
 import { createOutboundMessage } from '../messages/messages.service';
 
 const router: Router = Router();
@@ -159,6 +159,33 @@ router.post('/suggest-car-seat', async (req: Request, res: Response, next: NextF
       matchedSeat,
       requiresWeight: body.data.childWeightKg === undefined,
     });
+  } catch (err) { next(err); }
+});
+
+// GET /api/v1/ai/cashflow-forecast — prévision trésorerie 30 jours
+router.get('/cashflow-forecast', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const forecast = await forecastCashflow(db);
+    res.json({ forecast });
+  } catch (err) { next(err); }
+});
+
+// GET /api/v1/ai/mileage-anomalies — détection anomalies kilométriques
+router.get('/mileage-anomalies', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const anomalies = await detectMileageAnomalies(db);
+    res.json({ anomalies });
+  } catch (err) { next(err); }
+});
+
+// GET /api/v1/ai/pricing-suggestions — suggestions tarifaires IA
+router.get('/pricing-suggestions', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const suggestions = await getPricingSuggestions(db);
+    res.json({ suggestions });
   } catch (err) { next(err); }
 });
 

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../utils/api';
 import { getaroundSyncApi, type GetaroundAccount } from '../vehicles/vehiclesApi';
@@ -27,6 +28,43 @@ function fmtRelative(iso: string | null): string {
   if (h < 24) return `il y a ${h}h`;
   return `il y a ${Math.floor(h / 24)}j`;
 }
+
+// ─── 2.9 — Champ mot de passe avec bouton œil ────────────────────────────────
+
+function ApiKeyInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }): React.JSX.Element {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative flex items-center">
+      <input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 pr-9 text-sm font-mono outline-none focus:border-[#01696e]"
+        placeholder={placeholder ?? '••••••••••••••••'}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setShow(s => !s)}
+        className="absolute right-2 text-gray-400 hover:text-gray-700"
+        title={show ? 'Masquer' : 'Afficher'}
+      >
+        {show ? (
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+          </svg>
+        ) : (
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+        )}
+      </button>
+    </div>
+  );
+}
+
+// ─── 1. Comptes Getaround ─────────────────────────────────────────────────────
 
 function GetaroundSection(): React.JSX.Element {
   const qc = useQueryClient();
@@ -100,7 +138,7 @@ function GetaroundSection(): React.JSX.Element {
   const isSyncing = syncVehiclesMutation.isPending || syncRentalsMutation.isPending || syncAllMutation.isPending;
 
   return (
-    <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+    <section id="getaround" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Comptes Getaround</h2>
@@ -136,10 +174,7 @@ function GetaroundSection(): React.JSX.Element {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Clé API Getaround *</label>
-              <input required type="password" value={form.apiKey}
-                onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-mono outline-none focus:border-[#01696e]"
-                placeholder="••••••••••••••••" />
+              <ApiKeyInput value={form.apiKey} onChange={v => setForm(f => ({ ...f, apiKey: v }))} />
             </div>
           </div>
           {createMutation.isError && (
@@ -212,7 +247,7 @@ function GetaroundSection(): React.JSX.Element {
                     </svg>
                   </button>
                   <button type="button"
-                    onClick={() => { if (confirm(`Supprimer le compte "${acc.name}" ? Cette action déconnectera les véhicules associés.`)) deleteMutation.mutate(acc.id); }}
+                    onClick={() => { if (confirm(`Supprimer le compte "${acc.name}" ?`)) deleteMutation.mutate(acc.id); }}
                     className="rounded-lg border border-gray-200 bg-white p-1.5 text-gray-300 hover:text-red-500">
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -223,9 +258,9 @@ function GetaroundSection(): React.JSX.Element {
 
               {editKeyId === acc.id && (
                 <div className="mt-3 flex items-center gap-2 border-t border-gray-200 pt-3">
-                  <input type="password" value={newKey} onChange={e => setNewKey(e.target.value)}
-                    className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-mono outline-none focus:border-[#01696e]"
-                    placeholder="Nouvelle clé API..." />
+                  <div className="flex-1">
+                    <ApiKeyInput value={newKey} onChange={setNewKey} placeholder="Nouvelle clé API..." />
+                  </div>
                   <button type="button"
                     disabled={!newKey || updateKeyMutation.isPending}
                     onClick={() => updateKeyMutation.mutate({ id: acc.id, key: newKey })}
@@ -247,10 +282,12 @@ function GetaroundSection(): React.JSX.Element {
   );
 }
 
+// ─── AI Modes + Ton ──────────────────────────────────────────────────────────
+
 const AI_MODES = [
   { value: 'auto', label: 'Automatique', desc: 'Envoie la réponse IA directement sans validation' },
   { value: 'approval', label: 'Approbation', desc: 'Génère un brouillon à approuver avant envoi' },
-  { value: 'manual', label: 'Manuel', desc: 'L\'IA n\'intervient pas sur ce type de message' },
+  { value: 'manual', label: 'Manuel', desc: "L'IA n'intervient pas sur ce type de message" },
 ];
 
 function ModeSelector({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }): React.JSX.Element {
@@ -270,8 +307,11 @@ function ModeSelector({ label, value, onChange }: { label: string; value: string
   );
 }
 
+// ─── Page principale ──────────────────────────────────────────────────────────
+
 export default function SettingsPage(): React.JSX.Element {
   const qc = useQueryClient();
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -290,6 +330,8 @@ export default function SettingsPage(): React.JSX.Element {
   });
 
   const [saved, setSaved] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   useEffect(() => {
     if (settings) {
@@ -303,6 +345,7 @@ export default function SettingsPage(): React.JSX.Element {
         aiModeGeneral: settings.aiModeGeneral ?? 'approval',
         aiTone: settings.aiTone ?? 'vouvoiement',
       });
+      if (settings.logoUrl) setLogoPreview(settings.logoUrl);
     }
   }, [settings]);
 
@@ -324,6 +367,25 @@ export default function SettingsPage(): React.JSX.Element {
     },
   });
 
+  async function handleLogoUpload(file: File): Promise<void> {
+    setLogoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('logo', file);
+      const res = await api.post<{ logoUrl: string }>('/settings/logo', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const url = res.data.logoUrl;
+      setLogoPreview(url);
+      setForm(f => ({ ...f, logoUrl: url }));
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+    } catch {
+      alert('Erreur lors de l\'upload du logo.');
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
   function handleSubmit(e: React.FormEvent): void {
     e.preventDefault();
     saveMutation.mutate(form);
@@ -336,115 +398,184 @@ export default function SettingsPage(): React.JSX.Element {
         <p className="text-sm text-gray-500">Configuration de votre espace de gestion</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="space-y-6">
 
-        {/* Apparence */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-          <h2 className="text-sm font-semibold text-gray-900">Apparence</h2>
+        {/* 1. Comptes Getaround */}
+        <GetaroundSection />
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            {[
-              { key: 'primaryColor', label: 'Couleur principale' },
-              { key: 'secondaryColor', label: 'Couleur secondaire' },
-              { key: 'accentColor', label: 'Couleur d\'accent' },
-            ].map(({ key, label }) => (
-              <div key={key}>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">{label}</label>
-                <div className="flex items-center gap-2">
-                  <input type="color" value={(form as Record<string, string>)[key]}
-                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="h-9 w-12 cursor-pointer rounded border border-gray-200 p-0.5" />
-                  <input type="text" value={(form as Record<string, string>)[key]}
-                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="flex-1 rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs outline-none focus:border-[#01696e]"
-                    pattern="^#[0-9a-fA-F]{6}$" />
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* 2. Informations société */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-gray-900">Informations société</h2>
+          <p className="mt-0.5 text-xs text-gray-400">Raison sociale, adresse et contacts de votre entreprise</p>
+          <p className="mt-3 text-xs text-gray-400 italic">Ces informations sont gérées par le super admin depuis le tableau de bord SuperAdmin.</p>
+        </section>
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">URL du logo</label>
-            <input type="url" value={form.logoUrl}
-              onChange={e => setForm(f => ({ ...f, logoUrl: e.target.value }))}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
-              placeholder="https://example.com/logo.png" />
-          </div>
-
-          {form.logoUrl && (
-            <div className="flex items-center gap-3">
-              <img src={form.logoUrl} alt="Logo" className="h-12 w-12 rounded-lg object-contain border border-gray-200" />
-              <p className="text-xs text-gray-400">Aperçu du logo</p>
+        {/* 3. Utilisateurs & rôles */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Utilisateurs & rôles</h2>
+              <p className="mt-0.5 text-xs text-gray-400">Invitez des collaborateurs et gérez leurs accès</p>
             </div>
-          )}
-        </section>
-
-        {/* IA — Modes */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Intelligence artificielle</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Définissez comment l'IA gère chaque type de message</p>
-          </div>
-
-          <ModeSelector label="Demandes de siège auto"
-            value={form.aiModeCarSeat}
-            onChange={v => setForm(f => ({ ...f, aiModeCarSeat: v }))} />
-
-          <ModeSelector label="Signalements d'incidents"
-            value={form.aiModeIncident}
-            onChange={v => setForm(f => ({ ...f, aiModeIncident: v }))} />
-
-          <ModeSelector label="Messages généraux"
-            value={form.aiModeGeneral}
-            onChange={v => setForm(f => ({ ...f, aiModeGeneral: v }))} />
-        </section>
-
-        {/* IA — Ton */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">Ton des réponses IA</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { value: 'vouvoiement', label: 'Vouvoiement', desc: 'Ton formel et professionnel' },
-              { value: 'tutoiement', label: 'Tutoiement', desc: 'Ton plus proche et détendu' },
-            ].map(t => (
-              <button key={t.value} type="button" onClick={() => setForm(f => ({ ...f, aiTone: t.value }))}
-                className={`rounded-xl border p-4 text-left transition ${form.aiTone === t.value ? 'border-[#01696e] bg-[#01696e]/5' : 'border-gray-200 hover:border-gray-300'}`}>
-                <p className={`text-sm font-semibold ${form.aiTone === t.value ? 'text-[#01696e]' : 'text-gray-800'}`}>{t.label}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{t.desc}</p>
-              </button>
-            ))}
+            <Link
+              to="/users"
+              className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+            >
+              Gérer les utilisateurs
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
           </div>
         </section>
 
-        {/* Actions */}
-        <div className="flex items-center gap-3">
-          <button type="submit" disabled={saveMutation.isPending}
-            className="rounded-xl px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-60 transition"
-            style={{ backgroundColor: '#01696e' }}>
-            {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
-          </button>
-          {saved && <p className="text-sm font-medium text-green-600">Paramètres sauvegardés ✓</p>}
-          {saveMutation.isError && <p className="text-sm text-red-600">Erreur lors de la sauvegarde</p>}
-        </div>
-      </form>
-
-      {/* Comptes Getaround */}
-      <GetaroundSection />
-
-      {/* Affichage TV */}
-      <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Tableau de bord TV</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Affichage plein écran pour moniteur ou TV de bureau</p>
+        {/* 4. Notifications */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-gray-900">Notifications</h2>
+          <p className="mt-0.5 text-xs text-gray-400">Alertes et rappels automatiques</p>
+          <div className="mt-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Tableau de bord TV</p>
+              <p className="text-xs text-gray-400 mt-0.5">Affichage plein écran pour moniteur ou TV de bureau</p>
+            </div>
+            <a href="/tv" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+              Ouvrir le TV
+            </a>
           </div>
-          <a href="/tv" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-            Ouvrir le TV
-          </a>
-        </div>
-      </section>
+        </section>
+
+        {/* 5. Messagerie automatique */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Messagerie automatique</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Définissez comment l'IA gère chaque type de message</p>
+            </div>
+
+            <ModeSelector label="Demandes de siège auto"
+              value={form.aiModeCarSeat}
+              onChange={v => setForm(f => ({ ...f, aiModeCarSeat: v }))} />
+
+            <ModeSelector label="Signalements d'incidents"
+              value={form.aiModeIncident}
+              onChange={v => setForm(f => ({ ...f, aiModeIncident: v }))} />
+
+            <ModeSelector label="Messages généraux"
+              value={form.aiModeGeneral}
+              onChange={v => setForm(f => ({ ...f, aiModeGeneral: v }))} />
+
+            <div>
+              <p className="mb-2 text-xs font-semibold text-gray-700">Ton des réponses</p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { value: 'vouvoiement', label: 'Vouvoiement', desc: 'Ton formel et professionnel' },
+                  { value: 'tutoiement', label: 'Tutoiement', desc: 'Ton plus proche et détendu' },
+                ].map(t => (
+                  <button key={t.value} type="button" onClick={() => setForm(f => ({ ...f, aiTone: t.value }))}
+                    className={`rounded-xl border p-4 text-left transition ${form.aiTone === t.value ? 'border-[#01696e] bg-[#01696e]/5' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <p className={`text-sm font-semibold ${form.aiTone === t.value ? 'text-[#01696e]' : 'text-gray-800'}`}>{t.label}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{t.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* 6. Export & comptabilité */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Export & comptabilité</h2>
+                <p className="mt-0.5 text-xs text-gray-400">Exports CSV, rapports mensuels, relevés propriétaires</p>
+              </div>
+              <Link
+                to="/export"
+                className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+              >
+                Aller aux exports
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+          </section>
+
+          {/* 7. Apparence */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+            <h2 className="text-sm font-semibold text-gray-900">Apparence</h2>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              {[
+                { key: 'primaryColor', label: 'Couleur principale' },
+                { key: 'secondaryColor', label: 'Couleur secondaire' },
+                { key: 'accentColor', label: "Couleur d'accent" },
+              ].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600">{label}</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={(form as Record<string, string>)[key]}
+                      onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                      className="h-9 w-12 cursor-pointer rounded border border-gray-200 p-0.5" />
+                    <input type="text" value={(form as Record<string, string>)[key]}
+                      onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                      className="flex-1 rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs outline-none focus:border-[#01696e]"
+                      pattern="^#[0-9a-fA-F]{6}$" />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Upload logo */}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-gray-600">Logo</label>
+              <div className="flex items-center gap-3">
+                {logoPreview && (
+                  <img
+                    src={logoPreview}
+                    alt="Logo"
+                    className="h-20 rounded-lg border border-gray-200 object-contain p-1"
+                    style={{ maxHeight: 80 }}
+                  />
+                )}
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    disabled={logoUploading}
+                    className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    {logoUploading ? 'Upload en cours...' : 'Choisir un fichier'}
+                  </button>
+                  <p className="text-[11px] text-gray-400">PNG, JPG ou SVG — max 5 Mo</p>
+                </div>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml"
+                  className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) void handleLogoUpload(f); }}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Actions */}
+          <div className="flex items-center gap-3">
+            <button type="submit" disabled={saveMutation.isPending}
+              className="rounded-xl px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-60 transition"
+              style={{ backgroundColor: '#01696e' }}>
+              {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+            </button>
+            {saved && <p className="text-sm font-medium text-green-600">Paramètres sauvegardés ✓</p>}
+            {saveMutation.isError && <p className="text-sm text-red-600">Erreur lors de la sauvegarde</p>}
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

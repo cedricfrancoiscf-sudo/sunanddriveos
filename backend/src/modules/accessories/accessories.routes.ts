@@ -11,7 +11,12 @@ router.use(requireAuth, resolveTenant);
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
+    // Carkeeper : ne voit que les accessoires qui lui sont assignés
+    const where = req.auth?.role === 'carkeeper' && req.auth.userId
+      ? { carekeeperUserId: req.auth.userId }
+      : {};
     const accessories = await db.accessory.findMany({
+      where,
       include: {
         vehicles: {
           include: {
@@ -34,6 +39,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       name: z.string().min(1),
       description: z.string().optional(),
       quantity: z.number().int().min(1).default(1),
+      carekeeperUserId: z.string().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
     const db = getTenantClient(req.tenantDbUrl!);
@@ -49,6 +55,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       name: z.string().min(1).optional(),
       description: z.string().optional(),
       quantity: z.number().int().min(1).optional(),
+      carekeeperUserId: z.string().nullable().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
     const db = getTenantClient(req.tenantDbUrl!);

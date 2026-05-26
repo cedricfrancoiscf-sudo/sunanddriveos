@@ -2,6 +2,25 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { vehiclesApi, getaroundSyncApi, type Vehicle } from './vehiclesApi';
+import { useAuth } from '../../hooks/useAuth';
+import { api } from '../../utils/api';
+
+interface PricingSuggestion {
+  vehicleId: string;
+  licensePlate: string;
+  make: string;
+  model: string;
+  occupancyRate: number;
+  avgDailyRevenue: number;
+  suggestion: string;
+}
+
+type FleetViewMode = 'grid' | 'list';
+
+function getStoredViewMode(): FleetViewMode {
+  const stored = localStorage.getItem('fleet_view_mode');
+  return stored === 'list' ? 'list' : 'grid';
+}
 
 function HealthBadge({ score }: { score: number }): React.JSX.Element {
   const color =
@@ -15,7 +34,7 @@ function HealthBadge({ score }: { score: number }): React.JSX.Element {
   );
 }
 
-function VehicleCard({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
+function VehicleCard({ vehicle, hasSuggestion }: { vehicle: Vehicle; hasSuggestion?: boolean }): React.JSX.Element {
   const hasGetaround = Boolean(vehicle.getaroundId);
 
   return (
@@ -37,6 +56,11 @@ function VehicleCard({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0zM13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
             </svg>
           </div>
+        )}
+        {hasSuggestion && (
+          <span className="absolute left-2 top-2 rounded-full bg-orange-500 px-2 py-0.5 text-xs font-semibold text-white">
+            💡 IA
+          </span>
         )}
         {hasGetaround && (
           <span className="absolute right-2 top-2 rounded-full bg-[#01696e] px-2 py-0.5 text-xs font-medium text-white">
@@ -169,14 +193,69 @@ function SyncModal({
   );
 }
 
+function VehicleTableRow({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
+  const statusLabel = vehicle.isActive ? 'Actif' : 'Inactif';
+  return (
+    <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+      <td className="px-4 py-3 font-mono text-sm font-medium text-gray-700">{vehicle.licensePlate}</td>
+      <td className="px-4 py-3">
+        <div>
+          <span className="font-medium text-gray-900">{vehicle.make} {vehicle.model}</span>
+          {vehicle.getaroundAccount && (
+            <span className="ml-2 text-xs text-gray-400">{vehicle.getaroundAccount.name}</span>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-3 text-sm text-gray-600">{vehicle.year}</td>
+      <td className="px-4 py-3 text-sm text-gray-600">{vehicle.currentMileage.toLocaleString('fr-FR')} km</td>
+      <td className="px-4 py-3">
+        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${vehicle.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+          {statusLabel}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-right">
+        <Link
+          to={`/vehicles/${vehicle.id}`}
+          className="mr-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+        >
+          Voir
+        </Link>
+        <Link
+          to={`/vehicles/${vehicle.id}/edit`}
+          className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+        >
+          Modifier
+        </Link>
+      </td>
+    </tr>
+  );
+}
+
 export default function VehicleListPage(): React.JSX.Element {
   const [showSync, setShowSync] = useState(false);
   const [search, setSearch] = useState('');
+  const [fleetView, setFleetView] = useState<FleetViewMode>(getStoredViewMode);
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.isSuperAdmin;
+
+  function toggleView(mode: FleetViewMode): void {
+    setFleetView(mode);
+    localStorage.setItem('fleet_view_mode', mode);
+  }
 
   const { data: vehicles = [], isLoading, isError } = useQuery({
     queryKey: ['vehicles'],
     queryFn: () => vehiclesApi.list(),
   });
+
+  const { data: pricingSuggestions = [] } = useQuery({
+    queryKey: ['pricing-suggestions'],
+    queryFn: () => api.get<{ suggestions: PricingSuggestion[] }>('/ai/pricing-suggestions').then(r => r.data.suggestions),
+    enabled: isAdmin,
+    staleTime: 10 * 60_000,
+  });
+
+  const suggestionMap = new Map(pricingSuggestions.map(s => [s.vehicleId, s]));
 
   const filtered = vehicles.filter((v) => {
     const q = search.toLowerCase();
@@ -195,7 +274,33 @@ export default function VehicleListPage(): React.JSX.Element {
           <h1 className="text-xl font-bold text-gray-900">Flotte</h1>
           <p className="text-sm text-gray-500">{vehicles.length} véhicule{vehicles.length !== 1 ? 's' : ''}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {/* Toggle vignettes / liste */}
+          <div className="flex rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <button
+              type="button"
+              title="Vue vignettes"
+              onClick={() => toggleView('grid')}
+              className={`flex items-center px-2.5 py-2 transition ${fleetView === 'grid' ? 'text-white' : 'text-gray-400 hover:text-gray-700'}`}
+              style={fleetView === 'grid' ? { backgroundColor: '#01696e' } : undefined}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Vue liste"
+              onClick={() => toggleView('list')}
+              className={`flex items-center px-2.5 py-2 transition border-l border-gray-200 ${fleetView === 'list' ? 'text-white' : 'text-gray-400 hover:text-gray-700'}`}
+              style={fleetView === 'list' ? { backgroundColor: '#01696e' } : undefined}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => setShowSync(true)}
@@ -258,12 +363,73 @@ export default function VehicleListPage(): React.JSX.Element {
         </div>
       )}
 
-      {/* Grille */}
-      {!isLoading && filtered.length > 0 && (
+      {/* Vignettes */}
+      {!isLoading && filtered.length > 0 && fleetView === 'grid' && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((v) => (
-            <VehicleCard key={v.id} vehicle={v} />
+            <VehicleCard key={v.id} vehicle={v} hasSuggestion={suggestionMap.has(v.id)} />
           ))}
+        </div>
+      )}
+
+      {/* Liste (tableau) */}
+      {!isLoading && filtered.length > 0 && fleetView === 'list' && (
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <table className="w-full text-left">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Immatriculation</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Marque / Modèle</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Année</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Kilométrage</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Statut</th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((v) => (
+                <VehicleTableRow key={v.id} vehicle={v} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Suggestions IA — admin seulement */}
+      {isAdmin && pricingSuggestions.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            💡 Suggestions IA — optimisation tarifaire
+          </h2>
+          <div className="space-y-3">
+            {pricingSuggestions.map(s => (
+              <div key={s.vehicleId} className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-gray-900">{s.make} {s.model}</span>
+                      <span className="font-mono text-xs text-gray-500">{s.licensePlate}</span>
+                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
+                        Taux {s.occupancyRate}%
+                      </span>
+                      {s.avgDailyRevenue > 0 && (
+                        <span className="text-xs text-gray-500">
+                          {s.avgDailyRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}/j actuel
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-sm text-gray-700">{s.suggestion}</p>
+                  </div>
+                  <Link
+                    to={`/vehicles/${s.vehicleId}`}
+                    className="shrink-0 rounded-lg border border-orange-200 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-100"
+                  >
+                    Voir →
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

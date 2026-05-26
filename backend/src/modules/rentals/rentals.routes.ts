@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import { listRentals, getRental, updateRental, getRentalStats } from './rentals.service';
@@ -39,8 +39,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     if (!q.success) { res.status(400).json({ error: 'Paramètres invalides', details: q.error.flatten() }); return; }
 
     const db = getTenantClient(req.tenantDbUrl!);
+    const vehicleIds = req.auth?.role === 'carkeeper' && req.auth.userId
+      ? await getCarekeeperVehicleIds(db, req.auth.userId)
+      : undefined;
+
     const result = await listRentals(db, {
       ...q.data,
+      ...(vehicleIds ? { vehicleIds } : {}),
       from: q.data.from ? new Date(q.data.from) : undefined,
       to: q.data.to ? new Date(q.data.to) : undefined,
     });

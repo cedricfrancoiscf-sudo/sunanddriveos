@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 
@@ -32,8 +32,15 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const vehicleId = req.query.vehicleId as string | undefined;
+
+    let where: Record<string, unknown> | undefined = vehicleId ? { vehicleId } : undefined;
+    if (req.auth?.role === 'carkeeper' && req.auth.userId && !vehicleId) {
+      const vehicleIds = await getCarekeeperVehicleIds(db, req.auth.userId);
+      where = { vehicleId: { in: vehicleIds } };
+    }
+
     const checks = await db.vehicleCheck.findMany({
-      where: vehicleId ? { vehicleId } : undefined,
+      where,
       include: {
         vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
         checkedBy: { select: { id: true, name: true } },

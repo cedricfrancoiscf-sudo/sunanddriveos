@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 
@@ -24,20 +24,28 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       : new Date(from.getTime() + 30 * 86_400_000);
 
     const db = getTenantClient(req.tenantDbUrl!);
+    const vehicleIds = req.auth?.role === 'carkeeper' && req.auth.userId
+      ? await getCarekeeperVehicleIds(db, req.auth.userId)
+      : undefined;
+
+    const vehicleFilter = vehicleIds ? { id: { in: vehicleIds } } : { isActive: true };
+    const rentalVehicleFilter = vehicleIds ? { vehicleId: { in: vehicleIds } } : {};
+    const blockingVehicleFilter = vehicleIds ? { vehicleId: { in: vehicleIds } } : {};
+
     const [rentals, blockings, vehicles] = await Promise.all([
       db.rental.findMany({
-        where: { startAt: { lte: to }, endAt: { gte: from }, status: { in: ['booked', 'active'] } },
+        where: { startAt: { lte: to }, endAt: { gte: from }, status: { in: ['booked', 'active', 'completed'] }, ...rentalVehicleFilter },
         select: {
           id: true, vehicleId: true, driverName: true, startAt: true, endAt: true, status: true,
           _count: { select: { carSeatRequests: true, accessoryReservations: true } },
         },
       }),
       db.blocking.findMany({
-        where: { startAt: { lte: to }, endAt: { gte: from } },
+        where: { startAt: { lte: to }, endAt: { gte: from }, ...blockingVehicleFilter },
         select: { id: true, vehicleId: true, reason: true, type: true, startAt: true, endAt: true },
       }),
       db.vehicle.findMany({
-        where: { isActive: true },
+        where: vehicleFilter,
         select: { id: true, make: true, model: true, licensePlate: true, photoUrl: true, parkingZone: true },
         orderBy: [{ parkingZone: 'asc' }, { make: 'asc' }],
       }),

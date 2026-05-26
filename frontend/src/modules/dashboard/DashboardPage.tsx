@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, differenceInDays, isPast } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '../../utils/api';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -66,6 +67,13 @@ export default function DashboardPage(): React.JSX.Element {
   const { data: pendingCarSeats = [] } = useQuery({
     queryKey: ['car-seat-requests', 'pending'],
     queryFn: () => api.get<{ requests: Array<{ id: string; rental: { id: string; driverName: string } | null; vehicle: { make: string; model: string; licensePlate: string } }> }>('/car-seat-requests', { params: { status: 'pending' } }).then(r => r.data.requests),
+  });
+
+  const { data: cashflowForecast = [] } = useQuery({
+    queryKey: ['cashflow-forecast'],
+    queryFn: () => api.get<{ forecast: Array<{ week: string; weekStart: string; expectedRevenue: number; rentalCount: number }> }>('/ai/cashflow-forecast').then(r => r.data.forecast),
+    staleTime: 5 * 60_000,
+    enabled: user?.role !== 'carkeeper',
   });
 
   // Construire les alertes
@@ -151,35 +159,63 @@ export default function DashboardPage(): React.JSX.Element {
         <p className="text-sm text-gray-500">{format(new Date(), "EEEE d MMMM yyyy", { locale: fr })}</p>
       </div>
 
-      {/* KPIs du mois */}
-      <div>
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Ce mois-ci</h2>
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            label="Chiffre d'affaires"
-            value={stats ? stats.totalRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}
-            sub={stats ? `Virement : ${stats.totalPayout.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}` : undefined}
-            link="/rentals"
-          />
-          <KpiCard
-            label="Taux d'occupation"
-            value={stats ? `${stats.occupancyRate} %` : '—'}
-            sub={stats ? `${stats.vehicleCount} véhicule${stats.vehicleCount !== 1 ? 's' : ''}` : undefined}
-            link="/vehicles"
-          />
-          <KpiCard
-            label="Locations"
-            value={stats ? String(stats.rentalCount) : '—'}
-            sub="ce mois"
-            link="/rentals"
-          />
-          <KpiCard
-            label="Km parcourus"
-            value={stats ? stats.totalKm.toLocaleString('fr-FR') : '—'}
-            sub="ce mois"
-          />
+      {/* KPIs du mois — masqués pour les carkeepers */}
+      {user?.role !== 'carkeeper' && (
+        <div>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Ce mois-ci</h2>
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Chiffre d'affaires"
+              value={stats ? stats.totalRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}
+              sub={stats ? `Virement : ${stats.totalPayout.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}` : undefined}
+              link="/rentals"
+            />
+            <KpiCard
+              label="Taux d'occupation"
+              value={stats ? `${stats.occupancyRate} %` : '—'}
+              sub={stats ? `${stats.vehicleCount} véhicule${stats.vehicleCount !== 1 ? 's' : ''}` : undefined}
+              link="/vehicles"
+            />
+            <KpiCard
+              label="Locations"
+              value={stats ? String(stats.rentalCount) : '—'}
+              sub="ce mois"
+              link="/rentals"
+            />
+            <KpiCard
+              label="Km parcourus"
+              value={stats ? stats.totalKm.toLocaleString('fr-FR') : '—'}
+              sub="ce mois"
+            />
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Prévision trésorerie 30 jours */}
+      {user?.role !== 'carkeeper' && cashflowForecast.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Prévision 30 jours</h2>
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="mb-2 flex items-center justify-between text-xs text-gray-400">
+              <span>{cashflowForecast.reduce((s, w) => s + w.rentalCount, 0)} locations réservées</span>
+              <span className="font-semibold text-gray-700">
+                {cashflowForecast.reduce((s, w) => s + w.expectedRevenue, 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} estimés
+              </span>
+            </div>
+            <ResponsiveContainer width="100%" height={140}>
+              <BarChart data={cashflowForecast} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <XAxis dataKey="week" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip
+                  formatter={(v: number) => [v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }), 'CA prévu']}
+                  labelFormatter={(l: string) => l}
+                />
+                <Bar dataKey="expectedRevenue" fill="#01696e" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Locations en cours */}

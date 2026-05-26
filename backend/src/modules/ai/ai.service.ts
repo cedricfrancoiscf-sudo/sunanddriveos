@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import type { PrismaClient } from '../../generated/tenant';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -98,6 +99,190 @@ export async function suggestCarSeatReply(
   });
 
   return response.content[0]?.type === 'text' ? response.content[0].text.trim() : '';
+}
+
+// ─── 4.3 — Prévision trésorerie 30 jours ────────────────────────────────────
+
+export interface CashflowWeek {
+  week: string;           // "Semaine 1", "Semaine 2", …
+  weekStart: string;      // ISO date du lundi
+  expectedRevenue: number;
+  rentalCount: number;
+}
+
+export async function forecastCashflow(db: PrismaClient): Promise<CashflowWeek[]> {
+  const now = new Date();
+  const in30 = new Date(now.getTime() + 30 * 86_400_000);
+
+  const rentals = await db.rental.findMany({
+    where: { status: 'booked', startAt: { gte: now, lte: in30 } },
+    select: { startAt: true, grossRevenue: true },
+  });
+
+  const weeks: Map<string, CashflowWeek> = new Map();
+
+  for (const r of rentals) {
+    const d = new Date(r.startAt);
+    // Calculer le lundi de la semaine
+    const day = d.getDay();
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    monday.setHours(0, 0, 0, 0);
+    const key = monday.toISOString().slice(0, 10);
+
+    const existing = weeks.get(key);
+    if (existing) {
+      existing.rentalCount++;
+      existing.expectedRevenue += r.grossRevenue ?? 0;
+    } else {
+      const idx = weeks.size + 1;
+      weeks.set(key, {
+        week: `Semaine ${idx}`,
+        weekStart: key,
+        expectedRevenue: r.grossRevenue ?? 0,
+        rentalCount: 1,
+      });
+    }
+  }
+
+  return Array.from(weeks.values()).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+}
+
+// ─── 4.4 — Détection anomalie kilométrique ───────────────────────────────────
+
+export interface MileageAnomaly {
+  rentalId: string;
+  driverName: string;
+  vehicleLicensePlate: string;
+  kmDriven: number;
+  durationDays: number;
+  threshold: number;
+  startAt: string;
+  endAt: string;
+}
+
+export async function detectMileageAnomalies(db: PrismaClient): Promise<MileageAnomaly[]> {
+  const rentals = await db.rental.findMany({
+    where: { status: 'completed', kmDriven: { gt: 0 } },
+    select: {
+      id: true, driverName: true, startAt: true, endAt: true, kmDriven: true,
+      vehicle: { select: { licensePlate: true } },
+    },
+    orderBy: { endAt: 'desc' },
+    take: 500,
+  });
+
+  const anomalies: MileageAnomaly[] = [];
+
+  for (const r of rentals) {
+    if (!r.kmDriven) continue;
+    const durationMs = new Date(r.endAt).getTime() - new Date(r.startAt).getTime();
+    const durationDays = Math.max(1, Math.ceil(durationMs / 86_400_000));
+    const threshold = durationDays * 150 * 2;
+
+    if (r.kmDriven > threshold) {
+      anomalies.push({
+        rentalId: r.id,
+        driverName: r.driverName,
+        vehicleLicensePlate: r.vehicle.licensePlate,
+        kmDriven: r.kmDriven,
+        durationDays,
+        threshold,
+        startAt: r.startAt.toISOString(),
+        endAt: r.endAt.toISOString(),
+      });
+    }
+  }
+
+  return anomalies;
+}
+
+// Crée des notifications pour les nouvelles anomalies détectées
+export async function notifyMileageAnomalies(db: PrismaClient): Promise<void> {
+  const [anomalies, admins] = await Promise.all([
+    detectMileageAnomalies(db),
+    db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+  ]);
+
+  for (const anomaly of anomalies) {
+    for (const admin of admins) {
+      const existing = await db.notification.findFirst({
+        where: { userId: admin.id, type: 'mileage_anomaly', relatedEntityId: anomaly.rentalId },
+      });
+      if (existing) continue;
+      await db.notification.create({
+        data: {
+          userId: admin.id,
+          type: 'mileage_anomaly',
+          title: `Anomalie km — ${anomaly.vehicleLicensePlate}`,
+          body: `${anomaly.kmDriven} km en ${anomaly.durationDays}j (plafond : ${anomaly.threshold} km) · ${anomaly.driverName}`,
+          relatedEntityType: 'rental',
+          relatedEntityId: anomaly.rentalId,
+        },
+      });
+    }
+  }
+}
+
+// ─── 4.5 — Optimisation tarifaire IA ────────────────────────────────────────
+
+export interface PricingSuggestion {
+  vehicleId: string;
+  licensePlate: string;
+  make: string;
+  model: string;
+  occupancyRate: number;
+  avgDailyRevenue: number;
+  suggestion: string;
+}
+
+export async function getPricingSuggestions(db: PrismaClient): Promise<PricingSuggestion[]> {
+  const now = new Date();
+  const from = new Date(now.getTime() - 30 * 86_400_000);
+
+  const vehicles = await db.vehicle.findMany({
+    where: { isActive: true },
+    select: { id: true, make: true, model: true, licensePlate: true },
+  });
+
+  const suggestions: PricingSuggestion[] = [];
+
+  for (const vehicle of vehicles) {
+    const rentals = await db.rental.findMany({
+      where: { vehicleId: vehicle.id, startAt: { gte: from }, status: { in: ['completed', 'active'] } },
+      select: { startAt: true, endAt: true, grossRevenue: true },
+    });
+
+    const bookedDays = rentals.reduce((s, r) => {
+      const start = new Date(r.startAt) < from ? from : new Date(r.startAt);
+      const end = new Date(r.endAt) > now ? now : new Date(r.endAt);
+      return s + Math.max(0, (end.getTime() - start.getTime()) / 86_400_000);
+    }, 0);
+
+    const occupancyRate = Math.round((bookedDays / 30) * 100);
+    if (occupancyRate >= 40) continue;
+
+    const totalRevenue = rentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
+    const avgDailyRevenue = bookedDays > 0 ? Math.round((totalRevenue / bookedDays) * 100) / 100 : 0;
+
+    try {
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 256,
+        system: 'Tu es un expert en optimisation tarifaire pour la location de voitures. Réponds en 2 lignes maximum en français.',
+        messages: [{
+          role: 'user',
+          content: `Véhicule : ${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})\nTaux d'occupation : ${occupancyRate}% sur 30 jours\nPrix moyen actuel : ${avgDailyRevenue}€/jour\nSugère un ajustement tarifaire et justifie en 2 lignes.`,
+        }],
+      });
+      const suggestion = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '';
+      suggestions.push({ vehicleId: vehicle.id, licensePlate: vehicle.licensePlate, make: vehicle.make, model: vehicle.model, occupancyRate, avgDailyRevenue, suggestion });
+    } catch {
+      suggestions.push({ vehicleId: vehicle.id, licensePlate: vehicle.licensePlate, make: vehicle.make, model: vehicle.model, occupancyRate, avgDailyRevenue, suggestion: 'Suggestion indisponible' });
+    }
+  }
+
+  return suggestions;
 }
 
 export async function suggestReply(

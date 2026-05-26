@@ -12,6 +12,7 @@ const AcceptInvitationPage = React.lazy(() => import('./modules/auth/AcceptInvit
 const DashboardPage = React.lazy(() => import('./modules/dashboard/DashboardPage'));
 const VehicleListPage = React.lazy(() => import('./modules/vehicles/VehicleListPage'));
 const VehicleDetailPage = React.lazy(() => import('./modules/vehicles/VehicleDetailPage'));
+const VehicleFormPage = React.lazy(() => import('./modules/vehicles/VehicleFormPage'));
 const RentalListPage = React.lazy(() => import('./modules/rentals/RentalListPage'));
 const RentalDetailPage = React.lazy(() => import('./modules/rentals/RentalDetailPage'));
 const MessageListPage = React.lazy(() => import('./modules/messages/MessageListPage'));
@@ -75,7 +76,9 @@ export default function App(): React.JSX.Element {
             <Route element={<ProtectedLayout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/vehicles" element={<VehicleListPage />} />
+              <Route path="/vehicles/new" element={<VehicleFormPage />} />
               <Route path="/vehicles/:id" element={<VehicleDetailPage />} />
+              <Route path="/vehicles/:id/edit" element={<VehicleFormPage />} />
               <Route path="/rentals" element={<RentalListPage />} />
               <Route path="/rentals/:id" element={<RentalDetailPage />} />
               <Route path="/messages" element={<MessageListPage />} />

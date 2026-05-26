@@ -146,9 +146,13 @@ export async function syncAccountRentals(
   const apiKey = decrypt(account.apiKeyHash);
   const ga = createGetaroundClient(apiKey);
 
-  // Par défaut : 2 ans en arrière → 3 mois en avant
+  // Par défaut : lastSyncAt - 2h si déjà syncé, sinon 2 ans en arrière
   // getRentals découpe automatiquement en fenêtres ≤ 30 jours
-  const startDate = from ?? new Date(Date.now() - 2 * 365 * 86_400_000);
+  const startDate = from ?? (
+    account.lastSyncAt != null
+      ? new Date(account.lastSyncAt.getTime() - 2 * 3_600_000)
+      : new Date(Date.now() - 2 * 365 * 86_400_000)
+  );
   const defaultEnd = new Date();
   defaultEnd.setMonth(defaultEnd.getMonth() + 3);
   const endDate = to ?? defaultEnd;
@@ -227,6 +231,25 @@ export async function syncAccountRentals(
         if (status === 'booked') {
           void scheduleSequencesForRental(db, upserted.id, 'rental.booked').catch(console.error);
         }
+        // Alerte si le locataire est blacklisté
+        void (async () => {
+          try {
+            const bl = await db.renterBlacklist.findUnique({ where: { driverGetaroundId: String(r.user_id) } });
+            if (!bl) return;
+            const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
+            await db.notification.createMany({
+              data: admins.map(a => ({
+                userId: a.id,
+                type: 'blacklisted_renter',
+                title: `⛔ Locataire blacklisté — ${driverName}`,
+                body: `Motif : ${bl.reason}`,
+                relatedEntityType: 'rental',
+                relatedEntityId: upserted.id,
+              })),
+              skipDuplicates: true,
+            });
+          } catch (e) { console.error('[BlacklistCheck]', e); }
+        })();
       } else {
         result.updated++;
         if (prevStatus === 'booked' && newStatus === 'active') {
@@ -244,7 +267,7 @@ export async function syncAccountRentals(
           if (checkin.mileage != null) {
             await db.rental.update({
               where: { id: upserted.id },
-              data: { startMileage: Math.round(checkin.mileage / 10) },
+              data: { startMileage: Math.round(checkin.mileage / 1000) },
             });
           }
         } catch (err) { console.error(`[Sync Checkin] rental=${r.id}`, err); }
@@ -255,7 +278,7 @@ export async function syncAccountRentals(
           const checkout = await ga.getCheckout(r.id);
           const mileageData: { endMileage?: number; kmDriven?: number } = {};
           if (checkout.mileage != null) {
-            mileageData.endMileage = Math.round(checkout.mileage / 10);
+            mileageData.endMileage = Math.round(checkout.mileage / 1000);
             // Mettre à jour le compteur du véhicule si la valeur progresse
             const newOdometer = mileageData.endMileage;
             if (newOdometer > vehicle.currentMileage) {
@@ -265,7 +288,7 @@ export async function syncAccountRentals(
               });
             }
           }
-          if (checkout.distance_driven != null) mileageData.kmDriven = Math.round(checkout.distance_driven / 10);
+          if (checkout.distance_driven != null) mileageData.kmDriven = Math.round(checkout.distance_driven / 1000);
           if (Object.keys(mileageData).length > 0) {
             await db.rental.update({ where: { id: upserted.id }, data: mileageData });
           }
@@ -275,6 +298,11 @@ export async function syncAccountRentals(
       result.errors.push(`Location ${r.id}: ${err instanceof Error ? err.message : 'erreur'}`);
     }
   }
+
+  await db.getaroundAccount.update({
+    where: { id: accountId },
+    data: { lastSyncAt: new Date() },
+  });
 
   return result;
 }
@@ -362,6 +390,7 @@ export async function syncAccountMessages(
 
 export async function listAccounts(db: PrismaClient) {
   return db.getaroundAccount.findMany({
+    where: { isActive: true },
     include: { _count: { select: { vehicles: true } } },
     orderBy: { createdAt: 'asc' },
   });

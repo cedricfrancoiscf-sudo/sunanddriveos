@@ -5,6 +5,23 @@ import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
 import { rentalsApi, type RentalStatus, type EvaluationStatus } from './rentalsApi';
+import { useAuth } from '../../hooks/useAuth';
+
+interface RenterProfile {
+  driverName: string;
+  driverGetaroundId: string;
+  totalRentals: number;
+  totalKm: number;
+  avgKmPerRental: number;
+  avgRevenue: number;
+  totalRevenue: number;
+  incidents: number;
+  isBlacklisted: boolean;
+  blacklistReason?: string;
+  isVip: boolean;
+  firstRentalAt: string | null;
+  vehicles: string[];
+}
 
 const INCIDENT_TYPE_LABELS: Record<string, string> = {
   damage: 'Dommage', theft: 'Vol', accident: 'Accident', vandalism: 'Vandalisme', other: 'Autre',
@@ -75,6 +92,8 @@ function Stars({ rating }: { rating: number }): React.JSX.Element {
 export default function RentalDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.isSuperAdmin;
   const [showIncidentForm, setShowIncidentForm] = useState(false);
   const [incidentForm, setIncidentForm] = useState({ type: 'damage', description: '', cost: '' });
 
@@ -83,6 +102,31 @@ export default function RentalDetailPage(): React.JSX.Element {
     queryFn: () => rentalsApi.get(id!),
     enabled: Boolean(id),
   });
+
+  const { data: profile } = useQuery({
+    queryKey: ['renter-profile', rental?.driverGetaroundId],
+    queryFn: () => api.get<RenterProfile>(`/rentals/renter/${rental!.driverGetaroundId}/profile`).then(r => r.data),
+    enabled: Boolean(rental?.driverGetaroundId),
+  });
+
+  const blacklistMutation = useMutation({
+    mutationFn: (reason: string) => api.post('/blacklist/renter', {
+      driverGetaroundId: rental!.driverGetaroundId,
+      driverName: rental!.driverName,
+      reason,
+    }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['renter-profile', rental?.driverGetaroundId] }),
+  });
+
+  const unblacklistMutation = useMutation({
+    mutationFn: () => api.delete(`/blacklist/renter/${rental!.driverGetaroundId}`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['renter-profile', rental?.driverGetaroundId] }),
+  });
+
+  function handleBlacklist() {
+    const reason = prompt('Motif de blacklistage :');
+    if (reason?.trim()) blacklistMutation.mutate(reason.trim());
+  }
 
   const updateMutation = useMutation({
     mutationFn: (data: Parameters<typeof rentalsApi.update>[1]) => rentalsApi.update(id!, data),
@@ -143,6 +187,12 @@ export default function RentalDetailPage(): React.JSX.Element {
         <span className={`ml-2 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[rental.status]}`}>
           {STATUS_LABELS[rental.status]}
         </span>
+        {profile?.isBlacklisted && (
+          <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">⛔ Blacklisté</span>
+        )}
+        {profile?.isVip && (
+          <span className="rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-semibold text-yellow-700">⭐ VIP</span>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -258,6 +308,52 @@ export default function RentalDetailPage(): React.JSX.Element {
 
         {/* Colonne droite */}
         <div className="space-y-4">
+          {/* Profil locataire */}
+          {profile && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Profil locataire</h2>
+              <div className="space-y-1">
+                <Row label="Locations totales" value={String(profile.totalRentals)} />
+                <Row label="Km total" value={`${profile.totalKm.toLocaleString('fr-FR')} km`} />
+                <Row label="Km moyen" value={`${profile.avgKmPerRental.toLocaleString('fr-FR')} km / loc.`} />
+                <Row label="CA moyen" value={profile.avgRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} />
+                <Row label="Incidents" value={<span className={profile.incidents > 0 ? 'font-semibold text-red-600' : 'text-green-600'}>{profile.incidents}</span>} />
+                {profile.firstRentalAt && (
+                  <Row label="1ère location" value={format(new Date(profile.firstRentalAt), 'dd/MM/yyyy', { locale: fr })} />
+                )}
+              </div>
+              {profile.vehicles.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1 pt-3 border-t border-gray-100">
+                  {profile.vehicles.map(v => (
+                    <span key={v} className="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-600">{v}</span>
+                  ))}
+                </div>
+              )}
+              {profile.isBlacklisted && profile.blacklistReason && (
+                <div className="mt-3 rounded-lg bg-red-50 px-3 py-2">
+                  <p className="text-xs font-semibold text-red-700">Blacklisté</p>
+                  <p className="text-xs text-red-600">{profile.blacklistReason}</p>
+                </div>
+              )}
+              {isAdmin && rental.driverGetaroundId && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  {profile.isBlacklisted ? (
+                    <button type="button" onClick={() => { if (confirm('Retirer de la liste noire ?')) unblacklistMutation.mutate(); }}
+                      disabled={unblacklistMutation.isPending}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+                      Retirer du blacklist
+                    </button>
+                  ) : (
+                    <button type="button" onClick={handleBlacklist} disabled={blacklistMutation.isPending}
+                      className="w-full rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">
+                      ⛔ Blacklister ce locataire
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Finances */}
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">Finances</h2>

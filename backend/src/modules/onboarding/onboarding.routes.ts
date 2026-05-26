@@ -36,7 +36,7 @@ router.get('/progress', async (req: Request, res: Response, next: NextFunction) 
         id: 'getaround_connected',
         label: 'Connecter votre compte Getaround',
         description: 'Ajoutez votre clé API Getaround pour synchroniser votre flotte',
-        link: '/vehicles',
+        link: '/settings#getaround',
         completed: accountCount > 0,
       },
       {

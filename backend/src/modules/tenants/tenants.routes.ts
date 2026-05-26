@@ -126,6 +126,13 @@ router.post('/companies', async (req: Request, res: Response, next: NextFunction
       plan: z.enum(PLANS).default('starter'),
       trialDays: z.number().int().min(0).max(365).default(14),
       primaryColor: z.string().default('#01696e'),
+      siret: z.string().optional(),
+      managerName: z.string().optional(),
+      phone: z.string().optional(),
+      contactEmail: z.string().email().optional(),
+      address: z.string().optional(),
+      city: z.string().optional(),
+      postalCode: z.string().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
 
@@ -146,6 +153,13 @@ router.post('/companies', async (req: Request, res: Response, next: NextFunction
         primaryColor: body.data.primaryColor,
         trialEndsAt,
         isActive: true,
+        siret: body.data.siret,
+        managerName: body.data.managerName,
+        phone: body.data.phone,
+        contactEmail: body.data.contactEmail,
+        address: body.data.address,
+        city: body.data.city,
+        postalCode: body.data.postalCode,
       },
       select: { id: true, name: true, slug: true, plan: true, isActive: true, trialEndsAt: true, createdAt: true },
     });

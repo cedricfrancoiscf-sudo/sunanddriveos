@@ -58,6 +58,40 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         points: (body.data.points as never) ?? undefined,
       },
     });
+
+    // Notifier admins + carkeepers du véhicule (fire-and-forget)
+    void (async () => {
+      try {
+        const vehicle = await db.vehicle.findUnique({
+          where: { id: body.data.vehicleId },
+          select: { make: true, model: true, licensePlate: true },
+        });
+        if (!vehicle) return;
+        const label = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
+        const expiry = new Date(body.data.expiryAt).toLocaleDateString('fr-FR');
+
+        const [admins, carkeepers] = await Promise.all([
+          db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+          db.vehicleCarkeeper.findMany({ where: { vehicleId: body.data.vehicleId }, select: { userId: true } }),
+        ]);
+
+        const userIds = [...new Set([...admins.map(u => u.id), ...carkeepers.map(c => c.userId)])];
+        if (userIds.length === 0) return;
+
+        await db.notification.createMany({
+          data: userIds.map(userId => ({
+            userId,
+            type: 'ct_expiry',
+            title: `Contrôle technique enregistré — ${label}`,
+            body: `Résultat : ${body.data.result} — expire le ${expiry}`,
+            relatedEntityType: 'technical_control',
+            relatedEntityId: control.id,
+          })),
+          skipDuplicates: true,
+        });
+      } catch (e) { console.error('[ct notify]', e); }
+    })();
+
     res.status(201).json({ control });
   } catch (err) { next(err); }
 });

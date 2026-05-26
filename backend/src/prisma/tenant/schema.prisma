@@ -81,23 +81,24 @@ enum IncidentStatus {
 }
 
 model User {
-  id               String           @id @default(cuid())
-  email            String           @unique
+  id               String              @id @default(cuid())
+  email            String              @unique
   passwordHash     String?
   name             String
   role             UserRole
-  isActive         Boolean          @default(true)
-  invitationToken  String?          @unique
+  isActive         Boolean             @default(true)
+  invitationToken  String?             @unique
   invitationExpiry DateTime?
-  resetToken       String?          @unique
+  resetToken       String?             @unique
   resetExpiry      DateTime?
   lastLoginAt      DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
   thirdPartyOwner  ThirdPartyOwner?
   notifications    Notification[]
   vehicleChecks    VehicleCheck[]
-  approvedMessages Message[]        @relation("ApprovedBy")
+  approvedMessages Message[]           @relation("ApprovedBy")
+  vehicleCarkeepers VehicleCarkeeper[]
 
   @@map("users")
 }
@@ -146,6 +147,7 @@ model Vehicle {
   accessories           AccessoryVehicle[]
   carSeatRequests       CarSeatRequest[]
   accessoryReservations AccessoryReservation[]
+  carkeepers            VehicleCarkeeper[]
 
   @@map("vehicles")
 }
@@ -354,14 +356,15 @@ model Blocking {
 }
 
 model Accessory {
-  id          String            @id @default(cuid())
-  name        String
-  description String?
-  quantity    Int               @default(1)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  vehicles      AccessoryVehicle[]
-  reservations  AccessoryReservation[]
+  id               String               @id @default(cuid())
+  name             String
+  description      String?
+  quantity         Int                  @default(1)
+  carekeeperUserId String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  vehicles         AccessoryVehicle[]
+  reservations     AccessoryReservation[]
 
   @@map("accessories")
 }
@@ -425,6 +428,29 @@ model CarSeatRequest {
   updatedAt     DateTime  @updatedAt
 
   @@map("car_seat_requests")
+}
+
+model RenterBlacklist {
+  id                String   @id @default(cuid())
+  driverGetaroundId String   @unique
+  driverName        String
+  reason            String
+  blacklistedAt     DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  @@map("renter_blacklists")
+}
+
+model VehicleCarkeeper {
+  id         String   @id @default(cuid())
+  vehicleId  String
+  userId     String
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+
+  @@unique([vehicleId, userId])
+  @@map("vehicle_carkeepers")
 }
 
 model ThirdPartyOwner {

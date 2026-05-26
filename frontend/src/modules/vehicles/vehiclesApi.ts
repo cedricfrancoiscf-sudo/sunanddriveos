@@ -52,6 +52,25 @@ export const vehiclesApi = {
     api.delete(`/vehicles/${id}`),
 };
 
+export interface VehicleCarkeeper {
+  id: string;
+  vehicleId: string;
+  userId: string;
+  assignedAt: string;
+  user: { id: string; name: string; email: string };
+}
+
+export const vehicleCarkeepersApi = {
+  list: (vehicleId: string) =>
+    api.get<{ carkeepers: VehicleCarkeeper[] }>(`/vehicles/${vehicleId}/carkeepers`).then((r) => r.data.carkeepers),
+
+  assign: (vehicleId: string, userId: string) =>
+    api.post<{ assignment: VehicleCarkeeper }>(`/vehicles/${vehicleId}/carkeepers`, { userId }).then((r) => r.data.assignment),
+
+  remove: (vehicleId: string, userId: string) =>
+    api.delete(`/vehicles/${vehicleId}/carkeepers/${userId}`),
+};
+
 export const getaroundSyncApi = {
   listAccounts: () =>
     api.get<{ accounts: GetaroundAccount[] }>('/getaround-sync/accounts').then((r) => r.data.accounts),

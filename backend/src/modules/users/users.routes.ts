@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
+import { sendInvitationEmail } from '../../utils/mailer';
 
 const router: Router = Router();
 
@@ -89,6 +90,13 @@ router.post('/invite', async (req: Request, res: Response, next: NextFunction) =
 
     const inviteUrl = `${process.env.FRONTEND_URL}/accept-invitation?token=${token}&slug=${req.auth!.tenantSlug}`;
     console.log(`[Invite] ${body.data.email} → ${inviteUrl}`);
+
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug: req.auth!.tenantSlug },
+      select: { name: true },
+    });
+    void sendInvitationEmail(body.data.email, body.data.name, inviteUrl, company?.name ?? 'SunanddriveOS').catch(console.error);
 
     res.status(201).json({ user, inviteUrl });
   } catch (err) { next(err); }

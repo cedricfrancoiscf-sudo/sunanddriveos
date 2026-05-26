@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, addDays, startOfWeek, parseISO, isSameDay, differenceInMinutes, startOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -58,21 +59,23 @@ function formatHour(iso: string): string {
   return format(parseISO(iso), 'HH:mm');
 }
 
-function RentalBar({ rental, periodStart, totalDays }: { rental: PlanningRental; periodStart: Date; totalDays: number }) {
+function RentalBar({ rental, periodStart, totalDays, onClick }: { rental: PlanningRental; periodStart: Date; totalDays: number; onClick: () => void }) {
   const hasCarSeat = rental._count.carSeatRequests > 0;
   const hasAccessory = rental._count.accessoryReservations > 0;
   const tooltip = `${rental.driverName}\n${format(parseISO(rental.startAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(rental.endAt), 'dd/MM HH:mm', { locale: fr })}${hasCarSeat ? '\n🪑 Siège auto' : ''}${hasAccessory ? '\n📦 Accessoire' : ''}`;
   const durationMin = differenceInMinutes(parseISO(rental.endAt), parseISO(rental.startAt));
   const isShort = durationMin < 120; // moins de 2h — barre courte, pas de texte
+  const isPast = rental.status === 'completed';
 
   return (
     <div
-      className="absolute top-1.5 h-7 rounded flex items-center overflow-hidden cursor-default group z-10"
+      className={`absolute top-1.5 h-7 rounded flex items-center overflow-hidden cursor-pointer group z-10 transition-opacity hover:opacity-90 ${isPast ? 'opacity-60' : ''}`}
       style={{
         ...getBarStyle(rental.startAt, rental.endAt, periodStart, totalDays),
         backgroundColor: rental.status === 'active' ? '#01696e' : '#01696eaa',
       }}
       title={tooltip}
+      onClick={onClick}
     >
       {!isShort && (
         <span className="flex items-center gap-0.5 pl-1.5 text-[10px] text-white font-medium truncate min-w-0">
@@ -146,6 +149,7 @@ function ZoneHeader({ zone, count }: { zone: string; count: number }) {
 }
 
 export default function PlanningPage(): React.JSX.Element {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [viewMode, setViewMode] = useState<ViewMode>(14);
   const [periodStart, setPeriodStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
@@ -336,6 +340,10 @@ export default function PlanningPage(): React.JSX.Element {
           </div>
         ))}
         <div className="flex items-center gap-1.5">
+          <div className="h-3 w-6 rounded-sm opacity-60" style={{ backgroundColor: '#01696eaa' }} />
+          <span>Terminée</span>
+        </div>
+        <div className="flex items-center gap-1.5">
           <span>🪑</span><span>Siège auto</span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -414,7 +422,7 @@ export default function PlanningPage(): React.JSX.Element {
 
                       {/* Barres locations */}
                       {vRentals.map(r => (
-                        <RentalBar key={r.id} rental={r} periodStart={periodStart} totalDays={viewMode} />
+                        <RentalBar key={r.id} rental={r} periodStart={periodStart} totalDays={viewMode} onClick={() => navigate(`/rentals/${r.id}`)} />
                       ))}
 
                       {/* Barres blocages */}

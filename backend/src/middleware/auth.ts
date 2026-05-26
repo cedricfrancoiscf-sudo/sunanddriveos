@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import type { PrismaClient } from '../generated/tenant';
 
 export interface AuthPayload {
   userId?: string;
@@ -51,4 +52,12 @@ export function requireRole(...roles: string[]) {
     }
     next();
   };
+}
+
+export async function getCarekeeperVehicleIds(db: PrismaClient, userId: string): Promise<string[]> {
+  const assignments = await db.vehicleCarkeeper.findMany({
+    where: { userId },
+    select: { vehicleId: true },
+  });
+  return assignments.map((a) => a.vehicleId);
 }

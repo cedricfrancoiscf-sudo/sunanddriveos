@@ -1,0 +1,3001 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "version": "1.0.0",
+    "title": "Getaround Owner API",
+    "x-logo": {
+      "url": "https://getaround-assets.gumlet.io/logos/logo-getaround.png",
+      "altText": "Getaround logo"
+    },
+    "description": "# Quick Start\n\nThe Owner API uses the JSON format, and must be accessed over a [secure connection](https://en.wikipedia.org/wiki/HTTPS).\n\nLet’s assume that the access token provided by your account manager is “TOKEN”.\n\nHere’s how to get the list of ids of all your invoices from the first week of August with a shell script:\n\n```bash\nquery=\"end_date=2018-08-08T00%3A00%3A00%2B00%3A00&start_date=2018-08-01T00%3A00%3A00%2B00%3A00\"\n\ncurl -i \"https://api-eu.getaround.com/owner/v1/invoices?${query}\" \\\n  -H \"Authorization: Bearer TOKEN\" \\\n  -H \"Accept:application/json\" \\\n  -H \"Content-Type:application/json\"\n```\n\nAnd here’s how to get the invoice with the id 12345:\n\n```bash\ncurl -i \"https://api-eu.getaround.com/owner/v1/invoices/12345\" \\\n  -H \"Authorization: Bearer TOKEN\" \\\n  -H \"Accept: application/json\" \\\n  -H \"Content-Type: application/json\"\"\n```\n\nSee the [endpoints section](#tag/Invoices) of this guide for details about the response format.\n\nDates in request params should follow the ISO 8601 standard.\n\n\n# Authentication\n\nAll requests must be authenticated with a [bearer token header](https://tools.ietf.org/html/rfc6750#section-2.1). You token will be sent to you by your account manager.\n\nUnauthenticated requests will return a 401 status.\n\n\n# Pagination\n\nThe page number and the number of items per page can be set with the “page” and “per_page” params.\n\nFor example, this request will return the second page of invoices, and 50 invoices per page:\n\n`https://api-eu.getaround.com/owner/v1/invoices?page=2&per_page=50`\n\nBoth of these params are optional. The default page size is 30 items.\n\nThe Getaround Owner API follows the [RFC 8288 convention](https://datatracker.ietf.org/doc/html/rfc8288) of using the `Link` header to provide the `next` page URL. Please don't build the pagination URLs yourself.\nThe `next` page will be missing when you are requesting the last available page.\n\nHere's an example response header from requesting the second page of invoices `https://api-eu.getaround.com/owner/v1/invoices?page=2&per_page=50`\n```\nLink: <https://api-eu.getaround.com/owner/v1/invoices?page=3&per_page=50>; rel=\"next\"\n```\n\n\n# Throttling policy and Date range limitation\n\nWe have throttling policy that prevents you to perform more than 300 requests per min from the same IP.\n\nAlso, there is a limitation on the size of the range of dates given in params in some requests.\n\nAll requests that need start_date and end_date, do not accept a range bigger than 30 days.\n\n\n# Webhooks\n\nGetaround can send webhook events that notify your application when certain events happen on your account. This is especially useful to follow the lifecycle of rentals, tracking for example bookings or cancellations.\n\n### Setup\n\nTo set up an endpoint, you need to define a route on your server for receiving events, and then ask Getaround your account manager to add this URL to your account.\n\nTo acknowledge receipt of a event, your endpoint must:\n\n- Return a `2xx` HTTP status code.\n- Be a secure `https` endpoint with a valid SSL certificate.\n\n### Testing\n\nOnce Getaround has set up the endpoint, and it is properly configured as described above, a test `ping` event can be sent by clicking the button below:\n\n<form action=\"/docs/api/owner/fire_ping_webhook\" method=\"post\"><input type=\"submit\" value=\"Send Ping Event\"></form>\n\nYou should receive the following JSON payload:\n\n```json\n{\n  \"data\": {\n    \"ping\": \"pong\"\n  },\n  \"type\": \"ping\",\n  \"occurred_at\": \"2019-04-18T08:30:05Z\"\n}\n```\n\n### Retries\n\nWebhook deliveries will be attempted for up to three days with an exponential back off. After that point the delivery will be abandoned.\n\n### Verifying Signatures\n\nGetaround will also provide you with a secret token, which is used to create a hash signature with each payload.\n\nThis hash signature is passed along with each request in the headers as `X-Drivy-Signature`. Suppose you have a basic server listening to webhooks that looks like this:\n\n```ruby\nrequire 'sinatra'\nrequire 'json'\n\npost '/payload' do\n  push = JSON.parse(params[:payload])\n  \"I got some JSON: #{push.inspect}\"\nend\n```\n\nThe goal is to compute a hash using your secret token, and ensure that the hash from Getaround matches. Getaround uses an HMAC hexdigest to compute the hash, so you could change your server to look a little like this:\n\n```ruby\npost '/payload' do\n  request.body.rewind\n  payload_body = request.body.read\n  verify_signature(payload_body)\n  push = JSON.parse(params[:payload])\n  \"I got some JSON: #{push.inspect}\"\nend\n\ndef verify_signature(payload_body)\n  signature = 'sha1=' + OpenSSL::HMAC.hexdigest(OpenSSL::Digest.new('sha1'), ENV['SECRET_TOKEN'], payload_body)\n  return halt 500, \"Signatures didn't match!\" unless Rack::Utils.secure_compare(signature, request.env['HTTP_X_DRIVY_SIGNATURE'])\nend\n```\n\nObviously, your language and server implementations may differ from this code. There are a couple of important things to point out, however:\n\nNo matter which implementation you use, the hash signature starts with `sha1=`, using the key of your secret token and your payload body.\n\nUsing a plain `==` operator is not advised. A method like secure_compare performs a \"constant time\" string comparison, which renders it safe from certain timing attacks against regular equality operators.\n\n### Best Practices\n\n- **Acknowledge events immediately**. If your webhook script performs complex logic, or makes network calls, it’s possible that the script would time out before Getaround sees its complete execution. Ideally, your webhook handler code (acknowledging receipt of an event by returning a `2xx` status code) is separate of any other logic you do for that event.\n- **Handle duplicate events**. Webhook endpoints might occasionally receive the same event more than once. We advise you to guard against duplicated event receipts by making your event processing idempotent. One way of doing this is logging the events you’ve processed, and then not processing already-logged events.\n- **Do not expect events in order**. Getaround does not guarantee delivery of events in the order in which they are generated. Your endpoint should therefore handle this accordingly. We do provide an `occurred_at` timestamp for each event, though, to help reconcile ordering.\n"
+  },
+  "servers": [
+    {
+      "url": "https://api-eu.getaround.com/owner/v1",
+      "description": "Production server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Cars",
+      "description": "Cars"
+    },
+    {
+      "name": "Messages",
+      "description": "The messages endpoints will allow you to send and read rentals messages"
+    },
+    {
+      "name": "Checkins",
+      "description": "Checkin - data from the start of the rental"
+    },
+    {
+      "name": "Checkouts",
+      "description": "Checkout - data from the end of the rental"
+    },
+    {
+      "name": "Invoices",
+      "description": "Invoices"
+    },
+    {
+      "name": "Payouts",
+      "description": "Payouts received on your bank account"
+    },
+    {
+      "name": "Rentals",
+      "description": "Car rentals"
+    },
+    {
+      "name": "Unavailabilities",
+      "description": "Car unavailabilities"
+    },
+    {
+      "name": "Users",
+      "description": "User operations"
+    }
+  ],
+  "x-tagGroups": [
+    {
+      "name": "Accounting",
+      "tags": [
+        "Invoices",
+        "Payouts"
+      ]
+    },
+    {
+      "name": "Rentals",
+      "tags": [
+        "Rentals",
+        "Checkins",
+        "Checkouts",
+        "Users"
+      ]
+    },
+    {
+      "name": "Calendar",
+      "tags": [
+        "Unavailabilities"
+      ]
+    },
+    {
+      "name": "",
+      "tags": [
+        "Cars"
+      ]
+    },
+    {
+      "name": "Messages",
+      "tags": [
+        "Messages"
+      ]
+    }
+  ],
+  "paths": {
+    "/invoices.json": {
+      "get": {
+        "operationId": "getInvoices",
+        "tags": [
+          "Invoices"
+        ],
+        "summary": "Find invoices emitted between dates",
+        "description": "Find invoices emitted between dates",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "description": "Start date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "End date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "description": "Page number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "description": "Page size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "30"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/invoices_index"
+                },
+                "example": [
+                  {
+                    "id": 1
+                  },
+                  {
+                    "id": 2
+                  }
+                ]
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/invoices/{id}.json": {
+      "get": {
+        "operationId": "getInvoiceById",
+        "tags": [
+          "Invoices"
+        ],
+        "summary": "Find an invoice by ID",
+        "description": "Find an invoice by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of invoice to return",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/invoice"
+                },
+                "example": {
+                  "id": 29,
+                  "pdf_url": "https://bit.ly/2wuJPAS",
+                  "product_type": "Rental",
+                  "product_id": 87,
+                  "emitted_at": "2015-12-30T11:00:00.000Z",
+                  "total_price": 999,
+                  "currency": "EUR",
+                  "entity_type": "User",
+                  "charges": [
+                    {
+                      "type": "driver_rental_payment",
+                      "amount": 18745
+                    },
+                    {
+                      "type": "self_insurance_payment",
+                      "amount": 2000
+                    },
+                    {
+                      "type": "additional_self_insurance_payment",
+                      "amount": 500
+                    },
+                    {
+                      "type": "mileage_package",
+                      "amount": 1000
+                    },
+                    {
+                      "type": "mileage_package_insurance",
+                      "amount": 4200
+                    },
+                    {
+                      "type": "extra_distance_payment",
+                      "amount": 1200
+                    },
+                    {
+                      "type": "driver_compensation",
+                      "amount": -800
+                    },
+                    {
+                      "type": "driver_cancellation_fee",
+                      "amount": 5000
+                    },
+                    {
+                      "type": "driver_late_return_fee",
+                      "amount": 1500
+                    },
+                    {
+                      "type": "driver_gas_refill_fee",
+                      "amount": 700
+                    },
+                    {
+                      "type": "driver_recharging_fee",
+                      "amount": 100
+                    },
+                    {
+                      "type": "driver_mess_fee",
+                      "amount": 1620
+                    },
+                    {
+                      "type": "driver_infraction_fee",
+                      "amount": 1050
+                    },
+                    {
+                      "type": "repatriation_fee",
+                      "amount": 10000
+                    },
+                    {
+                      "type": "claims_owner_fee_cg",
+                      "amount": 200
+                    },
+                    {
+                      "type": "drivy_cancellation_fee",
+                      "amount": 400
+                    },
+                    {
+                      "type": "drivy_late_return_fee",
+                      "amount": 600
+                    },
+                    {
+                      "type": "drivy_mess_fee",
+                      "amount": 480
+                    },
+                    {
+                      "type": "insurance_fee",
+                      "amount": -1053
+                    },
+                    {
+                      "type": "assistance_fee",
+                      "amount": -261
+                    },
+                    {
+                      "type": "drivy_service_fee",
+                      "amount": -2686
+                    },
+                    {
+                      "type": "drivy_unfulfillment_fee",
+                      "amount": -5000
+                    },
+                    {
+                      "type": "drivy_breakdown_management_fee",
+                      "amount": -500
+                    },
+                    {
+                      "type": "driver_gas_compensation",
+                      "amount": 1500
+                    },
+                    {
+                      "type": "rental_recharging_compensation",
+                      "amount": 1600
+                    },
+                    {
+                      "type": "driver_toll_compensation",
+                      "amount": 1500
+                    },
+                    {
+                      "type": "driver_parking_compensation",
+                      "amount": 1200
+                    },
+                    {
+                      "type": "driver_compensation_for_offsite_payment",
+                      "amount": -4460
+                    },
+                    {
+                      "type": "owner_infraction_compensation",
+                      "amount": 430
+                    },
+                    {
+                      "type": "drivy_gas_compensation",
+                      "amount": 200
+                    },
+                    {
+                      "type": "exceptional_event_compensation",
+                      "amount": 1800
+                    },
+                    {
+                      "type": "damage_compensation",
+                      "amount": 480
+                    },
+                    {
+                      "type": "other_compensation",
+                      "amount": -2515
+                    },
+                    {
+                      "type": "guarantee_earning",
+                      "amount": 200
+                    },
+                    {
+                      "type": "owner_tow_compensation",
+                      "amount": 100
+                    },
+                    {
+                      "type": "battery_recharge_fee",
+                      "amount": 150
+                    },
+                    {
+                      "type": "battery_recharge_compensation",
+                      "amount": 150
+                    },
+                    {
+                      "type": "connect_deposit",
+                      "amount": 150
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/payouts.json": {
+      "get": {
+        "operationId": "getPayouts",
+        "tags": [
+          "Payouts"
+        ],
+        "summary": "Find payouts paid between dates",
+        "description": "Find payouts paid between dates",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "description": "Start date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "End date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "description": "Page number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "description": "Page size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "30"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/payouts_index"
+                },
+                "example": [
+                  {
+                    "id": 1
+                  },
+                  {
+                    "id": 2
+                  }
+                ]
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/payouts/{id}.json": {
+      "get": {
+        "operationId": "getPayoutById",
+        "tags": [
+          "Payouts"
+        ],
+        "summary": "Find a payout by ID",
+        "description": "Find a payout by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of payout to return",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/payout"
+                },
+                "example": {
+                  "id": 12,
+                  "amount": 10000,
+                  "currency": "EUR",
+                  "completed_at": "2019-04-02T12:00:00+01:00",
+                  "entity_type": "User",
+                  "invoices": [
+                    {
+                      "id": 1
+                    },
+                    {
+                      "id": 2
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/rentals.json": {
+      "get": {
+        "operationId": "getRentals",
+        "tags": [
+          "Rentals"
+        ],
+        "summary": "Find rentals booked between dates",
+        "description": "Find rentals booked between dates",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "description": "Start date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "End date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "description": "Page number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "description": "Page size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "30"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/rentals_index"
+                },
+                "example": [
+                  {
+                    "id": 1
+                  },
+                  {
+                    "id": 2
+                  }
+                ]
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/rentals/{id}.json": {
+      "get": {
+        "operationId": "getRentalById",
+        "tags": [
+          "Rentals"
+        ],
+        "summary": "Find a rental by ID",
+        "description": "Find a rental by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of rental to return",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/rental"
+                },
+                "example": {
+                  "id": 1,
+                  "car_id": 1,
+                  "user_id": 933838,
+                  "starts_at": "2018-08-14T07:30:00.000+02:00",
+                  "ends_at": "2018-08-16T07:30:00.000+02:00",
+                  "booked_at": "2018-08-27T09:54:25.000+02:00",
+                  "price": 3500,
+                  "insurance_fee": 800
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/rentals/{rental_id}/invoices.json": {
+      "get": {
+        "operationId": "getInvoicesForRental",
+        "tags": [
+          "Invoices"
+        ],
+        "summary": "Find invoices associated to a rental",
+        "description": "Find invoices associated to a rental",
+        "parameters": [
+          {
+            "name": "rental_id",
+            "in": "path",
+            "description": "ID of rental",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          },
+          {
+            "name": "page",
+            "description": "Page number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "description": "Page size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "30"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/rental_invoices_index"
+                },
+                "example": [
+                  {
+                    "id": 1
+                  },
+                  {
+                    "id": 2
+                  }
+                ]
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/rentals/{rental_id}/messages.json": {
+      "get": {
+        "operationId": "getMessagesForRental",
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Find messages associated to a rental",
+        "description": "Find messages associated to a rental",
+        "parameters": [
+          {
+            "name": "rental_id",
+            "in": "path",
+            "description": "ID of rental",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/rental_messages_index"
+                },
+                "example": [
+                  {
+                    "id": 1
+                  },
+                  {
+                    "id": 2
+                  }
+                ]
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createMessages",
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Create Message associated to a rental",
+        "description": "Create Message associated to a rental",
+        "parameters": [
+          {
+            "name": "rental_id",
+            "in": "path",
+            "description": "ID of rental",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Message to create",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "description": "Content of the message (2000 characters max)",
+                    "type": "string"
+                  }
+                }
+              },
+              "examples": {
+                "foo": {
+                  "summary": "Message attributes",
+                  "value": {
+                    "content": "Hello, I hope the vehicle rental met all your expectations. Thank you for your respect and trust. Please do not hesitate to tell me how I can improve my service. Have a nice day!"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/message"
+                },
+                "example": {
+                  "id": 1,
+                  "rental_id": 23,
+                  "sending_user_id": 123432,
+                  "sent_at": "2016-01-02T12:00:00+01:00",
+                  "content": "Hello, I hope the vehicle rental met all your expectations. Thank you for your respect and trust. Please do not hesitate to tell me how I can improve my service. Have a nice day!"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/rentals/{rental_id}/messages/{id}.json": {
+      "get": {
+        "operationId": "getMessageById",
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Find a message by ID associated to a rental",
+        "description": "Find a message by ID associated to a rental",
+        "parameters": [
+          {
+            "name": "rental_id",
+            "in": "path",
+            "description": "ID of rental",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of message to return",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/message"
+                },
+                "example": {
+                  "id": 1,
+                  "rental_id": 23,
+                  "sending_user_id": 123432,
+                  "sent_at": "2016-01-02T12:00:00+01:00",
+                  "content": "Hello, I hope the vehicle rental met all your expectations. Thank you for your respect and trust. Please do not hesitate to tell me how I can improve my service. Have a nice day!"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/rentals/{rental_id}/checkin.json": {
+      "get": {
+        "operationId": "getCheckinByRentalId",
+        "tags": [
+          "Checkins"
+        ],
+        "summary": "Find a checkin by rental ID",
+        "description": "Find a checkin by rental ID",
+        "parameters": [
+          {
+            "name": "rental_id",
+            "in": "path",
+            "description": "ID of the rental related to the checkin to return",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/checkin"
+                },
+                "example": {
+                  "rental_id": 4,
+                  "mileage": 104132,
+                  "fuel_level": 70,
+                  "occurred_at": "2018-08-27T09:54:25.000+02:00"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/rentals/{rental_id}/checkout.json": {
+      "get": {
+        "operationId": "getCheckoutByRentalId",
+        "tags": [
+          "Checkouts"
+        ],
+        "summary": "Find a checkout by rental ID",
+        "description": "Find a checkout by rental ID",
+        "parameters": [
+          {
+            "name": "rental_id",
+            "in": "path",
+            "description": "ID of the rental related to the checkout to return",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/checkout"
+                },
+                "example": {
+                  "rental_id": 4,
+                  "mileage": 104132,
+                  "fuel_level": 70,
+                  "distance_driven": 120,
+                  "occurred_at": "2018-08-27T09:54:25.000+02:00"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/cars.json": {
+      "get": {
+        "operationId": "getCars",
+        "tags": [
+          "Cars"
+        ],
+        "summary": "Find all cars",
+        "description": "Find all cars",
+        "parameters": [
+          {
+            "name": "page",
+            "description": "Page number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "description": "Page size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "30"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cars_index"
+                },
+                "example": [
+                  {
+                    "id": 1
+                  },
+                  {
+                    "id": 2
+                  }
+                ]
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/cars/{id}.json": {
+      "get": {
+        "operationId": "getCarById",
+        "tags": [
+          "Cars"
+        ],
+        "summary": "Find a car by ID",
+        "description": "Find a car by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of car to return",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/car"
+                },
+                "example": {
+                  "id": 1,
+                  "state": "active",
+                  "plate_number": "555FDK95",
+                  "brand": "Ford",
+                  "model": "Focus",
+                  "display_address": "1 rue Victor Hugo",
+                  "address": "1 rue Victor Hugo, Paris, France"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/users/{id}.json": {
+      "get": {
+        "operationId": "getUserById",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Find a user by ID (Users are customers who rent one of your cars)",
+        "description": "Find a user by ID (Users are customers who rent one of your cars)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "ID of user to return",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/user"
+                },
+                "example": {
+                  "id": 1,
+                  "first_name": "Thibauld",
+                  "last_name": "Busso",
+                  "phone_number": "+33 7 83 43 45 75",
+                  "address_line1": "112 rue de charonne",
+                  "address_line2": "Batiment D9",
+                  "postal_code": "75011",
+                  "city": "Paris",
+                  "country": "FR",
+                  "birth_date": "1960-08-25",
+                  "license_country": "FR",
+                  "license_first_issue_date": "1986-03-14",
+                  "license_number": "869175121164"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/checkins.json": {
+      "get": {
+        "operationId": "getCheckins",
+        "tags": [
+          "Checkins"
+        ],
+        "summary": "List of checkins that occurred between two dates",
+        "description": "List of checkins that occurred between two dates",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "description": "Start date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "End date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "description": "Page number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "description": "Page size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "30"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/checkins_index"
+                },
+                "example": [
+                  {
+                    "rental_id": 1
+                  },
+                  {
+                    "rental_id": 2
+                  }
+                ]
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/checkouts.json": {
+      "get": {
+        "operationId": "getCheckouts",
+        "tags": [
+          "Checkouts"
+        ],
+        "summary": "List of checkouts that occurred between two dates",
+        "description": "List of checkouts that occurred between two dates",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "description": "Start date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "End date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "page",
+            "description": "Page number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "description": "Page size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "30"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/checkouts_index"
+                },
+                "example": [
+                  {
+                    "rental_id": 1
+                  },
+                  {
+                    "rental_id": 2
+                  }
+                ]
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    },
+    "/cars/{car_id}/unavailabilities.json": {
+      "get": {
+        "operationId": "getUnavailabilitiesForCar",
+        "tags": [
+          "Unavailabilities"
+        ],
+        "summary": "Find Unavailabilities related to a car between dates",
+        "description": "Find between 2 dates when you’ve set a car as unavailable",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "description": "Start date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "End date and time in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "car_id",
+            "in": "path",
+            "description": "ID of the car",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "123"
+            }
+          },
+          {
+            "name": "page",
+            "description": "Page number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "per_page",
+            "description": "Page size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "30"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unavailabilities_index"
+                },
+                "example": [
+                  {
+                    "starts_at": "2016-01-02T12:00:00+01:00",
+                    "ends_at": "2016-01-07T12:00:00+01:00",
+                    "reason": null,
+                    "car_id": 42
+                  },
+                  {
+                    "starts_at": "2016-01-08T12:00:00+01:00",
+                    "ends_at": "2016-01-09T12:00:00+01:00",
+                    "reason": "booked",
+                    "car_id": 42
+                  }
+                ]
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createUnavailabilities",
+        "tags": [
+          "Unavailabilities"
+        ],
+        "summary": "Create Unavailability related to a car between dates",
+        "description": "Set a car as unavailable between 2 dates",
+        "parameters": [
+          {
+            "name": "car_id",
+            "in": "path",
+            "description": "ID of car",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Unavailability to create",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "starts_at",
+                  "ends_at"
+                ],
+                "properties": {
+                  "starts_at": {
+                    "description": "Start date and time of the unavailability in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html) with a 30 min granularity.",
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "ends_at": {
+                    "description": "End date and time of the unavailability in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html) with a 30 min granularity.",
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "reason": {
+                    "description": "Reason of the unavailability",
+                    "type": "string",
+                    "enum": [
+                      "check_up",
+                      "repairs",
+                      "connect_issues",
+                      "repatriation",
+                      "booked",
+                      "other"
+                    ]
+                  }
+                }
+              },
+              "examples": {
+                "foo": {
+                  "summary": "Unavailability attributes",
+                  "value": {
+                    "starts_at": "2018-08-14T07:30:00.000+02:00",
+                    "ends_at": "2018-08-16T07:30:00.000+02:00",
+                    "reason": "booked"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No content - Successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "destroyUnavailability",
+        "tags": [
+          "Unavailabilities"
+        ],
+        "summary": "Destroy Unavailability related to a car between dates",
+        "description": "Set a car as available between 2 dates",
+        "parameters": [
+          {
+            "name": "car_id",
+            "in": "path",
+            "description": "ID of car",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "1"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Unavailability to destroy",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "starts_at",
+                  "ends_at"
+                ],
+                "properties": {
+                  "starts_at": {
+                    "description": "Start date and time of the unavailability in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html) with a 30 min granularity.",
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "ends_at": {
+                    "description": "End date and time of the unavailability in [ISO8601 format](https://www.iso.org/iso-8601-date-and-time-format.html) with a 30 min granularity.",
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              },
+              "examples": {
+                "foo": {
+                  "summary": "Unavailability attributes",
+                  "value": {
+                    "starts_at": "2018-08-14T07:30:00.000+02:00",
+                    "ends_at": "2018-08-16T07:30:00.000+02:00"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No content - Successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/4XX"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/5XX"
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "bookedRental": {
+      "post": {
+        "tags": [
+          "Rentals"
+        ],
+        "security": [],
+        "summary": "New rental booked for one of your cars",
+        "requestBody": {
+          "description": "This event is triggered when a new rental booking has been created for one of your cars",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/rentals_booked"
+              },
+              "example": {
+                "type": "rental.booked",
+                "data": {
+                  "rental_id": 234535
+                },
+                "occurred_at": "2019-04-18T08:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    },
+    "canceledRental": {
+      "post": {
+        "tags": [
+          "Rentals"
+        ],
+        "security": [],
+        "summary": "Canceled rental for one of your cars",
+        "requestBody": {
+          "description": "This event is triggered when a rental has been canceled for one of your cars",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/rentals_canceled"
+              },
+              "example": {
+                "type": "rental.canceled",
+                "data": {
+                  "rental_id": 234535
+                },
+                "occurred_at": "2019-04-22T11:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    },
+    "carCheckedInRental": {
+      "post": {
+        "tags": [
+          "Checkins"
+        ],
+        "security": [],
+        "summary": "Rental started for one of your cars",
+        "requestBody": {
+          "description": "This event is triggered when a rental starts and the car has been unlocked",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/rentals_car_checked_in"
+              },
+              "example": {
+                "type": "rental.car_checked_in",
+                "data": {
+                  "rental_id": 233435
+                },
+                "occurred_at": "2019-04-19T10:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    },
+    "carCheckedOutRental": {
+      "post": {
+        "tags": [
+          "Checkouts"
+        ],
+        "security": [],
+        "summary": "Rental ended for one of your cars",
+        "requestBody": {
+          "description": "This event is triggered when a rental ends and the car has been locked",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/rentals_car_checked_out"
+              },
+              "example": {
+                "type": "rental.car_checked_out",
+                "data": {
+                  "rental_id": 97437
+                },
+                "occurred_at": "2019-04-19T10:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    },
+    "timesChangedRental": {
+      "post": {
+        "tags": [
+          "Rentals"
+        ],
+        "security": [],
+        "summary": "Rental time change for one of your car",
+        "requestBody": {
+          "description": "This event is triggered when the start or end time of a rental has been changed for one of your cars",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/rentals_times_changed"
+              },
+              "example": {
+                "type": "rental.times_changed",
+                "data": {
+                  "rental_id": 234535
+                },
+                "occurred_at": "2019-04-19T10:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    },
+    "carSwitchedRental": {
+      "post": {
+        "tags": [
+          "Rentals"
+        ],
+        "security": [],
+        "summary": "There was a switch car on one of your rental",
+        "requestBody": {
+          "description": "This event is triggered when an owner or customer service team member switches the car used to perform a given rental",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/rentals_car_switched"
+              },
+              "example": {
+                "type": "rental.car_switched",
+                "data": {
+                  "rental_id": 234535
+                },
+                "occurred_at": "2019-04-22T11:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    },
+    "createdUnavailability": {
+      "post": {
+        "tags": [
+          "Unavailabilities"
+        ],
+        "security": [],
+        "summary": "Unavailability created on one of your cars",
+        "requestBody": {
+          "description": "This event is triggered whenever an unavailability is created (through the API or directly in the app/website). It shows the unavailability that has just been created, with the same timestamps as those entered by the user. It does not show the changes of other potential overlapping unavailabilities. For example: if an unavailability was already set between June 10 and June 20, and if the user creates a new one between June 18 and June 22, this webhook will only send information about the newly created June 18 - June 22 unavailability. It will not show that, under the hood, the unavailability from June 10 to June 20 has be deleted, and that a new unavailability from June 10 to June 22 has been created.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/unavailabilities_created"
+              },
+              "example": {
+                "type": "unavailability.created",
+                "data": {
+                  "starts_at": "2019-06-26T09:30:05Z",
+                  "ends_at": "2019-06-28T09:30:05Z",
+                  "reason": "repairs",
+                  "car_id": 42
+                },
+                "occurred_at": "2019-06-24T09:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    },
+    "deletedUnavailability": {
+      "post": {
+        "tags": [
+          "Unavailabilities"
+        ],
+        "security": [],
+        "summary": "Unavailabilities deleted on one of your cars",
+        "requestBody": {
+          "description": "This event is triggered whenever an unavailability is deleted (through the API or directly in the app/website). It shows the unavailability that has just been deleted, with the same timestamps as those entered by the user. It does not show the changes of other potential overlapping unavailabilities. For example: if an unavailability was already set between June 10 and June 20, and if the user deletes an unavailability between June 18 and June 22 (to set their car as available between this dates), this webhook will only send information about the newly deleted June 18 - June 22 unavailability. It will not show that, under the hood, the unavailability from June 10 to June 20 has be deleted, and that a new unavailability from June 10 to June 18 has been created.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/unavailabilities_deleted"
+              },
+              "example": {
+                "type": "unavailability.deleted",
+                "data": {
+                  "starts_at": "2019-06-26T09:30:05Z",
+                  "ends_at": "2019-06-28T09:30:05Z",
+                  "car_id": 42
+                },
+                "occurred_at": "2019-06-24T11:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    },
+    "updatedUser": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "security": [],
+        "summary": "User updated his profile information",
+        "requestBody": {
+          "description": "This event is triggered when a user updates his profile information (You will only receive this event on users with a booked rental or a started rental).",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/users_updated"
+              },
+              "example": {
+                "type": "user.updated",
+                "data": {
+                  "user_id": 7654327
+                },
+                "occurred_at": "2019-06-24T09:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    },
+    "sentMessage": {
+      "post": {
+        "tags": [
+          "Messages"
+        ],
+        "security": [],
+        "summary": "New message sent",
+        "requestBody": {
+          "description": "This event is triggered when a new message has been sent for one of your rentals",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/messages_sent"
+              },
+              "example": {
+                "type": "message.sent",
+                "data": {
+                  "message_id": 234535,
+                  "rental_id": 345646
+                },
+                "occurred_at": "2019-04-18T08:30:05Z"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully"
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "responses": {
+      "4XX": {
+        "description": "The request can't be fulfilled due to an error on client-side, i.e. the request is invalid. The client should not repeat the request without modifications. The response body should contain a JSON error object. May be any HTTP status code specified in [RFC 7231](https://tools.ietf.org/html/rfc7231#section-6.6). HTTP status code 404 indicates path parameter is invalid.\n",
+        "content": {
+          "application/json": {
+            "example": {
+              "errors": [
+                {
+                  "status": "422",
+                  "source": {
+                    "pointer": "/data/attributes/firstName"
+                  },
+                  "title": "Invalid Attribute",
+                  "detail": "First name must contain at least three characters."
+                }
+              ]
+            }
+          }
+        }
+      },
+      "5XX": {
+        "description": "The request can't be fulfilled due to an error at the back-end. The error is never the client’s fault and therefore it is reasonable for the client to retry the exact same request that triggered this response. The response body should contain a JSON error object. May be any HTTP status code specified in [RFC 7231](https://tools.ietf.org/html/rfc7231#section-6.6).\n",
+        "content": {
+          "application/json": {
+            "example": {
+              "errors": [
+                {
+                  "status": "422",
+                  "source": {
+                    "pointer": "/data/attributes/firstName"
+                  },
+                  "title": "Invalid Attribute",
+                  "detail": "First name must contain at least three characters."
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "invoices_index": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An array of invoices",
+        "type": "array",
+        "items": {
+          "description": "An invoice.",
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "The invoice ID",
+              "type": "integer"
+            }
+          }
+        },
+        "uniqueItems": true
+      },
+      "invoice": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An invoice.",
+        "type": "object",
+        "required": [
+          "id",
+          "pdf_url",
+          "product_type",
+          "product_id",
+          "emitted_at",
+          "total_price",
+          "currency",
+          "entity_type"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The invoice ID",
+            "type": "integer"
+          },
+          "pdf_url": {
+            "description": "The temporary url (lifetime: 20min) to download the pdf of the tax invoice is generated each to time you call the endpoint. Also, the 'links' variable will not be present if there is no uploaded invoice yet. This could happen if the job to generate & upload the invoice is not done yet.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_type": {
+            "description": "The type of product the invoice is related to",
+            "type": "string",
+            "enum": [
+              "Rental"
+            ]
+          },
+          "product_id": {
+            "description": "The id of the product the invoice is related to",
+            "type": "integer"
+          },
+          "emitted_at": {
+            "description": "The date at which the invoice was emitted",
+            "type": "string",
+            "format": "date-time"
+          },
+          "total_price": {
+            "description": "The invoice amount, which is what you will receive (or which will be debited from your account if it is negative)",
+            "type": "integer"
+          },
+          "currency": {
+            "description": "The currency of the invoice amount (ISO 4217 alphabetic code)",
+            "type": "string"
+          },
+          "entity_type": {
+            "description": "The type of entity the invoice is related to",
+            "type": "string",
+            "enum": [
+              "Company",
+              "User"
+            ]
+          },
+          "charges": {
+            "type": "array",
+            "description": "Array of charges",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "anyOf": [
+                    {
+                      "description": "Trip price (set by the owner)",
+                      "const": "driver_rental_payment"
+                    },
+                    {
+                      "description": "Extra distance fee",
+                      "const": "extra_distance_payment"
+                    },
+                    {
+                      "description": "Mileage package",
+                      "const": "mileage_package"
+                    },
+                    {
+                      "description": "Mileage package insurance",
+                      "const": "mileage_package_insurance"
+                    },
+                    {
+                      "description": "Discount offered to the driver by the owner",
+                      "const": "driver_compensation"
+                    },
+                    {
+                      "description": "Late cancellation fee",
+                      "const": "driver_cancellation_fee"
+                    },
+                    {
+                      "description": "Late return fee",
+                      "const": "driver_late_return_fee"
+                    },
+                    {
+                      "description": "Late rental impact fee",
+                      "const": "driver_late_rental_impact_fee"
+                    },
+                    {
+                      "description": "Gas refill fee",
+                      "const": "driver_gas_refill_fee"
+                    },
+                    {
+                      "description": "Recharging fee",
+                      "const": "driver_recharging_fee"
+                    },
+                    {
+                      "description": "Cleanliness fee",
+                      "const": "driver_mess_fee"
+                    },
+                    {
+                      "description": "Penalty notice processing fee",
+                      "const": "driver_infraction_fee"
+                    },
+                    {
+                      "description": "Repatriation fee",
+                      "const": "repatriation_fee"
+                    },
+                    {
+                      "description": "Claim management fee",
+                      "const": "claims_owner_fee_cg"
+                    },
+                    {
+                      "description": "Commercial gesture from Drivy platform to cover late cancellation fee",
+                      "const": "drivy_cancellation_fee"
+                    },
+                    {
+                      "description": "Commercial gesture from Drivy platform to cover late return fee",
+                      "const": "drivy_late_return_fee"
+                    },
+                    {
+                      "description": "Commercial gesture from Drivy platform to cover cleanliness fee",
+                      "const": "drivy_mess_fee"
+                    },
+                    {
+                      "description": "Insurance premium for old price structure (applies to trips booked before December 2018)",
+                      "const": "insurance_fee"
+                    },
+                    {
+                      "description": "Amount collected from the driver for insurance and given to self insured partner",
+                      "const": "self_insurance_payment"
+                    },
+                    {
+                      "description": "Amount collected from the driver for additional insurance (CDW) and given to self insured partner",
+                      "const": "additional_self_insurance_payment"
+                    },
+                    {
+                      "description": "Roadside assistance for old price structure (applies to trips booked before December 2018)",
+                      "const": "assistance_fee"
+                    },
+                    {
+                      "description": "Drivy service fees",
+                      "const": "drivy_service_fee"
+                    },
+                    {
+                      "description": "Fee charged to the owner when a breakdown occurs",
+                      "const": "drivy_breakdown_management_fee"
+                    },
+                    {
+                      "description": "Fee charged to the owner for late cancellation",
+                      "const": "drivy_unfulfillment_fee"
+                    },
+                    {
+                      "description": "Fuel adjustment when a driver returns the vehicle with more or less fuel than at vehicle pick-up",
+                      "const": "driver_gas_compensation"
+                    },
+                    {
+                      "description": "Recharging adjustment when a driver uses the vehicle's charging facility",
+                      "const": "rental_recharging_compensation"
+                    },
+                    {
+                      "description": "Toll reimbursment",
+                      "const": "driver_toll_compensation"
+                    },
+                    {
+                      "description": "Parking reimbursment",
+                      "const": "driver_parking_compensation"
+                    },
+                    {
+                      "description": "Payment made on site between driver and owner (this should not happen for Open trips since the owner and driver don't meet)",
+                      "const": "driver_compensation_for_offsite_payment"
+                    },
+                    {
+                      "description": "Penalty notice amount",
+                      "const": "owner_infraction_compensation"
+                    },
+                    {
+                      "description": "Commercial gesture from Drivy platform to cover fuel adjustment",
+                      "const": "drivy_gas_compensation"
+                    },
+                    {
+                      "description": "Commercial gesture from Drivy platform to cover exceptional event",
+                      "const": "exceptional_event_compensation"
+                    },
+                    {
+                      "description": "Payment for damage that occurred during a trip",
+                      "const": "damage_compensation"
+                    },
+                    {
+                      "description": "Small financial adjustment that could happened in accounting",
+                      "const": "other_compensation"
+                    },
+                    {
+                      "description": "Owner guarantee earning",
+                      "const": "guarantee_earning"
+                    },
+                    {
+                      "description": "Delivery fee",
+                      "const": "delivery_fee"
+                    },
+                    {
+                      "description": "Delivery admin fee",
+                      "const": "delivery_admin_fee"
+                    },
+                    {
+                      "description": "Recovery towing fee compensation",
+                      "const": "owner_tow_compensation"
+                    },
+                    {
+                      "description": "Battery recharge fee",
+                      "const": "battery_recharge_fee"
+                    },
+                    {
+                      "description": "Goodwill gesture to compensate for electric car recharge",
+                      "const": "battery_recharge_compensation"
+                    },
+                    {
+                      "description": "Connect deposit",
+                      "const": "connect_deposit"
+                    }
+                  ]
+                },
+                "amount": {
+                  "type": "integer",
+                  "description": "The charge's amount"
+                }
+              }
+            }
+          }
+        }
+      },
+      "payouts_index": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An array of payouts, ordered by completion date",
+        "type": "array",
+        "items": {
+          "description": "A payout.",
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "The payout ID",
+              "type": "integer"
+            }
+          }
+        },
+        "uniqueItems": true
+      },
+      "payout": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A payout.",
+        "type": "object",
+        "required": [
+          "id",
+          "amount",
+          "currency",
+          "completed_at",
+          "entity_type"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The payout ID",
+            "type": "integer"
+          },
+          "amount": {
+            "description": "The amount of the payout, in cents (0.01€)",
+            "type": "integer"
+          },
+          "currency": {
+            "description": "The currency of the payout (ISO 4217 alphabetic code)",
+            "type": "string"
+          },
+          "completed_at": {
+            "description": "The ISO8601 formatted payout completion date",
+            "type": "string",
+            "format": "date-time"
+          },
+          "entity_type": {
+            "description": "The type of entity the payout is related to",
+            "type": "string",
+            "enum": [
+              "User",
+              "Company"
+            ]
+          },
+          "invoices": {
+            "description": "An array of invoices paid by this payout",
+            "type": "array",
+            "items": {
+              "description": "An invoice",
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "description": "The invoice ID",
+                  "type": "integer"
+                }
+              }
+            },
+            "uniqueItems": true
+          }
+        }
+      },
+      "rentals_index": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An array of rentals",
+        "type": "array",
+        "items": {
+          "description": "A Rental.",
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "The rental ID",
+              "type": "integer"
+            }
+          }
+        },
+        "uniqueItems": true
+      },
+      "rental": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A Rental.",
+        "type": "object",
+        "required": [
+          "id",
+          "car_id",
+          "user_id",
+          "starts_at",
+          "ends_at",
+          "booked_at",
+          "price",
+          "insurance_fee"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Rental's id",
+            "type": "integer"
+          },
+          "car_id": {
+            "description": "Vehicle's id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "user_id": {
+            "description": "User id of the rental's driver",
+            "type": "integer",
+            "minimum": 1
+          },
+          "starts_at": {
+            "description": "Rental's started time in ISO8601 format",
+            "type": "string",
+            "format": "date-time"
+          },
+          "ends_at": {
+            "description": "Rental's ended time in ISO8601 format",
+            "type": "string",
+            "format": "date-time"
+          },
+          "booked_at": {
+            "description": "Rental's booked time in ISO8601 format",
+            "type": "string",
+            "format": "date-time"
+          },
+          "price": {
+            "description": "Price set by the owner (in cents 0.01€)",
+            "type": "integer"
+          },
+          "insurance_fee": {
+            "description": "Insurance amount collected (in cents 0.01€)",
+            "type": "integer"
+          }
+        }
+      },
+      "rental_invoices_index": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An array of invoices",
+        "type": "array",
+        "items": {
+          "description": "An Invoice.",
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "The invoice ID",
+              "type": "integer"
+            }
+          }
+        },
+        "uniqueItems": true
+      },
+      "rental_messages_index": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An array of messages",
+        "type": "array",
+        "items": {
+          "description": "A Message.",
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "The message ID",
+              "type": "integer"
+            }
+          }
+        },
+        "uniqueItems": true
+      },
+      "message": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A Message.",
+        "type": "object",
+        "required": [
+          "id",
+          "rental_id",
+          "sending_user_id",
+          "sent_at",
+          "content"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The message ID",
+            "type": "integer"
+          },
+          "rental_id": {
+            "description": "ID of the related rental",
+            "type": "integer"
+          },
+          "sending_user_id": {
+            "description": "ID of the sending user",
+            "type": "integer"
+          },
+          "sent_at": {
+            "description": "Date the message was sent",
+            "type": "string"
+          },
+          "content": {
+            "description": "Content of message, Personal information detected in messages is hidden",
+            "type": "string"
+          }
+        }
+      },
+      "checkin": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A checkin is the event created when the user finished the pick up inspection.",
+        "type": "object",
+        "required": [
+          "rental_id",
+          "occurred_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rental_id": {
+            "description": "Rental's ID linked to this checkin",
+            "type": "integer",
+            "minimum": 1
+          },
+          "mileage": {
+            "description": "The vehicle’s mileage at checkin (in local units, eg: FR: km, GB: miles, ...)",
+            "type": "integer"
+          },
+          "fuel_level": {
+            "description": "The vehicle’s fuel level at checkin (in percentage)",
+            "type": "integer"
+          },
+          "occurred_at": {
+            "description": "Checkin's time in ISO8601 format",
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "checkout": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A checkout is the event created when the user finished the drop off inspection.",
+        "type": "object",
+        "required": [
+          "rental_id",
+          "distance_driven",
+          "occurred_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rental_id": {
+            "description": "Rental's ID linked to this checkout",
+            "type": "integer",
+            "minimum": 1
+          },
+          "mileage": {
+            "description": "The vehicle’s mileage at checkout (in local units, eg: FR: km, GB: miles, ...)",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "fuel_level": {
+            "description": "The vehicle’s fuel level at checkout (in percentage)",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "distance_driven": {
+            "description": "The number of kilometers driven during this rental",
+            "type": "integer"
+          },
+          "occurred_at": {
+            "description": "Checkout's time in ISO8601 format",
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "cars_index": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An array of cars",
+        "type": "array",
+        "items": {
+          "description": "A car.",
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "The car ID",
+              "type": "integer"
+            }
+          }
+        },
+        "uniqueItems": true
+      },
+      "car": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A Car.",
+        "type": "object",
+        "required": [
+          "id",
+          "state",
+          "plate_number",
+          "brand",
+          "model",
+          "display_address",
+          "address"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The car ID",
+            "type": "integer"
+          },
+          "state": {
+            "description": "State of the vehicle can be a) active (only state where the vehicle can be booked by a user) b) inactive (temporary state when a vehicle is unavailable for rental) c) pending_approval (temporary state when a vehicle is under review for quality or other checks) and d) deleted (when a vehicle is permanently unavailable for rental)",
+            "type": "string"
+          },
+          "plate_number": {
+            "description": "Vehicle's plate number",
+            "type": "string"
+          },
+          "brand": {
+            "description": "Vehicle's brand (ex: Volkswagen)",
+            "type": "string"
+          },
+          "model": {
+            "description": "Vehicle's model (ex: Polo)",
+            "type": "string"
+          },
+          "display_address": {
+            "description": "Location where the vehicle is parked (deprecated, please use address instead)",
+            "type": "string",
+            "deprecated": true
+          },
+          "address": {
+            "description": "Location where the vehicle is parked",
+            "type": "string"
+          }
+        }
+      },
+      "user": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A User.",
+        "type": "object",
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "phone_number",
+          "address_line1",
+          "postal_code",
+          "city",
+          "country",
+          "birth_date",
+          "license_country",
+          "license_first_issue_date",
+          "license_number"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The user ID",
+            "type": "integer"
+          },
+          "first_name": {
+            "description": "First name(s)",
+            "type": "string"
+          },
+          "last_name": {
+            "description": "Last name(s)",
+            "type": "string"
+          },
+          "phone_number": {
+            "description": "The phone number in international format",
+            "type": "string"
+          },
+          "address_line1": {
+            "description": "Residential address of the user",
+            "type": "string"
+          },
+          "address_line2": {
+            "description": "Additional address details",
+            "type": "string"
+          },
+          "postal_code": {
+            "description": "The postal code",
+            "type": "string"
+          },
+          "city": {
+            "description": "The city",
+            "type": "string"
+          },
+          "country": {
+            "description": "Address's country format ISO_3166-1_alpha-2 (ex: FR, ES, ...)",
+            "type": "string"
+          },
+          "birth_date": {
+            "description": "The birth date",
+            "type": "string",
+            "format": "date"
+          },
+          "license_country": {
+            "description": "Driving licence country of issue format ISO_3166-1_alpha-2 (ex: FR, ES, ...)",
+            "type": "string"
+          },
+          "license_first_issue_date": {
+            "description": "Driving licence first issue date",
+            "type": "string",
+            "format": "date"
+          },
+          "license_number": {
+            "description": "The license number",
+            "type": "string"
+          }
+        }
+      },
+      "checkins_index": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "rental_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rental_id": {
+              "description": "The rental ID",
+              "type": "integer"
+            }
+          }
+        },
+        "uniqueItems": true
+      },
+      "checkouts_index": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "rental_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rental_id": {
+              "description": "The rental ID",
+              "type": "integer"
+            }
+          }
+        },
+        "uniqueItems": true
+      },
+      "unavailability": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An unavailability.",
+        "type": "object",
+        "required": [
+          "starts_at",
+          "ends_at",
+          "car_id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "car_id": {
+            "description": "ID of the related car",
+            "type": "integer"
+          },
+          "starts_at": {
+            "description": "The ISO8601 formatted beginning of the unavailability's period",
+            "type": "string",
+            "format": "date-time"
+          },
+          "ends_at": {
+            "description": "The ISO8601 formatted ending of the unavailability's period",
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "description": "The reason of the unavailability of the car.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "check_up",
+              "repairs",
+              "connect_issues",
+              "repatriation",
+              "booked",
+              "other",
+              null
+            ]
+          }
+        }
+      },
+      "unavailabilities_index": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An array of unavailabilities",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/unavailability"
+        },
+        "uniqueItems": true
+      },
+      "webhook": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A webhook object",
+        "type": "object",
+        "required": [
+          "type",
+          "data",
+          "occurred_at"
+        ],
+        "properties": {
+          "type": {
+            "description": "The webhook event type",
+            "type": "string"
+          },
+          "data": {
+            "description": "The webhook event data"
+          },
+          "occurred_at": {
+            "description": "The webhook event occurred at timestamp",
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "rentals_booked": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "rental.booked"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "rental_id": {
+                    "description": "The rental identifier",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      },
+      "rentals_canceled": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "rental.canceled"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "rental_id": {
+                    "description": "The rental identifier",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      },
+      "rentals_car_checked_in": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "rental.car_checked_in"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "rental_id": {
+                    "description": "The rental identifier",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      },
+      "rentals_car_checked_out": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "rental.car_checked_out"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "rental_id": {
+                    "description": "The rental identifier",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      },
+      "rentals_times_changed": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "rental.times_changed"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "rental_id": {
+                    "description": "The rental identifier",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      },
+      "rentals_car_switched": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "rental.car_switched"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "rental_id": {
+                    "description": "The rental identifier",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      },
+      "car_id": {
+        "description": "ID of the related car",
+        "type": "integer"
+      },
+      "starts_at": {
+        "description": "The ISO8601 formatted beginning of the unavailability's period",
+        "type": "string",
+        "format": "date-time"
+      },
+      "ends_at": {
+        "description": "The ISO8601 formatted ending of the unavailability's period",
+        "type": "string",
+        "format": "date-time"
+      },
+      "reason": {
+        "description": "The reason of the unavailability of the car.",
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "check_up",
+          "repairs",
+          "connect_issues",
+          "repatriation",
+          "booked",
+          "other",
+          null
+        ]
+      },
+      "unavailabilities_created": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "unavailability.created"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "car_id": {
+                    "$ref": "#/components/schemas/car_id"
+                  },
+                  "starts_at": {
+                    "$ref": "#/components/schemas/starts_at"
+                  },
+                  "ends_at": {
+                    "$ref": "#/components/schemas/ends_at"
+                  },
+                  "reason": {
+                    "$ref": "#/components/schemas/reason"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      },
+      "unavailabilities_deleted": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "unavailability.deleted"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "car_id": {
+                    "$ref": "#/components/schemas/car_id"
+                  },
+                  "starts_at": {
+                    "$ref": "#/components/schemas/starts_at"
+                  },
+                  "ends_at": {
+                    "$ref": "#/components/schemas/ends_at"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      },
+      "users_updated": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "user.updated"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "user_id": {
+                    "description": "The user identifier",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      },
+      "messages_sent": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "const": "message.sent"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "message_id": {
+                    "description": "The message identifier",
+                    "type": "number"
+                  },
+                  "rental_id": {
+                    "description": "The rental identifier",
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/webhook"
+          }
+        ]
+      }
+    }
+  }
+}

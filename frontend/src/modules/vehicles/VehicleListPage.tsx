@@ -248,10 +248,10 @@ export default function VehicleListPage(): React.JSX.Element {
     queryFn: () => vehiclesApi.list(),
   });
 
-  const { data: pricingSuggestions = [] } = useQuery({
+  const { data: pricingSuggestions = [] } = useQuery<PricingSuggestion[]>({
     queryKey: ['pricing-suggestions'],
     queryFn: () => api.get<{ suggestions: PricingSuggestion[] }>('/ai/pricing-suggestions').then(r => r.data.suggestions),
-    enabled: isAdmin,
+    enabled: Boolean(isAdmin),
     staleTime: 10 * 60_000,
   });
 

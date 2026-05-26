@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { vehiclesApi, vehicleCarkeepersApi } from './vehiclesApi';
+import { vehiclesApi, vehicleCarkeepersApi, vehiclePhotosApi, type VehiclePhoto } from './vehiclesApi';
 import { blockingsApi, BLOCKING_TYPE_LABELS, BLOCKING_TYPE_COLORS } from './blockingsApi';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../utils/api';
@@ -64,6 +64,8 @@ export default function VehicleDetailPage(): React.JSX.Element {
   const [blockingModal, setBlockingModal] = useState(false);
   const [blockingForm, setBlockingForm] = useState<BlockingFormData>(emptyForm);
   const [editingBlockingId, setEditingBlockingId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const { data: vehicle, isLoading, isError } = useQuery({
     queryKey: ['vehicle', id],
@@ -106,6 +108,29 @@ export default function VehicleDetailPage(): React.JSX.Element {
     mutationFn: (userId: string) => vehicleCarkeepersApi.remove(id!, userId),
     onSuccess: () => { void refetchCarkeepers(); },
   });
+
+  const { data: photos = [], refetch: refetchPhotos } = useQuery<VehiclePhoto[]>({
+    queryKey: ['vehicle-photos', id],
+    queryFn: () => vehiclePhotosApi.list(id!),
+    enabled: Boolean(id),
+    staleTime: 2 * 60_000,
+  });
+
+  const sortedPhotos = [...photos].sort((a, b) => (b.isCover ? 1 : 0) - (a.isCover ? 1 : 0));
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length || !id) return;
+    for (const file of files) {
+      setUploadProgress(0);
+      try {
+        await vehiclePhotosApi.upload(id, file, setUploadProgress);
+      } catch (err) { console.error('[Upload]', err); }
+    }
+    setUploadProgress(null);
+    e.target.value = '';
+    void refetchPhotos();
+  }
 
   const deleteMutation = useMutation({
     mutationFn: () => vehiclesApi.delete(id!),
@@ -349,6 +374,90 @@ export default function VehicleDetailPage(): React.JSX.Element {
               </div>
             </Section>
           )}
+
+          {/* Photos */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Photos</h2>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadProgress !== null}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+                style={{ backgroundColor: '#01696e' }}
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Ajouter une photo
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                multiple
+                className="hidden"
+                onChange={(e) => { void handleFileChange(e); }}
+              />
+            </div>
+
+            {uploadProgress !== null && (
+              <div className="mb-3">
+                <div className="h-1.5 w-full rounded-full bg-gray-100">
+                  <div
+                    className="h-1.5 rounded-full transition-all"
+                    style={{ width: `${uploadProgress}%`, backgroundColor: '#01696e' }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-400 text-center">{uploadProgress}%</p>
+              </div>
+            )}
+
+            {sortedPhotos.length === 0 ? (
+              <p className="text-sm text-gray-400">Aucune photo</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {sortedPhotos.map((photo) => (
+                  <div key={photo.id} className="relative group">
+                    <div className="aspect-[4/3] overflow-hidden rounded-lg bg-gray-100">
+                      <img
+                        src={photo.url}
+                        alt=""
+                        className="h-full w-full object-cover cursor-pointer"
+                        onClick={async () => {
+                          if (!photo.isCover) {
+                            await vehiclePhotosApi.setCover(id!, photo.id);
+                            void refetchPhotos();
+                          }
+                        }}
+                      />
+                    </div>
+                    {photo.isCover && (
+                      <span className="absolute top-1 left-1 rounded-full bg-[#01696e] px-2 py-0.5 text-[10px] font-semibold text-white">
+                        Couverture
+                      </span>
+                    )}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm('Supprimer cette photo ?')) {
+                            void vehiclePhotosApi.delete(id!, photo.id).then(() => refetchPhotos());
+                          }
+                        }}
+                        className="absolute top-1 right-1 rounded-full bg-white/80 p-1 text-gray-500 opacity-0 group-hover:opacity-100 transition hover:text-red-500"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Colonne droite */}

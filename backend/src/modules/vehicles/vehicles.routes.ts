@@ -1,5 +1,9 @@
 ﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { randomUUID } from 'crypto';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
@@ -10,6 +14,30 @@ import {
   updateVehicle,
   deleteVehicle,
 } from './vehicles.service';
+
+const UPLOAD_BASE = process.env.UPLOAD_DIR ?? '/app/uploads';
+const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+
+const storage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const vehicleId = (req.params.id as string | undefined) ?? 'unknown';
+    const dir = path.join(UPLOAD_BASE, 'vehicles', vehicleId);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    cb(null, `${Date.now()}-${randomUUID()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, ALLOWED_MIMES.has(file.mimetype));
+  },
+});
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -78,6 +106,68 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const db = getTenantClient(req.tenantDbUrl!);
     await deleteVehicle(db, (req.params.id as string));
     res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/vehicles/:id/photos
+router.get('/:id/photos', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const photos = await db.vehiclePhoto.findMany({
+      where: { vehicleId: req.params.id as string },
+      orderBy: [{ isCover: 'desc' }, { uploadedAt: 'desc' }],
+      select: { id: true, url: true, filename: true, uploadedAt: true, uploadedById: true, isCover: true },
+    });
+    res.json({ photos });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/vehicles/:id/photos
+router.post('/:id/photos', upload.single('photo'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) { res.status(400).json({ error: 'Fichier requis (jpg/png/webp/heic, max 10 Mo)' }); return; }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const publicUrl = `/uploads/vehicles/${req.params.id as string}/${req.file.filename}`;
+    const photo = await db.vehiclePhoto.create({
+      data: {
+        vehicleId: req.params.id as string,
+        filename: req.file.filename,
+        url: publicUrl,
+        uploadedById: req.auth?.userId ?? null,
+      },
+      select: { id: true, url: true, uploadedAt: true, isCover: true },
+    });
+    res.status(201).json({ photo });
+  } catch (err: unknown) { next(err); }
+});
+
+// DELETE /api/v1/vehicles/:id/photos/:photoId
+router.delete('/:id/photos/:photoId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (req.auth?.role !== 'admin' && !req.auth?.isSuperAdmin) {
+      res.status(403).json({ error: 'Réservé aux admins' }); return;
+    }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const photo = await db.vehiclePhoto.findFirst({
+      where: { id: req.params.photoId as string, vehicleId: req.params.id as string },
+    });
+    if (!photo) { res.status(404).json({ error: 'Photo introuvable' }); return; }
+    const filePath = path.join(UPLOAD_BASE, 'vehicles', req.params.id as string, photo.filename);
+    try { fs.unlinkSync(filePath); } catch { /* fichier déjà supprimé */ }
+    await db.vehiclePhoto.delete({ where: { id: photo.id } });
+    res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
+// PATCH /api/v1/vehicles/:id/photos/:photoId/cover
+router.patch('/:id/photos/:photoId/cover', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const vehicleId = req.params.id as string;
+    const photoId = req.params.photoId as string;
+    await db.vehiclePhoto.updateMany({ where: { vehicleId }, data: { isCover: false } });
+    const photo = await db.vehiclePhoto.update({ where: { id: photoId }, data: { isCover: true } });
+    res.json({ photo });
   } catch (err: unknown) { next(err); }
 });
 

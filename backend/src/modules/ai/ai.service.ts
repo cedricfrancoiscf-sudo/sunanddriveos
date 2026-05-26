@@ -104,10 +104,22 @@ export async function suggestCarSeatReply(
 // ─── 4.3 — Prévision trésorerie 30 jours ────────────────────────────────────
 
 export interface CashflowWeek {
-  week: string;           // "Semaine 1", "Semaine 2", …
+  week: string;           // "2026-W22" (ISO 8601)
   weekStart: string;      // ISO date du lundi
   expectedRevenue: number;
   rentalCount: number;
+}
+
+function mondayToISOWeek(monday: Date): string {
+  // Thursday determines ISO week year
+  const thursday = new Date(monday);
+  thursday.setDate(monday.getDate() + 3);
+  const year = thursday.getFullYear();
+  const jan4 = new Date(year, 0, 4);
+  const startOfFirstWeek = new Date(jan4);
+  startOfFirstWeek.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+  const weekNum = Math.floor((monday.getTime() - startOfFirstWeek.getTime()) / (7 * 86_400_000)) + 1;
+  return `${year}-W${String(weekNum).padStart(2, '0')}`;
 }
 
 export async function forecastCashflow(db: PrismaClient): Promise<CashflowWeek[]> {
@@ -135,9 +147,8 @@ export async function forecastCashflow(db: PrismaClient): Promise<CashflowWeek[]
       existing.rentalCount++;
       existing.expectedRevenue += r.grossRevenue ?? 0;
     } else {
-      const idx = weeks.size + 1;
       weeks.set(key, {
-        week: `Semaine ${idx}`,
+        week: mondayToISOWeek(monday),
         weekStart: key,
         expectedRevenue: r.grossRevenue ?? 0,
         rentalCount: 1,

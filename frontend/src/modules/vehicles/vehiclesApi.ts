@@ -60,6 +60,49 @@ export interface VehicleCarkeeper {
   user: { id: string; name: string; email: string };
 }
 
+export interface VehiclePhoto {
+  id: string;
+  url: string;
+  filename: string;
+  uploadedAt: string;
+  uploadedById: string | null;
+  isCover: boolean;
+}
+
+export const vehiclePhotosApi = {
+  list: (vehicleId: string) =>
+    api.get<{ photos: VehiclePhoto[] }>(`/vehicles/${vehicleId}/photos`).then(r => r.data.photos),
+
+  upload: (vehicleId: string, file: File, onProgress?: (pct: number) => void): Promise<VehiclePhoto> =>
+    new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.append('photo', file);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${api.defaults.baseURL ?? ''}/vehicles/${vehicleId}/photos`);
+      const token = localStorage.getItem('token');
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      const tenantId = localStorage.getItem('tenantId');
+      if (tenantId) xhr.setRequestHeader('X-Tenant-ID', tenantId);
+      if (onProgress) xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const data = JSON.parse(xhr.responseText) as { photo: VehiclePhoto };
+          resolve(data.photo);
+        } else {
+          reject(new Error(`Upload échoué (${xhr.status})`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Erreur réseau upload'));
+      xhr.send(fd);
+    }),
+
+  delete: (vehicleId: string, photoId: string) =>
+    api.delete(`/vehicles/${vehicleId}/photos/${photoId}`),
+
+  setCover: (vehicleId: string, photoId: string) =>
+    api.patch<{ photo: VehiclePhoto }>(`/vehicles/${vehicleId}/photos/${photoId}/cover`).then(r => r.data.photo),
+};
+
 export const vehicleCarkeepersApi = {
   list: (vehicleId: string) =>
     api.get<{ carkeepers: VehicleCarkeeper[] }>(`/vehicles/${vehicleId}/carkeepers`).then((r) => r.data.carkeepers),

@@ -148,8 +148,22 @@ model Vehicle {
   carSeatRequests       CarSeatRequest[]
   accessoryReservations AccessoryReservation[]
   carkeepers            VehicleCarkeeper[]
+  photos                VehiclePhoto[]
 
   @@map("vehicles")
+}
+
+model VehiclePhoto {
+  id           String   @id @default(cuid())
+  vehicleId    String
+  vehicle      Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  filename     String
+  url          String
+  uploadedAt   DateTime @default(now())
+  uploadedById String?
+  isCover      Boolean  @default(false)
+
+  @@map("vehicle_photos")
 }
 
 model Rental {

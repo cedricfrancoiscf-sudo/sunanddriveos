@@ -2,6 +2,7 @@
 import { decrypt, encrypt } from '../../utils/crypto';
 import { createGetaroundClient, type GetaroundRental } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
+import { analyzeMessage } from '../ai/ai.service';
 
 export interface SyncResult {
   accountId: string;
@@ -338,7 +339,7 @@ export async function syncAccountMessages(
         { endAt: { gte: since } },
       ],
     },
-    select: { id: true, getaroundId: true, driverGetaroundId: true },
+    select: { id: true, getaroundId: true, driverGetaroundId: true, vehicleId: true, driverName: true, startAt: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
   });
 
   for (const rental of rentals) {
@@ -363,7 +364,7 @@ export async function syncAccountMessages(
               ? ('inbound' as const)
               : ('outbound' as const);
 
-          await db.message.create({
+          const created = await db.message.create({
             data: {
               getaroundId: String(msg.id),
               rentalId: rental.id,
@@ -374,6 +375,46 @@ export async function syncAccountMessages(
             },
           });
           result.created++;
+
+          // Détection siège auto sur messages entrants nouvellement créés
+          if (direction === 'inbound') {
+            void (async () => {
+              try {
+                const analysis = await analyzeMessage(msg.content);
+                if (!analysis.isCarSeatRequest) return;
+
+                const existing = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
+                if (existing) return;
+
+                await db.carSeatRequest.create({
+                  data: { vehicleId: rental.vehicleId, rentalId: rental.id },
+                });
+
+                const vehicleLabel = `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`;
+                const startLabel = rental.startAt.toLocaleDateString('fr-FR');
+
+                // Notifier admins + carkeepers du véhicule
+                const [admins, carkeepersAssigned] = await Promise.all([
+                  db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+                  db.vehicleCarkeeper.findMany({ where: { vehicleId: rental.vehicleId }, select: { userId: true } }),
+                ]);
+                const recipientIds = [...new Set([...admins.map(a => a.id), ...carkeepersAssigned.map(c => c.userId)])];
+                await db.notification.createMany({
+                  data: recipientIds.map(userId => ({
+                    userId,
+                    type: 'car_seat_request',
+                    title: `🪑 Siège auto demandé par ${rental.driverName} pour ${vehicleLabel} le ${startLabel}`,
+                    body: `Message : ${msg.content.slice(0, 120)}`,
+                    relatedEntityType: 'rental',
+                    relatedEntityId: rental.id,
+                  })),
+                  skipDuplicates: true,
+                });
+              } catch (e) { console.error('[CarSeatDetect]', e); }
+            })();
+          }
+
+          void created; // référence utilisée ci-dessus
         } catch (err: unknown) {
           result.errors.push(`Message ${msg.id}: ${err instanceof Error ? err.message : 'erreur'}`);
         }

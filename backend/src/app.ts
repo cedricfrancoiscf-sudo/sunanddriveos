@@ -66,6 +66,7 @@ import renterBlacklistRoutes from './modules/blocking/renter-blacklist.routes';
 
 export function createApp(): Express {
   const app = express();
+  app.set('trust proxy', 1);
 
   // Sécurité HTTP — en-têtes de protection
   app.use(

@@ -11,6 +11,19 @@ interface RentalStats { totalRevenue: number; occupancyRate: number; rentalCount
 interface ActiveRental { id: string; driverName: string; startAt: string; endAt: string; vehicle: { make: string; model: string; licensePlate: string }; }
 interface Alert { id: string; type: string; label: string; severity: 'high' | 'medium'; link: string; }
 
+function formatWeekLabel(week: string): string {
+  const [yearStr, weekStr] = week.split('-W');
+  const year = parseInt(yearStr ?? '2026');
+  const weekNum = parseInt(weekStr ?? '1');
+  const jan4 = new Date(year, 0, 4);
+  const startOfWeek = new Date(jan4);
+  startOfWeek.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (weekNum - 1) * 7);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return `S${weekNum} · ${fmt(startOfWeek)}→${fmt(endOfWeek)}`;
+}
+
 function KpiCard({ label, value, sub, link }: { label: string; value: string; sub?: string | undefined; link?: string | undefined }): React.JSX.Element {
   const inner = (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
@@ -218,11 +231,11 @@ export default function DashboardPage(): React.JSX.Element {
             </div>
             <ResponsiveContainer width="100%" height={140}>
               <BarChart data={cashflowForecast} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <XAxis dataKey="week" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="week" tick={{ fontSize: 10 }} tickFormatter={formatWeekLabel} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip
                   formatter={(v: number) => [v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }), 'CA prévu']}
-                  labelFormatter={(l: string) => l}
+                  labelFormatter={(l: string) => formatWeekLabel(l)}
                 />
                 <Bar dataKey="expectedRevenue" fill="#01696e" radius={[4, 4, 0, 0]} />
               </BarChart>

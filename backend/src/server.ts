@@ -257,10 +257,85 @@ async function runMileageAnomalyDetection(): Promise<void> {
   }
 }
 
+// ─── 6 — Évaluations automatiques ────────────────────────────────────────────
+
+let isAutoEvalRunning = false;
+
+async function runAutoEvaluations(): Promise<void> {
+  if (isAutoEvalRunning) { console.log('[AutoEval] Déjà en cours, skip'); return; }
+  isAutoEvalRunning = true;
+  try {
+    const master = getMasterClient();
+    const companies = await master.company.findMany({
+      where: { isActive: true },
+      select: { tenantDbUrl: true, slug: true },
+    });
+    for (const company of companies) {
+      try {
+        const db = getTenantClient(company.tenantDbUrl);
+        const now = new Date();
+        const since24h = new Date(now.getTime() - 24 * 3_600_000);
+
+        const pending = await db.rental.findMany({
+          where: { status: 'completed', evaluationStatus: 'pending', endAt: { gte: since24h, lte: now } },
+          select: {
+            id: true, driverName: true,
+            lateReturnFee: true, damageCompensation: true, gasRefillFee: true, driverMessFee: true,
+            vehicle: { select: { make: true, model: true, licensePlate: true } },
+          },
+        });
+
+        const admins = pending.length > 0
+          ? await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } })
+          : [];
+
+        for (const rental of pending) {
+          const noFees =
+            (rental.lateReturnFee ?? 0) === 0 &&
+            (rental.damageCompensation ?? 0) === 0 &&
+            (rental.gasRefillFee ?? 0) === 0 &&
+            (rental.driverMessFee ?? 0) === 0;
+
+          const newStatus = noFees ? ('posted' as const) : ('blocked' as const);
+          const vehicleLabel = `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`;
+
+          await db.rental.update({ where: { id: rental.id }, data: { evaluationStatus: newStatus } });
+
+          for (const admin of admins) {
+            const existing = await db.notification.findFirst({
+              where: { userId: admin.id, type: 'auto_evaluation', relatedEntityId: rental.id },
+            });
+            if (existing) continue;
+            await db.notification.create({
+              data: {
+                userId: admin.id,
+                type: 'auto_evaluation',
+                title: noFees
+                  ? `✅ Évaluation à poster sur Getaround pour ${rental.driverName} - ${vehicleLabel}`
+                  : `⚠️ Évaluation bloquée pour ${rental.driverName} - frais supplémentaires détectés`,
+                body: vehicleLabel,
+                relatedEntityType: 'rental',
+                relatedEntityId: rental.id,
+              },
+            });
+          }
+        }
+      } catch (err: unknown) {
+        console.error(`[AutoEval] Erreur tenant ${company.slug} :`, err);
+      }
+    }
+  } catch (err: unknown) {
+    console.error('[AutoEval] Erreur :', err);
+  } finally {
+    isAutoEvalRunning = false;
+  }
+}
+
 // Brancher anomalies km + locataires non répondants dans le cron horaire
 cron.schedule('30 * * * *', () => {
   void runMileageAnomalyDetection();
   void checkUnresponsiveRenters();
+  void runAutoEvaluations();
 });
 
 // Fermeture gracieuse — libère connexions Prisma proprement

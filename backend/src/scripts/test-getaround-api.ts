@@ -1,4 +1,4 @@
-// Diagnostic Getaround Owner API v1 — version étendue
+﻿// Diagnostic Getaround Owner API v1 — version étendue
 // Usage : npx tsx src/scripts/test-getaround-api.ts <API_KEY>
 
 import axios, { type AxiosError, type AxiosResponse } from 'axios';
@@ -140,7 +140,7 @@ async function main() {
     } else {
       fail(`Réponse inattendue (status ${res1.status})`);
     }
-  } catch (err) {
+  } catch (err: unknown) {
     fail(`Erreur réseau : ${(err as AxiosError).message}`);
   }
 
@@ -178,7 +178,7 @@ async function main() {
     } else {
       fail(`Réponse inattendue (status ${res.status})`);
     }
-  } catch (err) {
+  } catch (err: unknown) {
     fail(`Erreur réseau : ${(err as AxiosError).message}`);
   }
 
@@ -218,7 +218,7 @@ async function main() {
       totalRentalPages += pages;
       for (const id of ids) allRentalIds.add(id);
       info(`  → ${ids.length} ID(s), ${pages} page(s)`);
-    } catch (err) {
+    } catch (err: unknown) {
       fail(`  Erreur : ${(err as AxiosError).message}`);
     }
   }
@@ -249,7 +249,7 @@ async function main() {
     } else {
       fail(`Réponse inattendue (status ${res.status})`);
     }
-  } catch (err) {
+  } catch (err: unknown) {
     fail(`Erreur réseau : ${(err as AxiosError).message}`);
   }
 
@@ -280,7 +280,7 @@ async function main() {
     } else {
       fail(`Réponse inattendue (status ${res.status})`);
     }
-  } catch (err) {
+  } catch (err: unknown) {
     fail(`Erreur réseau : ${(err as AxiosError).message}`);
   }
 
@@ -294,7 +294,7 @@ async function main() {
     const res = await client.get<unknown>(`/rentals/${KNOWN_RENTAL_ID}/checkin.json`);
     ok(`Status HTTP : ${res.status}`);
     ok(`Body brut :\n${JSON.stringify(res.data, null, 4)}`);
-  } catch (err) {
+  } catch (err: unknown) {
     fail(`Erreur réseau : ${(err as AxiosError).message}`);
   }
 
@@ -308,7 +308,7 @@ async function main() {
     const res = await client.get<unknown>(`/rentals/${KNOWN_RENTAL_ID}/checkout.json`);
     ok(`Status HTTP : ${res.status}`);
     ok(`Body brut :\n${JSON.stringify(res.data, null, 4)}`);
-  } catch (err) {
+  } catch (err: unknown) {
     fail(`Erreur réseau : ${(err as AxiosError).message}`);
   }
 
@@ -329,7 +329,7 @@ async function main() {
     if (res.status === 200 && Array.isArray(res.data)) {
       info(`→ ${res.data.length} indisponibilité(s) sur les 30 prochains jours`);
     }
-  } catch (err) {
+  } catch (err: unknown) {
     fail(`Erreur réseau : ${(err as AxiosError).message}`);
   }
 
@@ -350,7 +350,7 @@ async function main() {
       } else {
         fail(`Réponse inattendue (status ${res.status})`);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       fail(`Erreur réseau : ${(err as AxiosError).message}`);
     }
   } else {

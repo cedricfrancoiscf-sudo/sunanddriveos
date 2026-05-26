@@ -1,4 +1,4 @@
-// Script d'initialisation au démarrage — exécuté avant le serveur
+﻿// Script d'initialisation au démarrage — exécuté avant le serveur
 // Idempotent : peut être lancé plusieurs fois sans danger
 // Resilient : n'arrête pas le processus sur erreur non-fatale
 
@@ -38,7 +38,7 @@ function pushSchema(schema: string, dbUrl: string, label: string): void {
       },
     );
     console.log(`[Init] Schema ${label} — OK`);
-  } catch (err) {
+  } catch (err: unknown) {
     console.error(`[Init] WARN push ${label} :`, (err as Error).message?.split('\n')[0]);
   }
 }
@@ -67,7 +67,7 @@ async function init(): Promise<void> {
     } else {
       console.log(`[Init] SuperAdmin OK : ${SA_EMAIL}`);
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[Init] WARN SuperAdmin :', (err as Error).message);
   }
 
@@ -94,7 +94,7 @@ async function init(): Promise<void> {
       console.log('[Init] Société OK : Sun and Drive');
     }
     companies = await master.company.findMany({ where: { isActive: true }, select: { slug: true, tenantDbUrl: true } });
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[Init] WARN société :', (err as Error).message);
   }
 
@@ -113,7 +113,7 @@ async function init(): Promise<void> {
       } else {
         console.log(`[Init] Utilisateurs OK pour ${c.slug}`);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(`[Init] WARN seed ${c.slug} :`, (err as Error).message);
     }
   }

@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from 'express';
+﻿import type { Request, Response, NextFunction } from 'express';
 import { getMasterClient } from '../prisma/client';
 
 export async function resolveTenant(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -22,7 +22,7 @@ export async function resolveTenant(req: Request, res: Response, next: NextFunct
 
     req.tenantDbUrl = company.tenantDbUrl;
     next();
-  } catch (err) {
+  } catch (err: unknown) {
     next(err);
   }
 }

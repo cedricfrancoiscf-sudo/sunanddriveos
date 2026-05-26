@@ -1,4 +1,4 @@
-import axios, { type AxiosInstance } from 'axios';
+﻿import axios, { type AxiosInstance } from 'axios';
 
 const BASE_URL = 'https://api-eu.getaround.com/owner/v1';
 
@@ -99,7 +99,7 @@ async function fetchAllPages<T>(
     const allParams = { ...params, page: String(page), per_page: '30' };
     const qs = Object.entries(allParams).map(([k, v]) => `${k}=${v}`).join('&');
     const fullUrl = `${url}?${qs}`;
-    console.log(`[API] GET ${fullUrl}`);
+    console.log(`[API] GET ${url} (page ${page})`);
     const res = await client.get<T[]>(fullUrl);
     await new Promise(r => setTimeout(r, 300));
     if (!Array.isArray(res.data)) {
@@ -168,7 +168,7 @@ export function createGetaroundClient(apiKey: string) {
           await new Promise(r => setTimeout(r, 300));
           rentals.push(res.data);
           console.log('[Sync] Location récupérée:', id);
-        } catch (err) {
+        } catch (err: unknown) {
           console.error('[Sync] Erreur détail location', id, err);
         }
       }

@@ -1,4 +1,4 @@
-import type { PrismaClient } from '../../generated/tenant';
+﻿import type { PrismaClient } from '../../generated/tenant';
 
 const TRIGGER_EVENTS = ['rental.booked', 'rental.car_checked_in', 'rental.car_checked_out'] as const;
 export type TriggerEvent = typeof TRIGGER_EVENTS[number];
@@ -124,7 +124,7 @@ export async function executePendingSequences(db: PrismaClient) {
       });
 
       executed++;
-    } catch (err) {
+    } catch (err: unknown) {
       await db.sequenceExecution.update({
         where: { id: exec.id },
         data: {

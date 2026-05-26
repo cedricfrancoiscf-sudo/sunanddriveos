@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -39,7 +39,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const maintenances = await listMaintenances(db, vehicleId);
     res.json({ maintenances });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -86,7 +86,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     })();
 
     res.status(201).json({ maintenance });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -101,7 +101,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     };
     const maintenance = await updateMaintenance(db, (req.params.id as string), data as never);
     res.json({ maintenance });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -109,7 +109,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const db = getTenantClient(req.tenantDbUrl!);
     await deleteMaintenance(db, (req.params.id as string));
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

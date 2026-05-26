@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
 import path from 'path';
@@ -38,7 +38,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { createdAt: 'desc' },
     });
     res.json({ documents: docs });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/documents/expiring — documents expirant dans les 30 jours
@@ -52,7 +52,7 @@ router.get('/expiring', async (req: Request, res: Response, next: NextFunction) 
       orderBy: { expiryDate: 'asc' },
     });
     res.json({ documents: docs });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.post('/', upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
@@ -81,7 +81,7 @@ router.post('/', upload.single('file'), async (req: Request, res: Response, next
       },
     });
     res.status(201).json({ document: doc });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -89,7 +89,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const db = getTenantClient(req.tenantDbUrl!);
     await db.vehicleDocument.delete({ where: { id: (req.params.id as string) } });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

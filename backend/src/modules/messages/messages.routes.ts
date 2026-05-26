@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -31,7 +31,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const result = await listMessages(db, q.data);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/messages/inbox-summary
@@ -40,7 +40,7 @@ router.get('/inbox-summary', async (req: Request, res: Response, next: NextFunct
     const db = getTenantClient(req.tenantDbUrl!);
     const summary = await getInboxSummary(db);
     res.json(summary);
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/messages/:id
@@ -50,7 +50,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const message = await getMessage(db, (req.params.id as string));
     if (!message) { res.status(404).json({ error: 'Message introuvable' }); return; }
     res.json({ message });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/messages — créer un message sortant (réponse manuelle)
@@ -66,7 +66,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const message = await createOutboundMessage(db, body.data.rentalId, body.data.content, body.data.aiSuggestion);
     res.status(201).json({ message });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/messages/:id/approve
@@ -78,7 +78,7 @@ router.post('/:id/approve', async (req: Request, res: Response, next: NextFuncti
     const db = getTenantClient(req.tenantDbUrl!);
     const message = await approveMessage(db, (req.params.id as string), req.auth!.userId!, body.data.content);
     res.json({ message });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/messages/:id/mark-sent
@@ -88,7 +88,7 @@ router.post('/:id/mark-sent', async (req: Request, res: Response, next: NextFunc
     const db = getTenantClient(req.tenantDbUrl!);
     const message = await markAsSent(db, (req.params.id as string), body.success ? body.data.getaroundMessageId : undefined);
     res.json({ message });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/messages/:id/cancel
@@ -97,7 +97,7 @@ router.post('/:id/cancel', async (req: Request, res: Response, next: NextFunctio
     const db = getTenantClient(req.tenantDbUrl!);
     const message = await cancelMessage(db, (req.params.id as string));
     res.json({ message });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

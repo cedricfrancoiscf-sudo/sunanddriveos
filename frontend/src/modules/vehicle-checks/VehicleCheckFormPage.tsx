@@ -59,6 +59,7 @@ export default function VehicleCheckFormPage(): React.JSX.Element {
   const { data: vehiclesData } = useQuery({
     queryKey: ['vehicles'],
     queryFn: () => api.get<{ vehicles: { id: string; make: string; model: string; licensePlate: string }[] }>('/vehicles').then(r => r.data.vehicles),
+    staleTime: 5 * 60_000,
   });
 
   const submitMutation = useMutation({

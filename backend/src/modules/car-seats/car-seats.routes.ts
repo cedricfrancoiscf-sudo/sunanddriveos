@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -16,7 +16,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { minWeightKg: 'asc' },
     });
     res.json({ seats });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/car-seats
@@ -43,7 +43,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       },
     });
     res.status(201).json({ seat });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/car-seats/:id
@@ -58,7 +58,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const seat = await db.carSeat.update({ where: { id: (req.params.id as string) }, data: body.data });
     res.json({ seat });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/car-seats/:id (soft delete)
@@ -67,7 +67,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const db = getTenantClient(req.tenantDbUrl!);
     await db.carSeat.update({ where: { id: (req.params.id as string) }, data: { isActive: false } });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/car-seats/:id/add-stock — ajouter des unités au stock
@@ -84,7 +84,7 @@ router.post('/:id/add-stock', async (req: Request, res: Response, next: NextFunc
       },
     });
     res.json({ seat });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/car-seats/:id/out-of-service — mettre 1 unité hors service
@@ -104,7 +104,7 @@ router.post('/:id/out-of-service', async (req: Request, res: Response, next: Nex
       },
     });
     res.json({ seat });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/car-seats/:id/in-service — remettre 1 unité en service
@@ -124,7 +124,7 @@ router.post('/:id/in-service', async (req: Request, res: Response, next: NextFun
       },
     });
     res.json({ seat });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

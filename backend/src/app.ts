@@ -8,6 +8,31 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
+import rateLimit from 'express-rate-limit';
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de tentatives, réessayez dans 15 minutes' },
+});
+
+const inviteLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de tentatives, réessayez dans 1 heure' },
+});
+
+const icalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de requêtes iCal' },
+});
 import authRoutes from './modules/auth/auth.routes';
 import vehiclesRoutes from './modules/vehicles/vehicles.routes';
 import rentalsRoutes from './modules/rentals/rentals.routes';
@@ -73,6 +98,11 @@ export function createApp(): Express {
     '/uploads',
     express.static(path.join(process.cwd(), 'uploads')),
   );
+
+  // Rate limiters sur routes publiques sensibles
+  app.use('/api/v1/auth/login', loginLimiter);
+  app.use('/api/v1/users/accept-invitation', inviteLimiter);
+  app.use('/ical', icalLimiter);
 
   // Routes auth — login, me, superadmin
   app.use('/api/v1/auth', authRoutes);

@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { requireAuth, requireSuperAdmin } from '../../middleware/auth';
@@ -44,7 +44,7 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     const result = await loginUser(tenantClient, companySlug, email, password);
 
     res.json(result);
-  } catch (err) {
+  } catch (err: unknown) {
     next(err);
   }
 });
@@ -63,7 +63,7 @@ router.post('/superadmin/login', async (req: Request, res: Response, next: NextF
     const result = await loginSuperAdmin(master, email, password);
 
     res.json(result);
-  } catch (err) {
+  } catch (err: unknown) {
     next(err);
   }
 });
@@ -94,7 +94,7 @@ router.get(
       }
 
       res.json({ user, tenantSlug: req.auth!.tenantSlug });
-    } catch (err) {
+    } catch (err: unknown) {
       next(err);
     }
   },
@@ -119,7 +119,7 @@ router.get(
       }
 
       res.json({ user: { ...admin, isSuperAdmin: true } });
-    } catch (err) {
+    } catch (err: unknown) {
       next(err);
     }
   },

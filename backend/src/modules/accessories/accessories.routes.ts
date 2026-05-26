@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -29,7 +29,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { name: 'asc' },
     });
     res.json({ accessories });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/accessories — créer un accessoire
@@ -45,7 +45,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const accessory = await db.accessory.create({ data: body.data });
     res.status(201).json({ accessory });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/accessories/:id — modifier un accessoire
@@ -61,7 +61,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const accessory = await db.accessory.update({ where: { id: req.params['id'] as string }, data: body.data });
     res.json({ accessory });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/accessories/:id — supprimer un accessoire
@@ -71,7 +71,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     await db.accessoryVehicle.deleteMany({ where: { accessoryId: req.params['id'] as string } });
     await db.accessory.delete({ where: { id: req.params['id'] as string } });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/accessories/:id/assign — affecter à un véhicule
@@ -86,7 +86,7 @@ router.post('/:id/assign', async (req: Request, res: Response, next: NextFunctio
       update: {},
     });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/accessories/:id/vehicles/:vehicleId — désaffecter d'un véhicule
@@ -97,7 +97,7 @@ router.delete('/:id/vehicles/:vehicleId', async (req: Request, res: Response, ne
       where: { vehicleId_accessoryId: { vehicleId: req.params['vehicleId'] as string, accessoryId: req.params['id'] as string } },
     });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

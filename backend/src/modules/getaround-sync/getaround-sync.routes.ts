@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -27,7 +27,7 @@ router.get('/accounts', async (req: Request, res: Response, next: NextFunction) 
     // On ne renvoie jamais la clé API déchiffrée
     const safe = accounts.map(({ apiKeyHash: _, ...a }) => a);
     res.json({ accounts: safe });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/getaround-sync/accounts
@@ -39,7 +39,7 @@ router.post('/accounts', adminOnly, async (req: Request, res: Response, next: Ne
     const account = await createAccount(db, body.data.name, body.data.apiKey);
     const { apiKeyHash: _, ...safe } = account;
     res.status(201).json({ account: safe });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/getaround-sync/accounts/:id/key
@@ -50,7 +50,7 @@ router.put('/accounts/:id/key', adminOnly, async (req: Request, res: Response, n
     const db = getTenantClient(req.tenantDbUrl!);
     await updateAccountKey(db, (req.params.id as string), body.data.apiKey);
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/getaround-sync/accounts/:id
@@ -59,7 +59,7 @@ router.delete('/accounts/:id', adminOnly, async (req: Request, res: Response, ne
     const db = getTenantClient(req.tenantDbUrl!);
     await deleteAccount(db, (req.params.id as string));
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/getaround-sync/sync/:accountId — sync complet : véhicules + locations + messages
@@ -73,7 +73,7 @@ router.post('/sync/:accountId', adminOnly, async (req: Request, res: Response, n
     const rentals  = await syncAccountRentals(db, accountId);
     const messages = await syncAccountMessages(db, accountId);
     res.json({ vehicles, rentals, messages });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/getaround-sync/sync-all — sync tous les comptes actifs (véhicules)
@@ -84,7 +84,7 @@ router.post('/sync-all', adminOnly, async (req: Request, res: Response, next: Ne
     const db = getTenantClient(req.tenantDbUrl!);
     const results = await syncAllAccounts(db);
     res.json({ results });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/getaround-sync/sync-rentals/:accountId — sync locations puis messages
@@ -103,7 +103,7 @@ router.post('/sync-rentals/:accountId', adminOnly, async (req: Request, res: Res
     // Sync messages automatiquement après les locations
     const messages = await syncAccountMessages(db, (req.params.accountId as string));
     res.json({ rentals, messages });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/getaround-sync/sync-messages/:accountId — sync messages uniquement
@@ -112,7 +112,7 @@ router.post('/sync-messages/:accountId', adminOnly, async (req: Request, res: Re
     const db = getTenantClient(req.tenantDbUrl!);
     const result = await syncAccountMessages(db, (req.params.accountId as string));
     res.json({ result });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

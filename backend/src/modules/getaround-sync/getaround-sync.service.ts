@@ -1,4 +1,4 @@
-import type { PrismaClient } from '../../generated/tenant';
+﻿import type { PrismaClient } from '../../generated/tenant';
 import { decrypt, encrypt } from '../../utils/crypto';
 import { createGetaroundClient, type GetaroundRental } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
@@ -85,7 +85,7 @@ export async function syncAccountVehicles(
 
         if (existingVehicle) result.updated++;
         else result.created++;
-      } catch (err) {
+      } catch (err: unknown) {
         result.errors.push(`Voiture ${car.id}: ${err instanceof Error ? err.message : 'erreur'}`);
       }
     }
@@ -94,7 +94,7 @@ export async function syncAccountVehicles(
       where: { id: accountId },
       data: { syncStatus: 'success', lastSyncAt: new Date(), syncError: null },
     });
-  } catch (err) {
+  } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Erreur inconnue';
     await db.getaroundAccount.update({
       where: { id: accountId },
@@ -180,7 +180,7 @@ export async function syncAccountRentals(
         try {
           const user = await ga.getUser(r.user_id);
           userCache.set(r.user_id, `${user.first_name} ${user.last_name}`);
-        } catch (err) {
+        } catch (err: unknown) {
           console.error(`[Sync User] user_id=${r.user_id}`, err);
           userCache.set(r.user_id, `Conducteur ${r.user_id}`);
         }
@@ -270,7 +270,7 @@ export async function syncAccountRentals(
               data: { startMileage: Math.round(checkin.mileage / 1000) },
             });
           }
-        } catch (err) { console.error(`[Sync Checkin] rental=${r.id}`, err); }
+        } catch (err: unknown) { console.error(`[Sync Checkin] rental=${r.id}`, err); }
       }
 
       if (newStatus === 'completed' && existingRental?.endMileage == null) {
@@ -292,9 +292,9 @@ export async function syncAccountRentals(
           if (Object.keys(mileageData).length > 0) {
             await db.rental.update({ where: { id: upserted.id }, data: mileageData });
           }
-        } catch (err) { console.error(`[Sync Checkout] rental=${r.id}`, err); }
+        } catch (err: unknown) { console.error(`[Sync Checkout] rental=${r.id}`, err); }
       }
-    } catch (err) {
+    } catch (err: unknown) {
       result.errors.push(`Location ${r.id}: ${err instanceof Error ? err.message : 'erreur'}`);
     }
   }
@@ -374,11 +374,11 @@ export async function syncAccountMessages(
             },
           });
           result.created++;
-        } catch (err) {
+        } catch (err: unknown) {
           result.errors.push(`Message ${msg.id}: ${err instanceof Error ? err.message : 'erreur'}`);
         }
       }
-    } catch (err) {
+    } catch (err: unknown) {
       result.errors.push(`Rental ${rental.getaroundId}: ${err instanceof Error ? err.message : 'erreur'}`);
     }
   }

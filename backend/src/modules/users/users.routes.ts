@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { requireAuth, requireRole } from '../../middleware/auth';
@@ -43,7 +43,7 @@ router.post('/accept-invitation', async (req: Request, res: Response, next: Next
     });
 
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // Routes admin uniquement
@@ -57,7 +57,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { createdAt: 'asc' },
     });
     res.json({ users });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/users/invite — envoie une invitation
@@ -89,7 +89,7 @@ router.post('/invite', async (req: Request, res: Response, next: NextFunction) =
     });
 
     const inviteUrl = `${process.env.FRONTEND_URL}/accept-invitation?token=${token}&slug=${req.auth!.tenantSlug}`;
-    console.log(`[Invite] ${body.data.email} → ${inviteUrl}`);
+    console.log(`[Invite] Email d'invitation envoyé à ${body.data.email}`);
 
     const master = getMasterClient();
     const company = await master.company.findUnique({
@@ -99,7 +99,7 @@ router.post('/invite', async (req: Request, res: Response, next: NextFunction) =
     void sendInvitationEmail(body.data.email, body.data.name, inviteUrl, company?.name ?? 'SunanddriveOS').catch(console.error);
 
     res.status(201).json({ user, inviteUrl });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -117,7 +117,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       select: { id: true, name: true, email: true, role: true, isActive: true },
     });
     res.json({ user });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

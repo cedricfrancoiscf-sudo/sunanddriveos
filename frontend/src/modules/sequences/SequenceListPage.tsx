@@ -243,6 +243,7 @@ export default function SequenceListPage(): React.JSX.Element {
   const { data: sequences = [], isLoading } = useQuery({
     queryKey: ['sequences'],
     queryFn: sequencesApi.list,
+    staleTime: 5 * 60_000,
   });
 
   const createMutation = useMutation({

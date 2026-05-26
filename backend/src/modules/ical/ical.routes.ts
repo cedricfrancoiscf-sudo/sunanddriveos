@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { generateAccessoriesIcal } from './ical.service';
 
@@ -28,7 +28,7 @@ router.get('/:token/accessories.ics', async (req: Request, res: Response, next: 
     res.setHeader('Content-Disposition', 'inline; filename="accessories.ics"');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.send(icalContent);
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

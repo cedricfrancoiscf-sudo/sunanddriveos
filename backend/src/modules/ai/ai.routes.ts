@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -27,7 +27,7 @@ router.post('/analyze', async (req: Request, res: Response, next: NextFunction) 
     if (body.data.messageId) {
       await db.message.update({
         where: { id: body.data.messageId },
-        data: { aiAnalysis: analysis as never },
+        data: { aiAnalysis: analysis as object },
       });
     }
 
@@ -46,7 +46,7 @@ router.post('/analyze', async (req: Request, res: Response, next: NextFunction) 
     }
 
     res.json({ analysis, ...(carSeatRequestId ? { carSeatRequestId } : {}) });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/ai/suggest — génère une suggestion de réponse
@@ -109,7 +109,7 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
     }
 
     res.json({ suggestion });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/ai/suggest-car-seat — réponse IA pour demande siège auto avec vérification stock
@@ -159,7 +159,7 @@ router.post('/suggest-car-seat', async (req: Request, res: Response, next: NextF
       matchedSeat,
       requiresWeight: body.data.childWeightKg === undefined,
     });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/ai/cashflow-forecast — prévision trésorerie 30 jours
@@ -168,7 +168,7 @@ router.get('/cashflow-forecast', async (req: Request, res: Response, next: NextF
     const db = getTenantClient(req.tenantDbUrl!);
     const forecast = await forecastCashflow(db);
     res.json({ forecast });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/ai/mileage-anomalies — détection anomalies kilométriques
@@ -177,7 +177,7 @@ router.get('/mileage-anomalies', async (req: Request, res: Response, next: NextF
     const db = getTenantClient(req.tenantDbUrl!);
     const anomalies = await detectMileageAnomalies(db);
     res.json({ anomalies });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/ai/pricing-suggestions — suggestions tarifaires IA
@@ -186,7 +186,7 @@ router.get('/pricing-suggestions', async (req: Request, res: Response, next: Nex
     const db = getTenantClient(req.tenantDbUrl!);
     const suggestions = await getPricingSuggestions(db);
     res.json({ suggestions });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

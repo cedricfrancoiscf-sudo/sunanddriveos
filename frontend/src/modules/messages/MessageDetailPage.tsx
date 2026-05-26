@@ -69,6 +69,7 @@ export default function MessageDetailPage(): React.JSX.Element {
     queryKey: ['message', id],
     queryFn: () => messagesApi.get(id!),
     enabled: Boolean(id),
+    staleTime: 30_000,
   });
 
   const approveMutation = useMutation({

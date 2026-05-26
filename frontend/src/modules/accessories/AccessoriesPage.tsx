@@ -167,21 +167,25 @@ function AccessoriesTab(): React.JSX.Element {
   const { data: accessories = [], isLoading } = useQuery({
     queryKey: ['accessories'],
     queryFn: () => api.get<{ accessories: Accessory[] }>('/accessories').then(r => r.data.accessories),
+    staleTime: 2 * 60_000,
   });
 
   const { data: vehiclesData = [] } = useQuery({
     queryKey: ['vehicles'],
     queryFn: () => api.get<{ vehicles: Vehicle[] }>('/vehicles').then(r => r.data.vehicles),
+    staleTime: 5 * 60_000,
   });
 
   const { data: rentalsData = [] } = useQuery({
     queryKey: ['rentals-active'],
     queryFn: () => api.get<{ rentals: Rental[] }>('/rentals?status=booked&limit=100').then(r => r.data.rentals),
+    staleTime: 30_000,
   });
 
   const { data: allReservations = [] } = useQuery({
     queryKey: ['acc-reservations'],
     queryFn: () => api.get<{ reservations: AccReservation[] }>('/accessory-reservations').then(r => r.data.reservations),
+    staleTime: 2 * 60_000,
   });
 
   const createMutation = useMutation({
@@ -692,6 +696,7 @@ export default function AccessoriesPage(): React.JSX.Element {
   const { data: carSeats = [] } = useQuery({
     queryKey: ['car-seats'],
     queryFn: () => api.get<{ seats: CarSeat[] }>('/car-seats').then(r => r.data.seats),
+    staleTime: 2 * 60_000,
   });
   const outOfStockCount = carSeats.filter(s => s.availableStock === 0).length;
 

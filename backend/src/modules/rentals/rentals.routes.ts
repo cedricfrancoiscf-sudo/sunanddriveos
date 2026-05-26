@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -50,7 +50,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       to: q.data.to ? new Date(q.data.to) : undefined,
     });
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/rentals/stats
@@ -62,7 +62,7 @@ router.get('/stats', async (req: Request, res: Response, next: NextFunction) => 
     const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59); // dernier jour
     const stats = await getRentalStats(db, from, to);
     res.json({ stats, period: { from, to } });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/rentals/:id
@@ -72,7 +72,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const rental = await getRental(db, (req.params.id as string));
     if (!rental) { res.status(404).json({ error: 'Location introuvable' }); return; }
     res.json({ rental });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/rentals/:id
@@ -83,7 +83,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const rental = await updateRental(db, (req.params.id as string), body.data);
     res.json({ rental });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

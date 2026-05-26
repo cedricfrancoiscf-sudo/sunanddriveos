@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -48,7 +48,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { checkedAt: 'desc' },
     });
     res.json({ checks });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -63,7 +63,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     });
     if (!check) { res.status(404).json({ error: 'Fiche introuvable' }); return; }
     res.json({ check });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -88,23 +88,23 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         checkedById: req.auth!.userId!,
         checkedAt: new Date(body.data.checkedAt),
         status: 'completed',
-        lighting: body.data.lighting as never,
-        levels: body.data.levels as never,
-        glazingMirrors: body.data.glazingMirrors as never,
-        wipers: body.data.wipers as never,
-        tires: body.data.tires as never,
-        braking: body.data.braking as never,
-        engineBattery: body.data.engineBattery as never,
-        safety: body.data.safety as never,
-        roadTest: body.data.roadTest as never,
+        lighting: body.data.lighting as object,
+        levels: body.data.levels as object,
+        glazingMirrors: body.data.glazingMirrors as object,
+        wipers: body.data.wipers as object,
+        tires: body.data.tires as object,
+        braking: body.data.braking as object,
+        engineBattery: body.data.engineBattery as object,
+        safety: body.data.safety as object,
+        roadTest: body.data.roadTest as object,
         notes: body.data.notes,
-        photos: (body.data.photos ?? []) as never,
+        photos: (body.data.photos ?? []) as object,
         overallResult,
         isSynced: body.data.isSynced ?? false,
       },
     });
     res.status(201).json({ check });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -114,7 +114,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
     const db = getTenantClient(req.tenantDbUrl!);
     const check = await db.vehicleCheck.update({ where: { id: (req.params.id as string) }, data: body.data });
     res.json({ check });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

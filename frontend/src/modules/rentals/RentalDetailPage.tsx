@@ -101,12 +101,14 @@ export default function RentalDetailPage(): React.JSX.Element {
     queryKey: ['rental', id],
     queryFn: () => rentalsApi.get(id!),
     enabled: Boolean(id),
+    staleTime: 30_000,
   });
 
   const { data: profile } = useQuery({
     queryKey: ['renter-profile', rental?.driverGetaroundId],
     queryFn: () => api.get<RenterProfile>(`/rentals/renter/${rental!.driverGetaroundId}/profile`).then(r => r.data),
     enabled: Boolean(rental?.driverGetaroundId),
+    staleTime: 2 * 60_000,
   });
 
   const blacklistMutation = useMutation({
@@ -406,11 +408,11 @@ export default function RentalDetailPage(): React.JSX.Element {
             {rental.status === 'completed' && rental.evaluationStatus === 'pending' && (
               <button
                 type="button"
-                onClick={() => updateMutation.mutate({ evaluationStatus: 'blocked' })}
+                onClick={() => { if (confirm('Bloquer définitivement cette évaluation ?')) updateMutation.mutate({ evaluationStatus: 'blocked' }); }}
                 disabled={updateMutation.isPending}
                 className="mt-3 w-full rounded-lg border border-red-200 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
               >
-                Bloquer l'évaluation
+                {updateMutation.isPending ? 'En cours...' : "Bloquer l'évaluation"}
               </button>
             )}
           </div>

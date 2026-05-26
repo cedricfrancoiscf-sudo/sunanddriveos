@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
@@ -81,7 +81,7 @@ router.get('/progress', async (req: Request, res: Response, next: NextFunction) 
       allDone,
       dismissed,
     });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/onboarding/dismiss — masquer définitivement le guide (stocké en JSON settings)
@@ -104,7 +104,7 @@ router.post('/dismiss', async (req: Request, res: Response, next: NextFunction) 
     }
 
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

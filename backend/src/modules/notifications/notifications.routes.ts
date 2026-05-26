@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
@@ -23,7 +23,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     });
 
     res.json({ notifications });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/notifications/unread-count
@@ -34,7 +34,7 @@ router.get('/unread-count', async (req: Request, res: Response, next: NextFuncti
       where: { userId: req.auth!.userId!, isRead: false },
     });
     res.json({ count });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/notifications/read-all
@@ -46,7 +46,7 @@ router.put('/read-all', async (req: Request, res: Response, next: NextFunction) 
       data: { isRead: true },
     });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/notifications/:id/read
@@ -60,7 +60,7 @@ router.put('/:id/read', async (req: Request, res: Response, next: NextFunction) 
     }
     await db.notification.update({ where: { id: (req.params.id as string) }, data: { isRead: true } });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/notifications/:id
@@ -74,7 +74,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     }
     await db.notification.delete({ where: { id: (req.params.id as string) } });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

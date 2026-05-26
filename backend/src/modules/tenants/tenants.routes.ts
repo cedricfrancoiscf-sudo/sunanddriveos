@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireSuperAdmin } from '../../middleware/auth';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
@@ -31,7 +31,7 @@ router.get('/stats', async (_req: Request, res: Response, next: NextFunction) =>
         perPlan: Object.fromEntries(perPlan.map(p => [p.plan, p._count.id])),
       },
     });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // ─── Sociétés (tenants) ────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ router.get('/companies', async (_req: Request, res: Response, next: NextFunction
     }));
 
     res.json({ companies: companiesWithStats });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/superadmin/companies/:id
@@ -113,7 +113,7 @@ router.get('/companies/:id', async (req: Request, res: Response, next: NextFunct
     } catch { /* ignore si tenant DB inaccessible */ }
 
     res.json({ company, tenantStats });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/superadmin/companies — créer une société
@@ -165,7 +165,7 @@ router.post('/companies', async (req: Request, res: Response, next: NextFunction
     });
 
     res.status(201).json({ company });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/superadmin/companies/:id
@@ -196,7 +196,7 @@ router.put('/companies/:id', async (req: Request, res: Response, next: NextFunct
     });
 
     res.json({ company });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // ─── Super admins ─────────────────────────────────────────────────────────────
@@ -210,7 +210,7 @@ router.get('/admins', async (_req: Request, res: Response, next: NextFunction) =
       orderBy: { createdAt: 'asc' },
     });
     res.json({ admins });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/superadmin/admins
@@ -233,7 +233,7 @@ router.post('/admins', async (req: Request, res: Response, next: NextFunction) =
       select: { id: true, name: true, email: true, createdAt: true },
     });
     res.status(201).json({ admin });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

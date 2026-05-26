@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
@@ -188,7 +188,7 @@ router.get('/drivers', async (req: Request, res: Response, next: NextFunction) =
     };
 
     res.json({ drivers: paginated, stats, total, page, limit });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/scoring/drivers/:driverKey — détail conducteur (encode email ou name)
@@ -249,7 +249,7 @@ router.get('/drivers/:driverKey', async (req: Request, res: Response, next: Next
       },
       rentals,
     });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

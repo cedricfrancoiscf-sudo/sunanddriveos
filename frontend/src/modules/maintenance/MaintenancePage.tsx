@@ -47,12 +47,14 @@ export default function MaintenancePage(): React.JSX.Element {
   const { data: maintenances = [], isLoading } = useQuery({
     queryKey: ['maintenances'],
     queryFn: () => maintenanceApi.list(),
+    staleTime: 2 * 60_000,
   });
 
   // Charger les véhicules pour le select
   const { data: vehiclesData } = useQuery({
     queryKey: ['vehicles'],
     queryFn: () => api.get<{ vehicles: { id: string; make: string; model: string; licensePlate: string }[] }>('/vehicles').then((r) => r.data.vehicles),
+    staleTime: 5 * 60_000,
   });
 
   const createMutation = useMutation({

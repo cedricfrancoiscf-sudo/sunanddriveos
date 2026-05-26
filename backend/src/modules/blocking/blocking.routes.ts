@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -50,7 +50,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     });
 
     res.json({ blockings });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/blockings/:id
@@ -65,7 +65,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     });
     if (!blocking) { res.status(404).json({ error: 'Blocage introuvable' }); return; }
     res.json({ blocking });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/blockings
@@ -96,7 +96,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     });
 
     res.status(201).json({ blocking });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/blockings/:id
@@ -130,7 +130,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     });
 
     res.json({ blocking });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/blockings/:id
@@ -141,7 +141,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     if (!existing) { res.status(404).json({ error: 'Blocage introuvable' }); return; }
     await db.blocking.delete({ where: { id: (req.params.id as string) } });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

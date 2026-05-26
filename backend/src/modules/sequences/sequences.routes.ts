@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -29,7 +29,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const sequences = await listSequences(db);
     res.json({ sequences });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/sequences
@@ -40,7 +40,7 @@ router.post('/', requireRole('admin'), async (req: Request, res: Response, next:
     const db = getTenantClient(req.tenantDbUrl!);
     const sequence = await createSequence(db, body.data);
     res.status(201).json({ sequence });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/sequences/:id
@@ -51,7 +51,7 @@ router.put('/:id', requireRole('admin'), async (req: Request, res: Response, nex
     const db = getTenantClient(req.tenantDbUrl!);
     const sequence = await updateSequence(db, (req.params.id as string), body.data);
     res.json({ sequence });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/sequences/:id/toggle
@@ -60,7 +60,7 @@ router.post('/:id/toggle', requireRole('admin'), async (req: Request, res: Respo
     const db = getTenantClient(req.tenantDbUrl!);
     const sequence = await toggleSequence(db, (req.params.id as string));
     res.json({ sequence });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/sequences/:id
@@ -69,7 +69,7 @@ router.delete('/:id', requireRole('admin'), async (req: Request, res: Response, 
     const db = getTenantClient(req.tenantDbUrl!);
     await deleteSequence(db, (req.params.id as string));
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/sequences/execute-pending — appelé par le cron interne
@@ -78,7 +78,7 @@ router.post('/execute-pending', requireRole('admin'), async (req: Request, res: 
     const db = getTenantClient(req.tenantDbUrl!);
     const result = await executePendingSequences(db);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

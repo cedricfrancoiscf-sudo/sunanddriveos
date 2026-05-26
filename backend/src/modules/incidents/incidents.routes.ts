@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -27,7 +27,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { createdAt: 'desc' },
     });
     res.json({ incidents });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/incidents — créer un incident
@@ -46,7 +46,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const incident = await db.incident.create({ data: body.data });
     res.status(201).json({ incident });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/incidents/:id — mettre à jour un incident
@@ -71,7 +71,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 
     const incident = await db.incident.update({ where: { id: (req.params.id as string) }, data: updateData as never });
     res.json({ incident });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/incidents/:id
@@ -80,7 +80,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const db = getTenantClient(req.tenantDbUrl!);
     await db.incident.delete({ where: { id: (req.params.id as string) } });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

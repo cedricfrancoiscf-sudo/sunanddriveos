@@ -1,5 +1,11 @@
-// Point d'entrée du serveur Node.js
+﻿// Point d'entrée du serveur Node.js
 import 'dotenv/config';
+
+// Vérifications fatales des variables d'environnement — avant toute initialisation
+if (!process.env.JWT_SECRET) throw new Error('FATAL: JWT_SECRET non défini');
+if (!process.env.DATABASE_MASTER_URL) throw new Error('FATAL: DATABASE_MASTER_URL non défini');
+if (process.env.NODE_ENV === 'production' && !process.env.DB_PASSWORD) throw new Error('FATAL: DB_PASSWORD requis en production');
+
 import cron from 'node-cron';
 import { createApp } from './app';
 import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client';
@@ -11,6 +17,13 @@ import { sendEmail } from './utils/mailer';
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 const app = createApp();
 
+// Verrous anti-chevauchement des crons
+let isSequenceRunning = false;
+let isSyncRunning = false;
+let isMorningSummaryRunning = false;
+let isMileageRunning = false;
+let isUnresponsiveRunning = false;
+
 const server = app.listen(PORT, () => {
   console.log(`[SunanddriveOS] Backend démarré — port ${PORT}`);
   console.log(`[SunanddriveOS] Environnement : ${process.env.NODE_ENV ?? 'development'}`);
@@ -19,6 +32,8 @@ const server = app.listen(PORT, () => {
 
 // Planificateur de séquences — s'exécute toutes les minutes pour tous les tenants actifs
 async function runSequenceScheduler(): Promise<void> {
+  if (isSequenceRunning) { console.log('[Séquences] Déjà en cours, skip'); return; }
+  isSequenceRunning = true;
   try {
     const master = getMasterClient();
     const companies = await master.company.findMany({
@@ -32,13 +47,17 @@ async function runSequenceScheduler(): Promise<void> {
         console.log(`[Séquences] ${company.slug} : ${result.executed}/${result.total} message(s) créé(s)`);
       }
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[Séquences] Erreur planificateur :', err);
+  } finally {
+    isSequenceRunning = false;
   }
 }
 
 // Synchronisation Getaround — s'exécute toutes les heures pour tous les tenants actifs
 async function runGetaroundSyncForAllTenants(): Promise<void> {
+  if (isSyncRunning) { console.log('[GetaroundSync] Déjà en cours, skip'); return; }
+  isSyncRunning = true;
   try {
     const master = getMasterClient();
     const companies = await master.company.findMany({
@@ -52,12 +71,14 @@ async function runGetaroundSyncForAllTenants(): Promise<void> {
         const created = results.reduce((s, r) => s + r.vehicles.created + r.rentals.created, 0);
         const updated = results.reduce((s, r) => s + r.vehicles.updated + r.rentals.updated, 0);
         console.log(`[GetaroundSync] ${company.slug} : ${created} créé(s), ${updated} mis à jour`);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error(`[GetaroundSync] Erreur tenant ${company.slug} :`, err);
       }
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[GetaroundSync] Erreur planificateur :', err);
+  } finally {
+    isSyncRunning = false;
   }
 }
 
@@ -74,6 +95,8 @@ cron.schedule('0 * * * *', () => void runGetaroundSyncForAllTenants());
 // ─── 4.6 — Résumé matinal (8h chaque jour) ────────────────────────────────
 
 async function runMorningSummary(): Promise<void> {
+  if (isMorningSummaryRunning) { console.log('[MorningSummary] Déjà en cours, skip'); return; }
+  isMorningSummaryRunning = true;
   try {
     const master = getMasterClient();
     const companies = await master.company.findMany({
@@ -126,12 +149,14 @@ async function runMorningSummary(): Promise<void> {
             console.log(`[MorningSummary] ${company.slug} → ${admin.email} :\n${summary}`);
           }
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error(`[MorningSummary] Erreur tenant ${company.slug} :`, err);
       }
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[MorningSummary] Erreur :', err);
+  } finally {
+    isMorningSummaryRunning = false;
   }
 }
 
@@ -140,6 +165,8 @@ cron.schedule('0 8 * * *', () => void runMorningSummary());
 // ─── 4.7 — Alerte locataire non répondant (dans le cron horaire) ──────────
 
 async function checkUnresponsiveRenters(): Promise<void> {
+  if (isUnresponsiveRunning) { console.log('[UnresponsiveRenter] Déjà en cours, skip'); return; }
+  isUnresponsiveRunning = true;
   try {
     const master = getMasterClient();
     const companies = await master.company.findMany({
@@ -193,18 +220,22 @@ async function checkUnresponsiveRenters(): Promise<void> {
             });
           }
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error(`[UnresponsiveRenter] Erreur tenant ${company.slug} :`, err);
       }
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[UnresponsiveRenter] Erreur :', err);
+  } finally {
+    isUnresponsiveRunning = false;
   }
 }
 
 // ─── 4.4 — Anomalies km (dans le cron horaire) ────────────────────────────
 
 async function runMileageAnomalyDetection(): Promise<void> {
+  if (isMileageRunning) { console.log('[MileageAnomaly] Déjà en cours, skip'); return; }
+  isMileageRunning = true;
   try {
     const master = getMasterClient();
     const companies = await master.company.findMany({
@@ -215,12 +246,14 @@ async function runMileageAnomalyDetection(): Promise<void> {
       try {
         const db = getTenantClient(company.tenantDbUrl);
         await notifyMileageAnomalies(db);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error(`[MileageAnomaly] Erreur tenant ${company.slug} :`, err);
       }
     }
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[MileageAnomaly] Erreur :', err);
+  } finally {
+    isMileageRunning = false;
   }
 }
 

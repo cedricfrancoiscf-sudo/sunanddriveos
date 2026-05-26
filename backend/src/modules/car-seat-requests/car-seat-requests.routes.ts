@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -21,7 +21,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { requestedAt: 'desc' },
     });
     res.json({ requests });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/car-seat-requests — créer une demande avec poids enfant
@@ -67,7 +67,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     });
 
     res.status(201).json({ request });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/car-seat-requests/:id/confirm — confirmer et décrémenter stock
@@ -124,7 +124,7 @@ router.put('/:id/confirm', async (req: Request, res: Response, next: NextFunctio
     }
 
     res.json({ request, alerts });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/car-seat-requests/:id/deny — refuser la demande
@@ -137,7 +137,7 @@ router.put('/:id/deny', async (req: Request, res: Response, next: NextFunction) 
       data: { status: 'denied', ...(body.success && body.data.notes ? { notes: body.data.notes } : {}) },
     });
     res.json({ request });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/car-seat-requests/:id/return — retour du siège, incrémenter stock
@@ -160,7 +160,7 @@ router.put('/:id/return', async (req: Request, res: Response, next: NextFunction
     ]);
 
     res.json({ request });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/car-seat-requests/:id — mise à jour notes
@@ -171,7 +171,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const request = await db.carSeatRequest.update({ where: { id: (req.params.id as string) }, data: body.data });
     res.json({ request });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

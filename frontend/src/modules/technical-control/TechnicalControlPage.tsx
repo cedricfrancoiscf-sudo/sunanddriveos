@@ -34,11 +34,12 @@ export default function TechnicalControlPage(): React.JSX.Element {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY);
 
-  const { data: controls = [], isLoading } = useQuery({ queryKey: ['technical-controls'], queryFn: () => ctApi.list() });
-  const { data: expiring = [] } = useQuery({ queryKey: ['ct-expiring'], queryFn: ctApi.expiring });
+  const { data: controls = [], isLoading } = useQuery({ queryKey: ['technical-controls'], queryFn: () => ctApi.list(), staleTime: 5 * 60_000 });
+  const { data: expiring = [] } = useQuery({ queryKey: ['ct-expiring'], queryFn: ctApi.expiring, staleTime: 5 * 60_000 });
   const { data: vehiclesData } = useQuery({
     queryKey: ['vehicles'],
     queryFn: () => api.get<{ vehicles: { id: string; make: string; model: string; licensePlate: string }[] }>('/vehicles').then(r => r.data.vehicles),
+    staleTime: 5 * 60_000,
   });
 
   const createMutation = useMutation({

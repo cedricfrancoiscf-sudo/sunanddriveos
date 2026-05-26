@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -37,7 +37,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const includeInactive = req.query.includeInactive === 'true';
     const vehicles = await listVehicles(db, includeInactive);
     res.json({ vehicles });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/vehicles/:id
@@ -47,7 +47,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const vehicle = await getVehicle(db, (req.params.id as string));
     if (!vehicle) { res.status(404).json({ error: 'Véhicule introuvable' }); return; }
     res.json({ vehicle });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/vehicles
@@ -58,7 +58,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const vehicle = await createVehicle(db, body.data);
     res.status(201).json({ vehicle });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/vehicles/:id
@@ -69,7 +69,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const vehicle = await updateVehicle(db, (req.params.id as string), body.data);
     res.json({ vehicle });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/vehicles/:id — soft delete
@@ -78,7 +78,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const db = getTenantClient(req.tenantDbUrl!);
     await deleteVehicle(db, (req.params.id as string));
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

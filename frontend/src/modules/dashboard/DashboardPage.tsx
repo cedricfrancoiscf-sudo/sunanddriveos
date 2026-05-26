@@ -38,40 +38,52 @@ function AlertCard({ alert }: { alert: Alert }): React.JSX.Element {
 export default function DashboardPage(): React.JSX.Element {
   const { user } = useAuth();
 
-  const { data: statsData } = useQuery({
+  type CtExpiring = { id: string; expiryAt: string; vehicle: { make: string; model: string; licensePlate: string } };
+  type DocExpiring = { id: string; name: string; expiryDate: string; vehicle: { make: string; model: string; licensePlate: string } };
+  type PendingCarSeat = { id: string; rental: { id: string; driverName: string } | null; vehicle: { make: string; model: string; licensePlate: string } };
+  type CashflowWeek = { week: string; weekStart: string; expectedRevenue: number; rentalCount: number };
+  type InboxSummary = { pendingCount: number; unansweredRentals: number };
+
+  const { data: statsData } = useQuery<RentalStats>({
     queryKey: ['rental-stats'],
     queryFn: () => api.get<{ stats: RentalStats }>('/rentals/stats').then(r => r.data.stats),
+    staleTime: 2 * 60_000,
   });
 
-  const { data: activeRentals = [] } = useQuery({
+  const { data: activeRentals = [] } = useQuery<ActiveRental[]>({
     queryKey: ['rentals', 'active'],
     queryFn: () => api.get<{ rentals: ActiveRental[] }>('/rentals', { params: { status: 'active', limit: 5 } }).then(r => r.data.rentals),
+    staleTime: 2 * 60_000,
   });
 
-  const { data: pendingMessages } = useQuery({
+  const { data: pendingMessages } = useQuery<InboxSummary>({
     queryKey: ['inbox-summary'],
-    queryFn: () => api.get<{ pendingCount: number; unansweredRentals: number }>('/messages/inbox-summary').then(r => r.data),
+    queryFn: () => api.get<InboxSummary>('/messages/inbox-summary').then(r => r.data),
     refetchInterval: 30_000,
+    staleTime: 25_000,
   });
 
-  const { data: expiringCT = [] } = useQuery({
+  const { data: expiringCT = [] } = useQuery<CtExpiring[]>({
     queryKey: ['ct-expiring'],
-    queryFn: () => api.get<{ controls: Array<{ id: string; expiryAt: string; vehicle: { make: string; model: string; licensePlate: string } }> }>('/technical-control/expiring').then(r => r.data.controls),
+    queryFn: () => api.get<{ controls: CtExpiring[] }>('/technical-control/expiring').then(r => r.data.controls),
+    staleTime: 5 * 60_000,
   });
 
-  const { data: expiringDocs = [] } = useQuery({
+  const { data: expiringDocs = [] } = useQuery<DocExpiring[]>({
     queryKey: ['docs-expiring'],
-    queryFn: () => api.get<{ documents: Array<{ id: string; name: string; expiryDate: string; vehicle: { make: string; model: string; licensePlate: string } }> }>('/documents/expiring').then(r => r.data.documents),
+    queryFn: () => api.get<{ documents: DocExpiring[] }>('/documents/expiring').then(r => r.data.documents),
+    staleTime: 5 * 60_000,
   });
 
-  const { data: pendingCarSeats = [] } = useQuery({
+  const { data: pendingCarSeats = [] } = useQuery<PendingCarSeat[]>({
     queryKey: ['car-seat-requests', 'pending'],
-    queryFn: () => api.get<{ requests: Array<{ id: string; rental: { id: string; driverName: string } | null; vehicle: { make: string; model: string; licensePlate: string } }> }>('/car-seat-requests', { params: { status: 'pending' } }).then(r => r.data.requests),
+    queryFn: () => api.get<{ requests: PendingCarSeat[] }>('/car-seat-requests', { params: { status: 'pending' } }).then(r => r.data.requests),
+    staleTime: 2 * 60_000,
   });
 
-  const { data: cashflowForecast = [] } = useQuery({
+  const { data: cashflowForecast = [] } = useQuery<CashflowWeek[]>({
     queryKey: ['cashflow-forecast'],
-    queryFn: () => api.get<{ forecast: Array<{ week: string; weekStart: string; expectedRevenue: number; rentalCount: number }> }>('/ai/cashflow-forecast').then(r => r.data.forecast),
+    queryFn: () => api.get<{ forecast: CashflowWeek[] }>('/ai/cashflow-forecast').then(r => r.data.forecast),
     staleTime: 5 * 60_000,
     enabled: user?.role !== 'carkeeper',
   });
@@ -106,9 +118,11 @@ export default function DashboardPage(): React.JSX.Element {
   const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir';
 
   const qc = useQueryClient();
-  const { data: onboarding } = useQuery({
+  type OnboardingProgress = { progressPercent: number; completedCount: number; totalCount: number; allDone: boolean; dismissed: boolean };
+  const { data: onboarding } = useQuery<OnboardingProgress>({
     queryKey: ['onboarding-progress'],
-    queryFn: () => api.get<{ progressPercent: number; completedCount: number; totalCount: number; allDone: boolean; dismissed: boolean }>('/onboarding/progress').then(r => r.data),
+    queryFn: () => api.get<OnboardingProgress>('/onboarding/progress').then(r => r.data),
+    staleTime: 2 * 60_000,
   });
   const dismissOnboarding = useMutation({
     mutationFn: () => api.post('/onboarding/dismiss'),

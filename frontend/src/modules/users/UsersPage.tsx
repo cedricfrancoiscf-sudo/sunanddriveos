@@ -35,6 +35,7 @@ export default function UsersPage(): React.JSX.Element {
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users'],
     queryFn: () => api.get<{ users: User[] }>('/users').then(r => r.data.users),
+    staleTime: 5 * 60_000,
   });
 
   const inviteMutation = useMutation({

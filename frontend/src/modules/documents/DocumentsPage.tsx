@@ -29,11 +29,13 @@ export default function DocumentsPage(): React.JSX.Element {
   const { data: docs = [], isLoading } = useQuery({
     queryKey: ['documents'],
     queryFn: () => api.get<{ documents: VehicleDoc[] }>('/documents').then(r => r.data.documents),
+    staleTime: 2 * 60_000,
   });
 
   const { data: vehiclesData } = useQuery({
     queryKey: ['vehicles'],
     queryFn: () => api.get<{ vehicles: { id: string; make: string; model: string; licensePlate: string }[] }>('/vehicles').then(r => r.data.vehicles),
+    staleTime: 5 * 60_000,
   });
 
   const uploadMutation = useMutation({

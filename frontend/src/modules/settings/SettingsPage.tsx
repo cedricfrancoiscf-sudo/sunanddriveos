@@ -316,6 +316,7 @@ export default function SettingsPage(): React.JSX.Element {
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: () => api.get<{ settings: CompanySettings }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
   });
 
   const [form, setForm] = useState({

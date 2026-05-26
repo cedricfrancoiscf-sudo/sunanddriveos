@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -52,7 +52,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     ]);
 
     res.json({ rentals, blockings, vehicles, period: { from, to } });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/planning/blockings — créer un blocage
@@ -70,7 +70,7 @@ router.post('/blockings', async (req: Request, res: Response, next: NextFunction
       },
     });
     res.status(201).json({ blocking });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/planning/blockings/:id
@@ -79,7 +79,7 @@ router.delete('/blockings/:id', async (req: Request, res: Response, next: NextFu
     const db = getTenantClient(req.tenantDbUrl!);
     await db.blocking.delete({ where: { id: (req.params.id as string) } });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { requireAuth, requireRole } from '../../middleware/auth';
@@ -62,7 +62,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     }));
 
     res.json({ owners: ownersWithStats });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/third-party-owners/:id
@@ -83,7 +83,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     });
     if (!owner) { res.status(404).json({ error: 'Propriétaire introuvable' }); return; }
     res.json({ owner });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/third-party-owners — crée User (role third_party_owner) + ThirdPartyOwner
@@ -147,7 +147,7 @@ router.post('/', requireRole('admin'), async (req: Request, res: Response, next:
       : undefined;
 
     res.status(201).json({ owner, inviteUrl });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/third-party-owners/:id
@@ -193,7 +193,7 @@ router.put('/:id', requireRole('admin'), async (req: Request, res: Response, nex
     }
 
     res.json({ owner: updated });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/third-party-owners/:id/statement?from=&to=
@@ -276,7 +276,7 @@ router.get('/:id/statement', async (req: Request, res: Response, next: NextFunct
       lines,
       totals,
     });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/third-party-owners/:id/vehicles — assigner véhicules au propriétaire
@@ -310,7 +310,7 @@ router.put('/:id/vehicles', requireRole('admin'), async (req: Request, res: Resp
     });
 
     res.json({ owner: updated });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -28,7 +28,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { performedAt: 'desc' },
     });
     res.json({ controls });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/technical-control/expiring — CT expirant dans les 60 jours
@@ -42,7 +42,7 @@ router.get('/expiring', async (req: Request, res: Response, next: NextFunction) 
       orderBy: { expiryAt: 'asc' },
     });
     res.json({ controls });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -93,7 +93,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     })();
 
     res.status(201).json({ control });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -108,7 +108,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     };
     const control = await db.technicalControl.update({ where: { id: (req.params.id as string) }, data });
     res.json({ control });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -116,7 +116,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const db = getTenantClient(req.tenantDbUrl!);
     await db.technicalControl.delete({ where: { id: (req.params.id as string) } });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

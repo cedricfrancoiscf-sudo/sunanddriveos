@@ -1,4 +1,5 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
+import { z } from 'zod';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
@@ -16,21 +17,22 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { assignedAt: 'asc' },
     });
     res.json({ carkeepers });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/vehicles/:vehicleId/carkeepers — admin only
 router.post('/', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userId = (req.body as { userId?: string }).userId;
-    if (!userId) { res.status(400).json({ error: 'userId requis' }); return; }
+    const body = z.object({ userId: z.string().min(1) }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'userId requis' }); return; }
+    const { userId } = body.data;
     const db = getTenantClient(req.tenantDbUrl!);
     const assignment = await db.vehicleCarkeeper.create({
       data: { vehicleId: req.params.vehicleId as string, userId },
       include: { user: { select: { id: true, name: true, email: true } } },
     });
     res.status(201).json({ assignment });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // DELETE /api/v1/vehicles/:vehicleId/carkeepers/:userId — admin only
@@ -46,7 +48,7 @@ router.delete('/:userId', requireRole('admin'), async (req: Request, res: Respon
       },
     });
     res.json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

@@ -69,24 +69,28 @@ export default function VehicleDetailPage(): React.JSX.Element {
     queryKey: ['vehicle', id],
     queryFn: () => vehiclesApi.get(id!),
     enabled: Boolean(id),
+    staleTime: 5 * 60_000,
   });
 
   const { data: blockings = [], refetch: refetchBlockings } = useQuery({
     queryKey: ['blockings', id],
     queryFn: () => blockingsApi.list(id!),
     enabled: Boolean(id),
+    staleTime: 2 * 60_000,
   });
 
   const { data: carkeepers = [], refetch: refetchCarkeepers } = useQuery({
     queryKey: ['vehicle-carkeepers', id],
     queryFn: () => vehicleCarkeepersApi.list(id!),
     enabled: Boolean(id) && Boolean(isAdmin),
+    staleTime: 2 * 60_000,
   });
 
   const { data: allUsers = [] } = useQuery<Array<{ id: string; name: string; email: string; role: string }>>({
     queryKey: ['users'],
     queryFn: () => api.get<{ users: Array<{ id: string; name: string; email: string; role: string }> }>('/users').then(r => r.data.users),
     enabled: Boolean(isAdmin),
+    staleTime: 5 * 60_000,
   });
 
   const carekeeperUsers = allUsers.filter(u => u.role === 'carkeeper');

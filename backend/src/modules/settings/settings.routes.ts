@@ -1,4 +1,4 @@
-import path from 'path';
+﻿import path from 'path';
 import fs from 'fs';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
@@ -30,7 +30,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       settings = await db.companySettings.create({ data: {} });
     }
     res.json({ settings });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/settings
@@ -58,7 +58,7 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       settings = await db.companySettings.create({ data: body.data as never });
     }
     res.json({ settings });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/settings/logo — upload logo (multipart/form-data)
@@ -100,7 +100,7 @@ router.get('/ical-info', async (req: Request, res: Response, next: NextFunction)
     const baseUrl = (process.env.API_BASE_URL ?? 'http://localhost:4000').replace(/\/$/, '');
     const icalUrl = token ? `${baseUrl}/ical/${token}/accessories.ics` : null;
     res.json({ icalToken: token, icalUrl });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/settings/ical-regenerate — (re)génère le token iCal
@@ -113,7 +113,7 @@ router.post('/ical-regenerate', requireRole('admin'), async (req: Request, res: 
     const baseUrl = (process.env.API_BASE_URL ?? 'http://localhost:4000').replace(/\/$/, '');
     const icalUrl = `${baseUrl}/ical/${newToken}/accessories.ics`;
     res.json({ icalToken: newToken, icalUrl });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

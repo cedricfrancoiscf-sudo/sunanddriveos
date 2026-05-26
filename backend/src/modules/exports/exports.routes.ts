@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
@@ -62,7 +62,7 @@ router.get('/rentals', async (req: Request, res: Response, next: NextFunction) =
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="locations_${formatDate(from)}_${formatDate(to)}.csv"`);
     res.send('﻿' + csv); // BOM pour Excel FR
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/exports/accounting?from=&to=
@@ -105,7 +105,7 @@ router.get('/accounting', async (req: Request, res: Response, next: NextFunction
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="comptabilite_${formatDate(from)}_${formatDate(to)}.csv"`);
     res.send('﻿' + csv);
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/exports/vehicles
@@ -138,7 +138,7 @@ router.get('/vehicles', async (req: Request, res: Response, next: NextFunction) 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="flotte.csv"');
     res.send('﻿' + csv);
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/exports/maintenance?from=&to=
@@ -169,7 +169,7 @@ router.get('/maintenance', async (req: Request, res: Response, next: NextFunctio
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="entretiens_${formatDate(from)}_${formatDate(to)}.csv"`);
     res.send('﻿' + csv);
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

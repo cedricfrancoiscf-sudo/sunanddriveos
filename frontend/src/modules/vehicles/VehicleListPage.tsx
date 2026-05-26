@@ -246,6 +246,7 @@ export default function VehicleListPage(): React.JSX.Element {
   const { data: vehicles = [], isLoading, isError } = useQuery({
     queryKey: ['vehicles'],
     queryFn: () => vehiclesApi.list(),
+    staleTime: 5 * 60_000,
   });
 
   const { data: pricingSuggestions = [] } = useQuery<PricingSuggestion[]>({

@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
@@ -55,7 +55,7 @@ router.get('/renter/:getaroundId/profile', async (req: Request, res: Response, n
       lastRentalAt: rentals[rentals.length - 1]?.startAt ?? null,
       vehicles: plates,
     });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

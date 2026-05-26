@@ -94,11 +94,13 @@ export default function RentalListPage(): React.JSX.Element {
   const { data: statsData } = useQuery({
     queryKey: ['rental-stats'],
     queryFn: rentalsApi.stats,
+    staleTime: 2 * 60_000,
   });
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['rentals'],
     queryFn: () => rentalsApi.list({ limit: 500 }),
+    staleTime: 2 * 60_000,
   });
 
   const rentals = data?.rentals ?? [];

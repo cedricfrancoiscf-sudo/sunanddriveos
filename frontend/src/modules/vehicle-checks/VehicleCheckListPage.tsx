@@ -21,6 +21,7 @@ export default function VehicleCheckListPage(): React.JSX.Element {
   const { data: checks = [], isLoading } = useQuery({
     queryKey: ['vehicle-checks'],
     queryFn: () => api.get<{ checks: VehicleCheck[] }>('/vehicle-checks').then(r => r.data.checks),
+    staleTime: 2 * 60_000,
   });
 
   return (

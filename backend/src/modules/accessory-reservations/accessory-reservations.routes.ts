@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -31,7 +31,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       orderBy: { createdAt: 'desc' },
     });
     res.json({ reservations });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/accessory-reservations
@@ -61,7 +61,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       include: INCLUDE,
     });
     res.status(201).json({ reservation });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/accessory-reservations/:id/confirm
@@ -78,7 +78,7 @@ router.put('/:id/confirm', async (req: Request, res: Response, next: NextFunctio
       include: INCLUDE,
     });
     res.json({ reservation });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/accessory-reservations/:id/return
@@ -95,7 +95,7 @@ router.put('/:id/return', async (req: Request, res: Response, next: NextFunction
       include: INCLUDE,
     });
     res.json({ reservation });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 // PUT /api/v1/accessory-reservations/:id/cancel
@@ -108,7 +108,7 @@ router.put('/:id/cancel', async (req: Request, res: Response, next: NextFunction
       include: INCLUDE,
     });
     res.json({ reservation });
-  } catch (err) { next(err); }
+  } catch (err: unknown) { next(err); }
 });
 
 export default router;

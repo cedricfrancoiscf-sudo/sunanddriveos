@@ -23,14 +23,16 @@ export default function MessageListPage(): React.JSX.Element {
     queryKey: ['inbox-summary'],
     queryFn: messagesApi.inboxSummary,
     refetchInterval: 30_000,
+    staleTime: 25_000,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['messages', rentalIdFilter],
     queryFn: () =>
       messagesApi.list({
         ...(rentalIdFilter ? { rentalId: rentalIdFilter } : {}),
       }),
+    staleTime: 30_000,
   });
 
   const messages = data?.messages ?? [];
@@ -93,6 +95,11 @@ export default function MessageListPage(): React.JSX.Element {
       </div>
 
       {/* Liste conversations */}
+      {isError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          Impossible de charger les messages.
+        </div>
+      )}
       {isLoading ? (
         <div className="flex justify-center py-16">
           <div

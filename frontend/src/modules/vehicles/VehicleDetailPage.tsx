@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { vehiclesApi, vehicleCarkeepersApi, vehiclePhotosApi, vehicleRatingsApi, type VehicleRating } from './vehiclesApi';
+import { vehiclesApi, vehicleCarkeepersApi, vehiclePhotosApi, vehicleRatingsApi, type VehiclePhoto, type VehicleRating } from './vehiclesApi';
 import { blockingsApi, BLOCKING_TYPE_LABELS, BLOCKING_TYPE_COLORS } from './blockingsApi';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../utils/api';
@@ -138,7 +138,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
       rating: parseFloat(ratingValue),
       reviewCount: ratingReviewCount ? parseInt(ratingReviewCount, 10) : 0,
       keywords: ratingKeywords,
-      notes: ratingNotes || undefined,
+      ...(ratingNotes ? { notes: ratingNotes } : {}),
     }),
     onSuccess: (saved) => {
       void refetchRatings();

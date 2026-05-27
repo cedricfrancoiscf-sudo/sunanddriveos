@@ -13,6 +13,7 @@ import {
   syncAccountRentals,
   syncAccountMessages,
   analyzeExistingMessages,
+  fixHistoricalMileage,
 } from './getaround-sync.service';
 
 const router: Router = Router();
@@ -128,6 +129,17 @@ router.get('/analyze-existing-messages', requireSuperAdmin, async (req: Request,
       .then(r => console.log('[Analyse] Terminé:', r))
       .catch(e => console.error('[Analyse] Erreur:', e));
     res.json({ message: 'Analyse lancée en arrière-plan' });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/getaround-sync/fix-mileage — correction kilométrage historique (superadmin uniquement)
+router.get('/fix-mileage', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    void fixHistoricalMileage(db)
+      .then(r => console.log('[FixMileage] Terminé:', r))
+      .catch(e => console.error('[FixMileage] Erreur:', e));
+    res.json({ message: 'Correction km lancée en arrière-plan' });
   } catch (err: unknown) { next(err); }
 });
 

@@ -251,6 +251,16 @@ function GetaroundSection(): React.JSX.Element {
     },
   });
 
+  const [forceFullMsg, setForceFullMsg] = useState<string | null>(null);
+  const forceFullMutation = useMutation({
+    mutationFn: () => api.post<{ message: string }>('/sync/force-full').then(r => r.data.message),
+    onSuccess: (msg) => {
+      setForceFullMsg(msg);
+      void qc.invalidateQueries({ queryKey: ['sync-status'] });
+      setTimeout(() => setForceFullMsg(null), 8000);
+    },
+  });
+
   const isSyncing = syncVehiclesMutation.isPending || syncRentalsMutation.isPending || syncAllMutation.isPending || (syncStatus?.isRunning ?? false);
 
   return (
@@ -261,6 +271,11 @@ function GetaroundSection(): React.JSX.Element {
           <p className="text-xs text-gray-400 mt-0.5">Clés API pour la synchronisation de votre flotte</p>
         </div>
         <div className="flex items-center gap-2">
+          <button type="button" onClick={() => forceFullMutation.mutate()} disabled={isSyncing || forceFullMutation.isPending}
+            title="Remet lastSyncAt à zéro et resynchronise tout l'historique"
+            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-40">
+            {forceFullMutation.isPending ? 'Lancement...' : 'Resync complète'}
+          </button>
           {accounts.length > 1 && (
             <button type="button" onClick={() => syncAllMutation.mutate()} disabled={isSyncing}
               className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">
@@ -275,6 +290,13 @@ function GetaroundSection(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {/* Message resync complète */}
+      {forceFullMsg && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          {forceFullMsg} — cela peut prendre 20-30 minutes
+        </div>
+      )}
 
       {/* Sync progress */}
       {syncStatus?.isRunning && (

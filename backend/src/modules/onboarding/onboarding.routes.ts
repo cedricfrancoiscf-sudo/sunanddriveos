@@ -51,7 +51,7 @@ router.get('/progress', async (req: Request, res: Response, next: NextFunction) 
         label: 'Inviter votre équipe',
         description: 'Invitez au moins un collaborateur (exploitation, comptable, car keeper…)',
         link: '/users',
-        completed: userCount >= 2,
+        completed: userCount >= 1,
       },
       {
         id: 'sequences_configured',

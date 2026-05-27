@@ -6,6 +6,8 @@ import { analyzeMessage } from '../ai/ai.service';
 import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
 import { getMasterClient } from '../../prisma/client';
 
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
 // ─── État de synchronisation en temps réel ───────────────────────────────────
 
 interface SyncState {
@@ -234,6 +236,7 @@ export async function syncAccountRentals(
   // Cache conducteurs : évite un appel API par location pour le même conducteur
   const userCache = new Map<number, string>();
   let processedItems = 0;
+  let syncCompleted = true;
 
   for (const r of rentals) {
     try {
@@ -252,6 +255,7 @@ export async function syncAccountRentals(
       if (!userCache.has(r.user_id)) {
         try {
           const user = await ga.getUser(r.user_id);
+          await sleep(300);
           userCache.set(r.user_id, `${user.first_name} ${user.last_name}`);
         } catch (err: unknown) {
           console.error(`[Sync User] user_id=${r.user_id}`, err);
@@ -348,6 +352,7 @@ export async function syncAccountRentals(
       if (newStatus !== 'booked' && existingRental?.startMileage == null) {
         try {
           const checkin = await ga.getCheckin(r.id);
+          await sleep(300);
           const checkinData: Record<string, unknown> = {};
           // API Getaround retourne le kilométrage en km directement
           if (checkin.mileage != null) checkinData.startMileage = Math.round(checkin.mileage);
@@ -361,6 +366,7 @@ export async function syncAccountRentals(
       if (newStatus === 'completed' && existingRental?.endMileage == null) {
         try {
           const checkout = await ga.getCheckout(r.id);
+          await sleep(300);
           const checkoutData: Record<string, unknown> = {};
           if (checkout.mileage != null) {
             checkoutData.endMileage = Math.round(checkout.mileage); // API Getaround retourne le kilométrage en km directement
@@ -406,18 +412,28 @@ export async function syncAccountRentals(
       }
     } catch (err: unknown) {
       result.errors.push(`Location ${r.id}: ${err instanceof Error ? err.message : 'erreur'}`);
+      const httpStatus = (err as { response?: { status?: number } }).response?.status;
+      if (httpStatus === 429) syncCompleted = false;
     }
     processedItems++;
+    if (processedItems % 50 === 0 && rentals.length > 0) {
+      console.log(`[Sync] ${processedItems}/${rentals.length} locations (${Math.round(processedItems / rentals.length * 100)}%)`);
+    }
     updateSyncState(tenantSlug, {
       processedItems,
       progress: Math.round(15 + (processedItems / Math.max(rentals.length, 1)) * 65),
     });
+    await sleep(500);
   }
 
-  await db.getaroundAccount.update({
-    where: { id: accountId },
-    data: { lastSyncAt: new Date() },
-  });
+  if (syncCompleted) {
+    await db.getaroundAccount.update({
+      where: { id: accountId },
+      data: { lastSyncAt: new Date() },
+    });
+  } else {
+    console.warn('[Sync] lastSyncAt non mis à jour — rate limit 429 non récupéré');
+  }
 
   return result;
 }
@@ -673,6 +689,74 @@ export async function analyzeExistingMessages(db: PrismaClient): Promise<{ analy
 
   console.log(`[Analyse] ${analyzed} messages analysés, ${detected} sièges détectés`);
   return { analyzed, detected };
+}
+
+// ─── 6. Correction historique kilométrage ────────────────────────────────────
+
+export async function fixHistoricalMileage(db: PrismaClient): Promise<{ corrected: number }> {
+  const rentals = await db.rental.findMany({
+    where: {
+      OR: [{ startMileage: { gt: 0 } }, { endMileage: { gt: 0 } }],
+    },
+    select: {
+      id: true,
+      getaroundId: true,
+      vehicleId: true,
+    },
+  });
+
+  // Regrouper par compte pour réutiliser le client API
+  const byAccount = new Map<string, Array<{ id: string; getaroundId: string | null; vehicleId: string }>>();
+  for (const r of rentals) {
+    if (!r.getaroundId) continue;
+    const vehicle = await db.vehicle.findUnique({
+      where: { id: r.vehicleId },
+      select: { getaroundAccountId: true },
+    });
+    const accId = vehicle?.getaroundAccountId;
+    if (!accId) continue;
+    if (!byAccount.has(accId)) byAccount.set(accId, []);
+    byAccount.get(accId)!.push(r);
+  }
+
+  let corrected = 0;
+
+  for (const [accountId, accountRentals] of byAccount) {
+    const account = await db.getaroundAccount.findUnique({ where: { id: accountId } });
+    if (!account) continue;
+    const apiKey = decrypt(account.apiKeyHash);
+    const ga = createGetaroundClient(apiKey);
+
+    for (const rental of accountRentals) {
+      const gaId = parseInt(rental.getaroundId!, 10);
+      const updateData: Record<string, unknown> = {};
+
+      try {
+        const checkin = await ga.getCheckin(gaId);
+        await sleep(300);
+        if (checkin.mileage != null) updateData.startMileage = Math.round(checkin.mileage);
+        if (checkin.fuel_level != null) updateData.fuelLevelCheckin = checkin.fuel_level;
+      } catch { /* location sans checkin */ }
+
+      try {
+        const checkout = await ga.getCheckout(gaId);
+        await sleep(300);
+        if (checkout.mileage != null) updateData.endMileage = Math.round(checkout.mileage);
+        if (checkout.distance_driven != null) updateData.kmDriven = Math.round(checkout.distance_driven);
+        if (checkout.fuel_level != null) updateData.fuelLevelCheckout = checkout.fuel_level;
+      } catch { /* location sans checkout */ }
+
+      if (Object.keys(updateData).length > 0) {
+        await db.rental.update({ where: { id: rental.id }, data: updateData });
+        corrected++;
+      }
+
+      await sleep(500);
+    }
+  }
+
+  console.log(`[FixMileage] ${corrected} locations corrigées`);
+  return { corrected };
 }
 
 // ─── Gestion des comptes Getaround ──────────────────────────────────────────

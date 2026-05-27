@@ -65,7 +65,7 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
 
   const { data: onboarding } = useQuery({
     queryKey: ['onboarding-progress'],
-    queryFn: () => api.get<{ progressPercent: number; allDone: boolean; dismissed: boolean }>('/onboarding/progress').then(r => r.data),
+    queryFn: () => api.get<{ progressPercent: number; allDone: boolean; dismissed: boolean; completedCount: number; totalCount: number }>('/onboarding/progress').then(r => r.data),
     staleTime: 60_000,
   });
   const showOnboarding = onboarding && !onboarding.dismissed && !onboarding.allDone;
@@ -196,7 +196,7 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
               className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
               style={{ backgroundColor: '#e07b39' }}
             >
-              {onboarding.progressPercent}
+              {onboarding.totalCount - onboarding.completedCount}
             </span>
           </NavLink>
         </div>

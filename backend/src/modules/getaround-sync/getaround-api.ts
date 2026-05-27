@@ -2,6 +2,26 @@
 
 const BASE_URL = 'https://api-eu.getaround.com/owner/v1';
 
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 429) {
+        const wait = Math.pow(2, attempt) * 2000;
+        console.log(`[RateLimit] 429 — attente ${wait / 1000}s (tentative ${attempt + 1}/${maxRetries})`);
+        await sleep(wait);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`[RateLimit] Max ${maxRetries} tentatives atteint`);
+}
+
 // GET /cars/{id}.json — champs exacts selon OpenAPI spec
 export interface GetaroundCar {
   id: number;
@@ -118,8 +138,8 @@ async function fetchAllPages<T>(
     const qs = Object.entries(allParams).map(([k, v]) => `${k}=${v}`).join('&');
     const fullUrl = `${url}?${qs}`;
     console.log(`[API] GET ${url} (page ${page})`);
-    const res = await client.get<T[]>(fullUrl);
-    await new Promise(r => setTimeout(r, 300));
+    const res = await withRetry(() => client.get<T[]>(fullUrl));
+    await sleep(300);
     if (!Array.isArray(res.data)) {
       console.error('[API] Réponse inattendue (non-array):', res.status, JSON.stringify(res.data).slice(0, 200));
       break;
@@ -150,14 +170,15 @@ export function createGetaroundClient(apiKey: string) {
       const ids = await fetchAllPages<{ id: number }>(client, '/cars.json', {});
       const cars: GetaroundCar[] = [];
       for (const { id } of ids) {
-        const res = await client.get<GetaroundCar>(`/cars/${id}.json`);
+        const res = await withRetry(() => client.get<GetaroundCar>(`/cars/${id}.json`));
         cars.push(res.data);
+        await sleep(300);
       }
       return cars;
     },
 
     async getCar(id: number): Promise<GetaroundCar> {
-      const res = await client.get<GetaroundCar>(`/cars/${id}.json`);
+      const res = await withRetry(() => client.get<GetaroundCar>(`/cars/${id}.json`));
       return res.data;
     },
 
@@ -182,8 +203,8 @@ export function createGetaroundClient(apiKey: string) {
       for (const id of seenIds) {
         try {
           console.log('[Sync] Appel détail location:', id);
-          const res = await client.get<GetaroundRental>(`/rentals/${id}.json`);
-          await new Promise(r => setTimeout(r, 300));
+          const res = await withRetry(() => client.get<GetaroundRental>(`/rentals/${id}.json`));
+          await sleep(300);
           rentals.push(res.data);
           console.log('[Sync] Location récupérée:', id);
         } catch (err: unknown) {
@@ -194,22 +215,22 @@ export function createGetaroundClient(apiKey: string) {
     },
 
     async getRental(id: number): Promise<GetaroundRental> {
-      const res = await client.get<GetaroundRental>(`/rentals/${id}.json`);
+      const res = await withRetry(() => client.get<GetaroundRental>(`/rentals/${id}.json`));
       return res.data;
     },
 
     async getUser(id: number): Promise<GetaroundUser> {
-      const res = await client.get<GetaroundUser>(`/users/${id}.json`);
+      const res = await withRetry(() => client.get<GetaroundUser>(`/users/${id}.json`));
       return res.data;
     },
 
     async getCheckin(rentalId: number): Promise<GetaroundCheckin> {
-      const res = await client.get<GetaroundCheckin>(`/rentals/${rentalId}/checkin.json`);
+      const res = await withRetry(() => client.get<GetaroundCheckin>(`/rentals/${rentalId}/checkin.json`));
       return res.data;
     },
 
     async getCheckout(rentalId: number): Promise<GetaroundCheckout> {
-      const res = await client.get<GetaroundCheckout>(`/rentals/${rentalId}/checkout.json`);
+      const res = await withRetry(() => client.get<GetaroundCheckout>(`/rentals/${rentalId}/checkout.json`));
       return res.data;
     },
 
@@ -218,37 +239,38 @@ export function createGetaroundClient(apiKey: string) {
       const ids = await fetchAllPages<{ id: number }>(client, `/rentals/${rentalId}/messages.json`, {});
       const messages: GetaroundMessage[] = [];
       for (const { id } of ids) {
-        const res = await client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`);
+        const res = await withRetry(() => client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`));
         messages.push(res.data);
+        await sleep(300);
       }
       return messages;
     },
 
     async getMessage(rentalId: number, id: number): Promise<GetaroundMessage> {
-      const res = await client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`);
+      const res = await withRetry(() => client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`));
       return res.data;
     },
 
     async sendMessage(rentalId: number, content: string): Promise<GetaroundMessage> {
-      const res = await client.post<GetaroundMessage>(
+      const res = await withRetry(() => client.post<GetaroundMessage>(
         `/rentals/${rentalId}/messages.json`,
         { content },
-      );
+      ));
       return res.data;
     },
 
     async createUnavailability(carId: number, startsAt: Date, endsAt: Date, reason: string): Promise<void> {
-      await client.post(`/cars/${carId}/unavailabilities.json`, {
+      await withRetry(() => client.post(`/cars/${carId}/unavailabilities.json`, {
         starts_at: toGetaroundDate(startsAt),
         ends_at: toGetaroundDate(endsAt),
         reason,
-      });
+      }));
     },
 
     async deleteUnavailability(carId: number, startsAt: Date, endsAt: Date): Promise<void> {
-      await client.delete(`/cars/${carId}/unavailabilities.json`, {
+      await withRetry(() => client.delete(`/cars/${carId}/unavailabilities.json`, {
         data: { starts_at: toGetaroundDate(startsAt), ends_at: toGetaroundDate(endsAt) },
-      });
+      }));
     },
 
     async getInvoices(): Promise<GetaroundInvoiceApi[]> {

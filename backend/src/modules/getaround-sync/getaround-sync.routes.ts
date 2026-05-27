@@ -70,8 +70,9 @@ router.post('/sync/:accountId', adminOnly, async (req: Request, res: Response, n
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const accountId = req.params.accountId as string;
+    const tenantSlug = req.auth?.tenantSlug ?? 'default';
     const vehicles = await syncAccountVehicles(db, accountId);
-    const rentals  = await syncAccountRentals(db, accountId);
+    const rentals  = await syncAccountRentals(db, accountId, undefined, undefined, tenantSlug);
     const messages = await syncAccountMessages(db, accountId);
     res.json({ vehicles, rentals, messages });
   } catch (err: unknown) { next(err); }
@@ -83,7 +84,8 @@ router.post('/sync-all', adminOnly, async (req: Request, res: Response, next: Ne
   res.setTimeout(0);
   try {
     const db = getTenantClient(req.tenantDbUrl!);
-    const results = await syncAllAccounts(db);
+    const tenantSlug = req.auth?.tenantSlug ?? 'default';
+    const results = await syncAllAccounts(db, tenantSlug);
     res.json({ results });
   } catch (err: unknown) { next(err); }
 });
@@ -95,11 +97,13 @@ router.post('/sync-rentals/:accountId', adminOnly, async (req: Request, res: Res
   try {
     const { from, to } = req.query as { from?: string; to?: string };
     const db = getTenantClient(req.tenantDbUrl!);
+    const tenantSlug = req.auth?.tenantSlug ?? 'default';
     const rentals = await syncAccountRentals(
       db,
       (req.params.accountId as string),
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
+      tenantSlug,
     );
     // Sync messages automatiquement après les locations
     const messages = await syncAccountMessages(db, (req.params.accountId as string));

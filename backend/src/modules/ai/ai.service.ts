@@ -324,7 +324,7 @@ export interface MorningBriefingContext {
   unansweredCount: number;
 }
 
-export async function generateMorningBriefing(context: MorningBriefingContext): Promise<string> {
+export async function generateMorningBriefing(context: MorningBriefingContext, aiName = 'Alex'): Promise<string> {
   const ratingsText = context.vehicleRatings.length > 0
     ? context.vehicleRatings.map(vr => {
         const trend = vr.previousRating !== null
@@ -352,7 +352,7 @@ Règles strictes :
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 512,
-    system: 'Tu rédiges des briefings opérationnels pour des gestionnaires de flotte Getaround. Réponds directement sans introduction.',
+    system: `Tu t'appelles ${aiName} et tu rédiges des briefings opérationnels pour des gestionnaires de flotte Getaround. Réponds directement sans introduction.`,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -364,6 +364,7 @@ export async function suggestReply(
   context: RentalContext,
   tone: 'vouvoiement' | 'tutoiement' = 'vouvoiement',
   previousMessages?: Array<{ direction: string; content: string }>,
+  aiName = 'Alex',
 ): Promise<string> {
   const historyBlock =
     previousMessages && previousMessages.length > 0
@@ -377,9 +378,9 @@ export async function suggestReply(
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    system: `Tu es un assistant pour Sun and Drive, service de location de voitures partagées.
+    system: `Tu t'appelles ${aiName} et tu es un assistant pour Sun and Drive, service de location de voitures partagées.
 Tu rédiges des réponses professionnelles, chaleureuses et concises en français.
-Utilise le ${tone} avec le locataire.
+Utilise le ${tone} avec le locataire. Signe tes messages avec ton prénom "${aiName}".
 Ne jamais suggérer de modifier les prix. Getaround gère la tarification automatiquement.
 Réponds directement avec le texte du message, sans introduction ni explication.`,
     messages: [

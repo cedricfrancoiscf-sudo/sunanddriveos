@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { messagesApi, aiApi, type Message } from './messagesApi';
 
@@ -118,7 +118,7 @@ export default function MessageDetailPage(): React.JSX.Element {
       if (!lastInbound) return;
 
       const { suggestion } = await aiApi.suggest(message.rentalId, lastInbound.content);
-      setReplyContent(suggestion);
+      if (suggestion) setReplyContent(suggestion);
     } finally {
       setIsGenerating(false);
     }
@@ -147,6 +147,9 @@ export default function MessageDetailPage(): React.JSX.Element {
   const thread = message.rental.messages ?? [];
   const isPending = message.status === 'pending_approval';
   const isApproved = message.status === 'approved';
+  const aiSuggestDisabled =
+    message.rental.status === 'completed' &&
+    differenceInDays(new Date(), new Date(message.rental.endAt)) > 7;
 
   return (
     <div className="flex h-full flex-col">
@@ -212,7 +215,7 @@ export default function MessageDetailPage(): React.JSX.Element {
                   <label className="text-xs font-medium text-gray-500">
                     {isPending ? 'Suggestion à approuver' : 'Message approuvé'}
                   </label>
-                  {isPending && (
+                  {isPending && !aiSuggestDisabled && (
                     <button
                       type="button"
                       onClick={() => void handleGenerate()}
@@ -279,17 +282,21 @@ export default function MessageDetailPage(): React.JSX.Element {
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
               />
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleGenerate()}
-                  disabled={isGenerating}
-                  className="flex items-center gap-1.5 rounded-xl border border-[#01696e]/30 px-3 py-2 text-sm font-medium text-[#01696e] hover:bg-[#01696e]/5 disabled:opacity-60"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  {isGenerating ? 'Génération...' : 'Suggérer avec IA'}
-                </button>
+                {aiSuggestDisabled ? (
+                  <p className="py-2 text-xs text-gray-400">Suggestion IA non disponible (location terminée)</p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleGenerate()}
+                    disabled={isGenerating}
+                    className="flex items-center gap-1.5 rounded-xl border border-[#01696e]/30 px-3 py-2 text-sm font-medium text-[#01696e] hover:bg-[#01696e]/5 disabled:opacity-60"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    {isGenerating ? 'Génération...' : 'Suggérer avec IA'}
+                  </button>
+                )}
                 {replyContent && (
                   <button
                     type="button"

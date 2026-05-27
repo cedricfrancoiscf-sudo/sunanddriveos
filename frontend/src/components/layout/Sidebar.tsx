@@ -70,6 +70,14 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
   });
   const showOnboarding = onboarding && !onboarding.dismissed && !onboarding.allDone;
 
+  const { data: syncStatus } = useQuery({
+    queryKey: ['sync-status'],
+    queryFn: () => api.get<{ state: { isRunning: boolean; error: string | null; progress: number } }>('/sync/status').then(r => r.data.state),
+    refetchInterval: 5_000,
+    staleTime: 4_000,
+    enabled: user?.role !== 'carkeeper',
+  });
+
   const isCarkeeper = user?.role === 'carkeeper';
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && user?.role !== 'admin' && !user?.isSuperAdmin) return false;
@@ -191,6 +199,18 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
               {onboarding.progressPercent}
             </span>
           </NavLink>
+        </div>
+      )}
+
+      {/* Sync indicator */}
+      {user?.role !== 'carkeeper' && syncStatus && (syncStatus.isRunning || syncStatus.error != null) && (
+        <div className="shrink-0 px-4 pb-2">
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span className={`h-2 w-2 rounded-full ${
+              syncStatus.isRunning ? 'animate-pulse bg-orange-400' : 'bg-red-500'
+            }`} />
+            {syncStatus.isRunning ? `Sync ${syncStatus.progress}%` : 'Erreur sync'}
+          </div>
         </div>
       )}
 

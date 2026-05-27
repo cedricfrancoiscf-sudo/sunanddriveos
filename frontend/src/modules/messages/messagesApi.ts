@@ -29,6 +29,7 @@ export interface Message {
     driverName: string;
     startAt: string;
     endAt: string;
+    status: string;
     vehicle: { id: string; make: string; model: string; licensePlate: string };
     messages?: Array<{
       id: string;
@@ -76,6 +77,6 @@ export const aiApi = {
 
   suggest: (rentalId: string, incomingContent: string, saveAsDraft = false) =>
     api
-      .post<{ suggestion: string; messageId?: string }>('/ai/suggest', { rentalId, incomingContent, saveAsDraft })
+      .post<{ suggestion: string | null; messageId?: string }>('/ai/suggest', { rentalId, incomingContent, saveAsDraft })
       .then((r) => r.data),
 };

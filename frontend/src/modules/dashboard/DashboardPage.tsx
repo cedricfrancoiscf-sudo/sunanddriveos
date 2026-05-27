@@ -11,6 +11,7 @@ import { useAuth } from '../../hooks/useAuth';
 interface RentalStats { totalRevenue: number; occupancyRate: number; rentalCount: number; totalKm: number; vehicleCount: number; totalPayout: number; }
 interface ActiveRental { id: string; driverName: string; startAt: string; endAt: string; vehicle: { make: string; model: string; licensePlate: string }; }
 interface Alert { id: string; type: string; label: string; severity: 'high' | 'medium'; link: string; }
+interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; lastSyncAt: string | null; lastSyncResult: { created: number; updated: number } | null; error: string | null; isTrialLimited: boolean; }
 
 function formatWeekLabel(week: string): string {
   const [yearStr, weekStr] = week.split('-W');
@@ -103,6 +104,14 @@ export default function DashboardPage(): React.JSX.Element {
     enabled: user?.role !== 'carkeeper',
   });
 
+  const { data: syncStatus } = useQuery<SyncStateData>({
+    queryKey: ['sync-status'],
+    queryFn: () => api.get<{ state: SyncStateData }>('/sync/status').then(r => r.data.state),
+    refetchInterval: (query) => ((query.state.data as SyncStateData | undefined)?.isRunning ? 3_000 : 30_000),
+    staleTime: 2_000,
+    enabled: user?.role !== 'carkeeper',
+  });
+
   // Construire les alertes
   const alerts: Alert[] = [
     ...(pendingMessages && pendingMessages.pendingCount > 0 ? [{
@@ -179,6 +188,48 @@ export default function DashboardPage(): React.JSX.Element {
               </svg>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Bannière trial */}
+      {syncStatus?.isTrialLimited && (
+        <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <svg className="h-5 w-5 shrink-0 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Mode essai — données limitées à 90 jours</p>
+            <p className="text-xs text-amber-600">Passez à un abonnement pour synchroniser l'historique complet.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Widget progression sync */}
+      {syncStatus && (syncStatus.isRunning || syncStatus.error != null || syncStatus.lastSyncAt != null) && (
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+          {syncStatus.isRunning ? (
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[#01696e] border-t-transparent" />
+                  {syncStatus.currentStep}
+                </span>
+                <span className="text-xs text-gray-400">{syncStatus.progress}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                <div className="h-full rounded-full bg-[#01696e] transition-all duration-500" style={{ width: `${syncStatus.progress}%` }} />
+              </div>
+            </div>
+          ) : syncStatus.error != null ? (
+            <p className="text-sm text-red-600">Erreur sync : {syncStatus.error}</p>
+          ) : syncStatus.lastSyncAt != null ? (
+            <div className="flex items-center justify-between text-xs text-gray-400">
+              <span>Dernière sync : {format(new Date(syncStatus.lastSyncAt), 'dd/MM à HH:mm', { locale: fr })}</span>
+              {syncStatus.lastSyncResult && (
+                <span>{syncStatus.lastSyncResult.created} créés · {syncStatus.lastSyncResult.updated} mis à jour</span>
+              )}
+            </div>
+          ) : null}
         </div>
       )}
 

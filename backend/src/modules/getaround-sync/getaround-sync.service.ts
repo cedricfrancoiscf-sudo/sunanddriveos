@@ -4,6 +4,41 @@ import { createGetaroundClient, type GetaroundRental } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
 import { analyzeMessage } from '../ai/ai.service';
 import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
+import { getMasterClient } from '../../prisma/client';
+
+// ─── État de synchronisation en temps réel ───────────────────────────────────
+
+interface SyncState {
+  isRunning: boolean;
+  currentStep: string;
+  progress: number;
+  totalItems: number;
+  processedItems: number;
+  lastSyncAt: Date | null;
+  lastSyncResult: { created: number; updated: number } | null;
+  error: string | null;
+  isTrialLimited: boolean;
+}
+
+const syncStateMap: Record<string, SyncState> = {};
+
+export function getSyncState(tenantSlug: string): SyncState {
+  return syncStateMap[tenantSlug] ?? {
+    isRunning: false,
+    currentStep: 'Jamais synchronisé',
+    progress: 0,
+    totalItems: 0,
+    processedItems: 0,
+    lastSyncAt: null,
+    lastSyncResult: null,
+    error: null,
+    isTrialLimited: false,
+  };
+}
+
+export function updateSyncState(tenantSlug: string, update: Partial<SyncState>): void {
+  syncStateMap[tenantSlug] = { ...getSyncState(tenantSlug), ...update };
+}
 
 export interface SyncResult {
   accountId: string;
@@ -110,18 +145,34 @@ export async function syncAccountVehicles(
 
 export async function syncAllAccounts(
   db: PrismaClient,
+  tenantSlug = 'default',
 ): Promise<Array<{ vehicles: SyncResult; rentals: RentalSyncResult; messages: MessageSyncResult }>> {
+  updateSyncState(tenantSlug, { isRunning: true, progress: 5, currentStep: 'Synchronisation des véhicules...', error: null });
   const accounts = await db.getaroundAccount.findMany({
     where: { isActive: true },
     select: { id: true },
   });
   const results = [];
-  for (const a of accounts) {
-    const vehicles = await syncAccountVehicles(db, a.id);
-    const rentals  = await syncAccountRentals(db, a.id);
-    const messages = await syncAccountMessages(db, a.id);
-    void syncAccountInvoicesPayouts(db, a.id).catch(e => console.error('[Sync] Erreur invoices/payouts:', e));
-    results.push({ vehicles, rentals, messages });
+  try {
+    for (const a of accounts) {
+      const vehicles = await syncAccountVehicles(db, a.id);
+      const rentals = await syncAccountRentals(db, a.id, undefined, undefined, tenantSlug);
+      updateSyncState(tenantSlug, { progress: 80, currentStep: 'Synchronisation des messages...' });
+      const messages = await syncAccountMessages(db, a.id);
+      updateSyncState(tenantSlug, { progress: 90, currentStep: 'Synchronisation des factures...' });
+      void syncAccountInvoicesPayouts(db, a.id).catch(e => console.error('[Sync] Erreur invoices/payouts:', e));
+      results.push({ vehicles, rentals, messages });
+    }
+    const totalCreated = results.reduce((s, r) => s + r.vehicles.created + r.rentals.created, 0);
+    const totalUpdated = results.reduce((s, r) => s + r.vehicles.updated + r.rentals.updated, 0);
+    updateSyncState(tenantSlug, {
+      isRunning: false, progress: 100, currentStep: 'Terminé',
+      lastSyncAt: new Date(), lastSyncResult: { created: totalCreated, updated: totalUpdated },
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Erreur inconnue';
+    updateSyncState(tenantSlug, { isRunning: false, error: msg, progress: 0 });
+    throw err;
   }
   return results;
 }
@@ -140,6 +191,7 @@ export async function syncAccountRentals(
   accountId: string,
   from?: Date,
   to?: Date,
+  tenantSlug = 'default',
 ): Promise<RentalSyncResult> {
   const account = await db.getaroundAccount.findUnique({ where: { id: accountId } });
   if (!account) throw Object.assign(new Error('Compte Getaround introuvable'), { status: 404 });
@@ -151,7 +203,7 @@ export async function syncAccountRentals(
 
   // Par défaut : lastSyncAt - 2h si déjà syncé, sinon 2 ans en arrière
   // getRentals découpe automatiquement en fenêtres ≤ 30 jours
-  const startDate = from ?? (
+  let startDate = from ?? (
     account.lastSyncAt != null
       ? new Date(account.lastSyncAt.getTime() - 2 * 3_600_000)
       : new Date(Date.now() - 2 * 365 * 86_400_000)
@@ -160,10 +212,28 @@ export async function syncAccountRentals(
   defaultEnd.setMonth(defaultEnd.getMonth() + 3);
   const endDate = to ?? defaultEnd;
 
+  // Mode trial : limiter la sync aux 90 derniers jours
+  if (tenantSlug !== 'default') {
+    try {
+      const masterDb = getMasterClient();
+      const company = await masterDb.company.findFirst({ where: { slug: tenantSlug } });
+      const trialActive = company?.trialEndsAt != null && company.trialEndsAt > new Date() && !company.stripeSubscriptionId;
+      if (trialActive) {
+        startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+        console.log('[Sync] Mode trial — sync limitée aux 90 derniers jours');
+        updateSyncState(tenantSlug, { isTrialLimited: true });
+      }
+    } catch (e) { console.error('[Sync] Erreur vérification trial:', e); }
+  }
+
+  updateSyncState(tenantSlug, { progress: 15, currentStep: 'Récupération des locations...' });
+
   const rentals = await ga.getRentals(startDate, endDate);
+  updateSyncState(tenantSlug, { totalItems: rentals.length, processedItems: 0 });
 
   // Cache conducteurs : évite un appel API par location pour le même conducteur
   const userCache = new Map<number, string>();
+  let processedItems = 0;
 
   for (const r of rentals) {
     try {
@@ -337,6 +407,11 @@ export async function syncAccountRentals(
     } catch (err: unknown) {
       result.errors.push(`Location ${r.id}: ${err instanceof Error ? err.message : 'erreur'}`);
     }
+    processedItems++;
+    updateSyncState(tenantSlug, {
+      processedItems,
+      progress: Math.round(15 + (processedItems / Math.max(rentals.length, 1)) * 65),
+    });
   }
 
   await db.getaroundAccount.update({
@@ -368,18 +443,21 @@ export async function syncAccountMessages(
   const apiKey = decrypt(account.apiKeyHash);
   const ga = createGetaroundClient(apiKey);
 
-  // Sync les messages des locations actives/réservées + complétées depuis 30 jours
-  const since = new Date(Date.now() - 30 * 86_400_000);
+  // Sync les messages des locations actives/réservées + complétées depuis 7 jours max
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const rentals = await db.rental.findMany({
     where: {
       vehicle: { getaroundAccountId: accountId },
       OR: [
         { status: { in: ['booked', 'active'] } },
-        { endAt: { gte: since } },
+        { status: 'completed', endAt: { gte: sevenDaysAgo } },
       ],
     },
     select: { id: true, getaroundId: true, driverGetaroundId: true, vehicleId: true, driverName: true, startAt: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
   });
+
+  const totalRentals = await db.rental.count({ where: { vehicle: { getaroundAccountId: accountId } } });
+  console.log(`[Sync] Messages : ${rentals.length} locations actives à traiter (${totalRentals - rentals.length} locations terminées ignorées)`);
 
   for (const rental of rentals) {
     if (!rental.getaroundId) continue;

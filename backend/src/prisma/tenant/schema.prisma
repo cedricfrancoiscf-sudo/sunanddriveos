@@ -553,6 +553,7 @@ model CompanySettings {
   aiModeIncident       String   @default("manual")
   aiModeGeneral        String   @default("approval")
   aiTone               String   @default("vouvoiement")
+  aiName               String   @default("Alex")
   maintenancePolicies  Json     @default("{}")
   notificationSettings Json     @default("{}")
   getaroundWebhookPath String?

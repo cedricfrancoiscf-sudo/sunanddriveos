@@ -45,6 +45,7 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       aiModeIncident: z.enum(['auto', 'approval', 'manual']).optional(),
       aiModeGeneral: z.enum(['auto', 'approval', 'manual']).optional(),
       aiTone: z.enum(['vouvoiement', 'tutoiement']).optional(),
+      aiName: z.string().min(2).max(20).regex(/^[a-zA-ZÀ-ÿ]+$/, 'Lettres uniquement').optional(),
       maintenancePolicies: z.record(z.unknown()).optional(),
       notificationSettings: z.record(z.unknown()).optional(),
     }).safeParse(req.body);

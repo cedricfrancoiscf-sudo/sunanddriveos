@@ -64,6 +64,7 @@ import vehicleCarkeepersRoutes from './modules/vehicles/vehicle-carkeepers.route
 import renterProfileRoutes from './modules/rentals/renter-profile.routes';
 import renterBlacklistRoutes from './modules/blocking/renter-blacklist.routes';
 import getaroundWebhooksRoutes from './modules/getaround-sync/getaround-webhooks.routes';
+import syncStatusRoutes from './modules/getaround-sync/sync-status.routes';
 import tenantEventsRoutes from './modules/tenant-events/tenant-events.routes';
 import feedbackRoutes from './modules/feedback/feedback.routes';
 
@@ -144,6 +145,7 @@ export function createApp(): Express {
   app.use('/api/v1/blacklist', renterBlacklistRoutes);
   app.use('/api/v1/tenant-events', tenantEventsRoutes);
   app.use('/api/v1/feedback', feedbackRoutes);
+  app.use('/api/v1/sync', syncStatusRoutes);
   // Route publique iCal — pas de JWT, compatible abonnement calendriers
   app.use('/ical', icalRoutes);
 

@@ -76,9 +76,19 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
 
     if (!rental) { res.status(404).json({ error: 'Location introuvable' }); return; }
 
+    // Section 4 : suggestions IA désactivées pour les locations terminées depuis > 7 jours
+    if (rental.status === 'completed') {
+      const daysSinceEnd = (Date.now() - new Date(rental.endAt).getTime()) / 86_400_000;
+      if (daysSinceEnd > 7) {
+        res.json({ suggestion: null });
+        return;
+      }
+    }
+
     // Récupère les paramètres IA de la société
     const settings = await db.companySettings.findFirst();
     const tone = (settings?.aiTone as 'vouvoiement' | 'tutoiement') ?? 'vouvoiement';
+    const aiName = settings?.aiName ?? 'Alex';
 
     const context = {
       driverName: rental.driverName,
@@ -94,6 +104,7 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
       context,
       tone,
       rental.messages,
+      aiName,
     );
 
     // Sauvegarde en brouillon si demandé

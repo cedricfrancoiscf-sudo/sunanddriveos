@@ -120,7 +120,10 @@ interface CompanySettings {
   aiModeIncident: string;
   aiModeGeneral: string;
   aiTone: string;
+  aiName: string;
 }
+
+interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
 
 const EMPTY_ACCOUNT = { name: '', apiKey: '' };
 
@@ -179,6 +182,13 @@ function GetaroundSection(): React.JSX.Element {
   const [editKeyId, setEditKeyId] = useState<string | null>(null);
   const [newKey, setNewKey] = useState('');
   const [syncMsg, setSyncMsg] = useState<Record<string, string>>({});
+
+  const { data: syncStatus } = useQuery<SyncStateData>({
+    queryKey: ['sync-status'],
+    queryFn: () => api.get<{ state: SyncStateData }>('/sync/status').then(r => r.data.state),
+    refetchInterval: (query) => ((query.state.data as SyncStateData | undefined)?.isRunning ? 2_000 : 15_000),
+    staleTime: 1_000,
+  });
 
   const { data: accounts = [], isLoading } = useQuery({
     queryKey: ['getaround-accounts'],
@@ -241,7 +251,7 @@ function GetaroundSection(): React.JSX.Element {
     },
   });
 
-  const isSyncing = syncVehiclesMutation.isPending || syncRentalsMutation.isPending || syncAllMutation.isPending;
+  const isSyncing = syncVehiclesMutation.isPending || syncRentalsMutation.isPending || syncAllMutation.isPending || (syncStatus?.isRunning ?? false);
 
   return (
     <section id="getaround" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
@@ -265,6 +275,22 @@ function GetaroundSection(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {/* Sync progress */}
+      {syncStatus?.isRunning && (
+        <div>
+          <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-[#01696e] border-t-transparent" />
+              {syncStatus.currentStep}
+            </span>
+            <span>{syncStatus.progress}%</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+            <div className="h-full rounded-full bg-[#01696e] transition-all duration-500" style={{ width: `${syncStatus.progress}%` }} />
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={e => { e.preventDefault(); createMutation.mutate(); }}
@@ -488,6 +514,7 @@ export default function SettingsPage(): React.JSX.Element {
     aiModeIncident: 'approval',
     aiModeGeneral: 'approval',
     aiTone: 'vouvoiement',
+    aiName: 'Alex',
   });
 
   const [saved, setSaved] = useState(false);
@@ -505,6 +532,7 @@ export default function SettingsPage(): React.JSX.Element {
         aiModeIncident: settings.aiModeIncident ?? 'approval',
         aiModeGeneral: settings.aiModeGeneral ?? 'approval',
         aiTone: settings.aiTone ?? 'vouvoiement',
+        aiName: settings.aiName ?? 'Alex',
       });
       if (settings.logoUrl) setLogoPreview(settings.logoUrl);
     }
@@ -520,6 +548,7 @@ export default function SettingsPage(): React.JSX.Element {
       aiModeIncident: data.aiModeIncident as 'auto' | 'approval' | 'manual',
       aiModeGeneral: data.aiModeGeneral as 'auto' | 'approval' | 'manual',
       aiTone: data.aiTone as 'vouvoiement' | 'tutoiement',
+      aiName: data.aiName,
     }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings'] });
@@ -646,6 +675,20 @@ export default function SettingsPage(): React.JSX.Element {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-gray-700">Prénom de l'assistant IA</label>
+              <p className="mb-2 text-[11px] text-gray-400">Ce prénom sera utilisé dans les signatures de messages générés par l'IA</p>
+              <input
+                type="text"
+                value={form.aiName}
+                onChange={e => setForm(f => ({ ...f, aiName: e.target.value }))}
+                maxLength={20}
+                pattern="[a-zA-ZÀ-ÿ]+"
+                placeholder="Alex"
+                className="w-40 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
+              />
             </div>
           </section>
 

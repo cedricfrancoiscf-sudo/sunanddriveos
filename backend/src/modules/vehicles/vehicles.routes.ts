@@ -171,4 +171,61 @@ router.patch('/:id/photos/:photoId/cover', async (req: Request, res: Response, n
   } catch (err: unknown) { next(err); }
 });
 
+const ratingSchema = z.object({
+  rating: z.number().min(0).max(5),
+  reviewCount: z.number().int().min(0).optional(),
+  keywords: z.array(z.string()).optional(),
+  notes: z.string().optional(),
+  period: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+});
+
+// GET /api/v1/vehicles/:id/ratings
+router.get('/:id/ratings', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const ratings = await db.vehicleRating.findMany({
+      where: { vehicleId: req.params.id as string },
+      orderBy: { period: 'desc' },
+      take: 12,
+    });
+    res.json({ ratings });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/vehicles/:id/ratings — upsert sur le mois fourni (ou mois courant)
+router.post('/:id/ratings', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = ratingSchema.safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+
+    const db = getTenantClient(req.tenantDbUrl!);
+    const vehicleId = req.params.id as string;
+
+    const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
+    if (!vehicle) { res.status(404).json({ error: 'Véhicule introuvable' }); return; }
+
+    const now = new Date();
+    const period = body.data.period ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const rating = await db.vehicleRating.upsert({
+      where: { vehicleId_period: { vehicleId, period } },
+      create: {
+        vehicleId, period,
+        rating: body.data.rating,
+        reviewCount: body.data.reviewCount ?? 0,
+        keywords: body.data.keywords ?? [],
+        notes: body.data.notes,
+      },
+      update: {
+        rating: body.data.rating,
+        reviewCount: body.data.reviewCount ?? 0,
+        keywords: body.data.keywords ?? [],
+        notes: body.data.notes,
+      },
+    });
+
+    res.json({ rating });
+  } catch (err: unknown) { next(err); }
+});
+
 export default router;

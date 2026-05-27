@@ -2,18 +2,6 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { vehiclesApi, getaroundSyncApi, type Vehicle } from './vehiclesApi';
-import { useAuth } from '../../hooks/useAuth';
-import { api } from '../../utils/api';
-
-interface PricingSuggestion {
-  vehicleId: string;
-  licensePlate: string;
-  make: string;
-  model: string;
-  occupancyRate: number;
-  avgDailyRevenue: number;
-  suggestion: string;
-}
 
 type FleetViewMode = 'grid' | 'list';
 
@@ -34,7 +22,7 @@ function HealthBadge({ score }: { score: number }): React.JSX.Element {
   );
 }
 
-function VehicleCard({ vehicle, hasSuggestion }: { vehicle: Vehicle; hasSuggestion?: boolean }): React.JSX.Element {
+function VehicleCard({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
   const hasGetaround = Boolean(vehicle.getaroundId);
 
   return (
@@ -56,11 +44,6 @@ function VehicleCard({ vehicle, hasSuggestion }: { vehicle: Vehicle; hasSuggesti
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0zM13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
             </svg>
           </div>
-        )}
-        {hasSuggestion && (
-          <span className="absolute left-2 top-2 rounded-full bg-orange-500 px-2 py-0.5 text-xs font-semibold text-white">
-            💡 IA
-          </span>
         )}
         {hasGetaround && (
           <span className="absolute right-2 top-2 rounded-full bg-[#01696e] px-2 py-0.5 text-xs font-medium text-white">
@@ -235,9 +218,6 @@ export default function VehicleListPage(): React.JSX.Element {
   const [showSync, setShowSync] = useState(false);
   const [search, setSearch] = useState('');
   const [fleetView, setFleetView] = useState<FleetViewMode>(getStoredViewMode);
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin' || user?.isSuperAdmin;
-
   function toggleView(mode: FleetViewMode): void {
     setFleetView(mode);
     localStorage.setItem('fleet_view_mode', mode);
@@ -248,15 +228,6 @@ export default function VehicleListPage(): React.JSX.Element {
     queryFn: () => vehiclesApi.list(),
     staleTime: 5 * 60_000,
   });
-
-  const { data: pricingSuggestions = [] } = useQuery<PricingSuggestion[]>({
-    queryKey: ['pricing-suggestions'],
-    queryFn: () => api.get<{ suggestions: PricingSuggestion[] }>('/ai/pricing-suggestions').then(r => r.data.suggestions),
-    enabled: Boolean(isAdmin),
-    staleTime: 10 * 60_000,
-  });
-
-  const suggestionMap = new Map(pricingSuggestions.map(s => [s.vehicleId, s]));
 
   const filtered = vehicles.filter((v) => {
     const q = search.toLowerCase();
@@ -368,7 +339,7 @@ export default function VehicleListPage(): React.JSX.Element {
       {!isLoading && filtered.length > 0 && fleetView === 'grid' && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((v) => (
-            <VehicleCard key={v.id} vehicle={v} hasSuggestion={suggestionMap.has(v.id)} />
+            <VehicleCard key={v.id} vehicle={v} />
           ))}
         </div>
       )}
@@ -393,44 +364,6 @@ export default function VehicleListPage(): React.JSX.Element {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {/* Suggestions IA — admin seulement */}
-      {isAdmin && pricingSuggestions.length > 0 && (
-        <div className="mt-8">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
-            💡 Suggestions IA — optimisation tarifaire
-          </h2>
-          <div className="space-y-3">
-            {pricingSuggestions.map(s => (
-              <div key={s.vehicleId} className="rounded-xl border border-orange-200 bg-orange-50 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-gray-900">{s.make} {s.model}</span>
-                      <span className="font-mono text-xs text-gray-500">{s.licensePlate}</span>
-                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
-                        Taux {s.occupancyRate}%
-                      </span>
-                      {s.avgDailyRevenue > 0 && (
-                        <span className="text-xs text-gray-500">
-                          {s.avgDailyRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}/j actuel
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1.5 text-sm text-gray-700">{s.suggestion}</p>
-                  </div>
-                  <Link
-                    to={`/vehicles/${s.vehicleId}`}
-                    className="shrink-0 rounded-lg border border-orange-200 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-100"
-                  >
-                    Voir →
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 

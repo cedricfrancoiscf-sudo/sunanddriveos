@@ -3,10 +3,13 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { vehiclesApi, vehicleCarkeepersApi, vehiclePhotosApi, type VehiclePhoto } from './vehiclesApi';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { vehiclesApi, vehicleCarkeepersApi, vehiclePhotosApi, vehicleRatingsApi, type VehicleRating } from './vehiclesApi';
 import { blockingsApi, BLOCKING_TYPE_LABELS, BLOCKING_TYPE_COLORS } from './blockingsApi';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../utils/api';
+
+const RATING_KEYWORDS = ['Propreté', 'Ponctualité', 'Communication', 'État du véhicule'] as const;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
   return (
@@ -67,6 +70,13 @@ export default function VehicleDetailPage(): React.JSX.Element {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const now = new Date();
+  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [ratingValue, setRatingValue] = useState('');
+  const [ratingReviewCount, setRatingReviewCount] = useState('');
+  const [ratingKeywords, setRatingKeywords] = useState<string[]>([]);
+  const [ratingNotes, setRatingNotes] = useState('');
+
   const { data: vehicle, isLoading, isError } = useQuery({
     queryKey: ['vehicle', id],
     queryFn: () => vehiclesApi.get(id!),
@@ -114,6 +124,29 @@ export default function VehicleDetailPage(): React.JSX.Element {
     queryFn: () => vehiclePhotosApi.list(id!),
     enabled: Boolean(id),
     staleTime: 2 * 60_000,
+  });
+
+  const { data: ratings = [], refetch: refetchRatings } = useQuery<VehicleRating[]>({
+    queryKey: ['vehicle-ratings', id],
+    queryFn: () => vehicleRatingsApi.list(id!),
+    enabled: Boolean(id),
+    staleTime: 5 * 60_000,
+  });
+
+  const upsertRating = useMutation({
+    mutationFn: () => vehicleRatingsApi.upsert(id!, {
+      rating: parseFloat(ratingValue),
+      reviewCount: ratingReviewCount ? parseInt(ratingReviewCount, 10) : 0,
+      keywords: ratingKeywords,
+      notes: ratingNotes || undefined,
+    }),
+    onSuccess: (saved) => {
+      void refetchRatings();
+      setRatingValue(String(saved.rating));
+      setRatingReviewCount(String(saved.reviewCount));
+      setRatingKeywords(saved.keywords);
+      setRatingNotes(saved.notes ?? '');
+    },
   });
 
   const sortedPhotos = [...photos].sort((a, b) => (b.isCover ? 1 : 0) - (a.isCover ? 1 : 0));
@@ -517,6 +550,109 @@ export default function VehicleDetailPage(): React.JSX.Element {
               </div>
             </Section>
           )}
+
+          {/* Note Getaround mensuelle */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Note Getaround</h2>
+
+            {/* Formulaire saisie */}
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Note /5</label>
+                  <input
+                    type="number" min="0" max="5" step="0.1"
+                    placeholder="ex : 4.2"
+                    value={ratingValue}
+                    onChange={e => setRatingValue(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Nombre d'avis</label>
+                  <input
+                    type="number" min="0" step="1"
+                    placeholder="ex : 12"
+                    value={ratingReviewCount}
+                    onChange={e => setRatingReviewCount(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-2">Mots-clés mentionnés</label>
+                <div className="flex flex-wrap gap-2">
+                  {RATING_KEYWORDS.map(kw => {
+                    const active = ratingKeywords.includes(kw);
+                    return (
+                      <button
+                        key={kw} type="button"
+                        onClick={() => setRatingKeywords(prev =>
+                          active ? prev.filter(k => k !== kw) : [...prev, kw]
+                        )}
+                        className={`rounded-full px-3 py-1 text-xs font-medium border transition ${
+                          active
+                            ? 'border-[#01696e] bg-[#01696e]/10 text-[#01696e]'
+                            : 'border-gray-200 text-gray-500 hover:border-[#01696e]/40'
+                        }`}
+                      >
+                        {kw}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Commentaire libre</label>
+                <textarea
+                  rows={2}
+                  value={ratingNotes}
+                  onChange={e => setRatingNotes(e.target.value)}
+                  placeholder="Observations..."
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30 resize-none"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => upsertRating.mutate()}
+                disabled={!ratingValue || upsertRating.isPending}
+                className="w-full rounded-lg py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
+                style={{ backgroundColor: '#01696e' }}
+              >
+                {upsertRating.isPending ? 'Enregistrement...' : `Enregistrer pour ${currentPeriod}`}
+              </button>
+              {upsertRating.isSuccess && (
+                <p className="text-center text-xs text-green-600">Note enregistrée</p>
+              )}
+            </div>
+
+            {/* Historique 6 derniers mois */}
+            {ratings.length > 0 && (
+              <div className="mt-5">
+                <p className="mb-2 text-xs font-medium text-gray-400">Historique 6 mois</p>
+                <ResponsiveContainer width="100%" height={100}>
+                  <LineChart data={[...ratings].reverse().slice(0, 6)}>
+                    <XAxis dataKey="period" tick={{ fontSize: 10 }} />
+                    <YAxis domain={[0, 5]} tick={{ fontSize: 10 }} width={20} />
+                    <Tooltip formatter={(v: number) => [`${v}/5`, 'Note']} />
+                    <Line type="monotone" dataKey="rating" stroke="#01696e" strokeWidth={2} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+                <div className="mt-2 space-y-1">
+                  {ratings.slice(0, 3).map(r => (
+                    <div key={r.id} className="flex items-center justify-between text-xs text-gray-500">
+                      <span>{r.period}</span>
+                      <span className="font-medium text-gray-700">{r.rating}/5</span>
+                      <span>{r.reviewCount} avis</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Carkeepers assignés — admin only */}
           {isAdmin && (

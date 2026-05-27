@@ -235,65 +235,128 @@ export async function notifyMileageAnomalies(db: PrismaClient): Promise<void> {
   }
 }
 
-// ─── 4.5 — Optimisation tarifaire IA ────────────────────────────────────────
+// ─── 4.5 — Alertes qualité de service ───────────────────────────────────────
+// Note : Getaround gère la tarification dynamiquement — aucune suggestion de prix ici.
 
-export interface PricingSuggestion {
+export interface QualityAlert {
   vehicleId: string;
   licensePlate: string;
   make: string;
   model: string;
-  occupancyRate: number;
-  avgDailyRevenue: number;
-  suggestion: string;
+  type: 'rating_decline' | 'recurring_keywords' | 'inactive_vehicle';
+  message: string;
+  rating?: number;
+  previousRating?: number;
 }
 
-export async function getPricingSuggestions(db: PrismaClient): Promise<PricingSuggestion[]> {
+export async function getQualityAlerts(db: PrismaClient): Promise<QualityAlert[]> {
   const now = new Date();
-  const from = new Date(now.getTime() - 30 * 86_400_000);
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
   const vehicles = await db.vehicle.findMany({
     where: { isActive: true },
-    select: { id: true, make: true, model: true, licensePlate: true },
+    select: {
+      id: true, make: true, model: true, licensePlate: true,
+      ratings: {
+        where: { period: { in: [currentMonth, prevMonth] } },
+        orderBy: { period: 'desc' },
+      },
+    },
   });
 
-  const suggestions: PricingSuggestion[] = [];
+  const alerts: QualityAlert[] = [];
 
   for (const vehicle of vehicles) {
-    const rentals = await db.rental.findMany({
-      where: { vehicleId: vehicle.id, startAt: { gte: from }, status: { in: ['completed', 'active'] } },
-      select: { startAt: true, endAt: true, grossRevenue: true },
-    });
+    const cur = vehicle.ratings.find(r => r.period === currentMonth);
+    const prev = vehicle.ratings.find(r => r.period === prevMonth);
 
-    const bookedDays = rentals.reduce((s, r) => {
-      const start = new Date(r.startAt) < from ? from : new Date(r.startAt);
-      const end = new Date(r.endAt) > now ? now : new Date(r.endAt);
-      return s + Math.max(0, (end.getTime() - start.getTime()) / 86_400_000);
-    }, 0);
-
-    const occupancyRate = Math.round((bookedDays / 30) * 100);
-    if (occupancyRate >= 40) continue;
-
-    const totalRevenue = rentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
-    const avgDailyRevenue = bookedDays > 0 ? Math.round((totalRevenue / bookedDays) * 100) / 100 : 0;
-
-    try {
-      const response = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 256,
-        system: 'Tu es un expert en optimisation tarifaire pour la location de voitures. Réponds en 2 lignes maximum en français.',
-        messages: [{
-          role: 'user',
-          content: `Véhicule : ${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})\nTaux d'occupation : ${occupancyRate}% sur 30 jours\nPrix moyen actuel : ${avgDailyRevenue}€/jour\nSugère un ajustement tarifaire et justifie en 2 lignes.`,
-        }],
+    if (cur && prev && cur.rating < prev.rating) {
+      alerts.push({
+        vehicleId: vehicle.id, licensePlate: vehicle.licensePlate, make: vehicle.make, model: vehicle.model,
+        type: 'rating_decline',
+        message: `Note en baisse : ${prev.rating}/5 → ${cur.rating}/5`,
+        rating: cur.rating, previousRating: prev.rating,
       });
-      const suggestion = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '';
-      suggestions.push({ vehicleId: vehicle.id, licensePlate: vehicle.licensePlate, make: vehicle.make, model: vehicle.model, occupancyRate, avgDailyRevenue, suggestion });
-    } catch {
-      suggestions.push({ vehicleId: vehicle.id, licensePlate: vehicle.licensePlate, make: vehicle.make, model: vehicle.model, occupancyRate, avgDailyRevenue, suggestion: 'Suggestion indisponible' });
+    }
+
+    if (cur && cur.keywords.length > 0 && cur.rating < 4.0) {
+      const flagged = cur.keywords.filter(k => ['propreté', 'état'].includes(k.toLowerCase()));
+      if (flagged.length > 0) {
+        alerts.push({
+          vehicleId: vehicle.id, licensePlate: vehicle.licensePlate, make: vehicle.make, model: vehicle.model,
+          type: 'recurring_keywords',
+          message: `Avis mentionnant : ${flagged.join(', ')} (note ${cur.rating}/5). Inspection recommandée.`,
+          rating: cur.rating,
+        });
+      }
     }
   }
 
-  return suggestions;
+  const since30 = new Date(now.getTime() - 30 * 86_400_000);
+  const inactive = await db.vehicle.findMany({
+    where: { isActive: true, rentals: { none: { startAt: { gte: since30 } } } },
+    select: { id: true, make: true, model: true, licensePlate: true },
+  });
+
+  for (const v of inactive) {
+    if (!alerts.some(a => a.vehicleId === v.id)) {
+      alerts.push({
+        vehicleId: v.id, licensePlate: v.licensePlate, make: v.make, model: v.model,
+        type: 'inactive_vehicle',
+        message: 'Aucune location depuis 30 jours. Améliorez les photos et la description.',
+      });
+    }
+  }
+
+  return alerts;
+}
+
+// ─── Briefing matinal avec contexte qualité ───────────────────────────────────
+
+export interface MorningBriefingContext {
+  companyName: string;
+  date: string;
+  departures: Array<{ driverName: string; vehicle: string }>;
+  returns: Array<{ driverName: string; vehicle: string }>;
+  vehicleRatings: Array<{ make: string; model: string; licensePlate: string; rating: number; previousRating: number | null; keywords: string[] }>;
+  unansweredCount: number;
+}
+
+export async function generateMorningBriefing(context: MorningBriefingContext): Promise<string> {
+  const ratingsText = context.vehicleRatings.length > 0
+    ? context.vehicleRatings.map(vr => {
+        const trend = vr.previousRating !== null
+          ? ` (${vr.previousRating > vr.rating ? '↘' : vr.previousRating < vr.rating ? '↗' : '→'} vs ${vr.previousRating}/5)`
+          : '';
+        const kw = vr.keywords.length > 0 ? ` — avis : ${vr.keywords.join(', ')}` : '';
+        return `- ${vr.make} ${vr.model} (${vr.licensePlate}) : ${vr.rating}/5${trend}${kw}`;
+      }).join('\n')
+    : 'Aucune note Getaround enregistrée ce mois.';
+
+  const prompt = `Génère un briefing matinal concis pour ${context.companyName} — ${context.date}.
+
+Départs : ${context.departures.map(d => `${d.driverName} (${d.vehicle})`).join(', ') || 'aucun'}
+Retours : ${context.returns.map(r => `${r.driverName} (${r.vehicle})`).join(', ') || 'aucun'}
+Messages sans réponse depuis +12h : ${context.unansweredCount}
+
+Notes Getaround :
+${ratingsText}
+
+Règles strictes :
+- Ne jamais suggérer de modifier les prix. Getaround gère la tarification automatiquement.
+- Suggestions uniquement sur : propreté, réactivité, photos, description, entretien.
+- 5 à 8 lignes maximum, direct et actionnable.`;
+
+  const response = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 512,
+    system: 'Tu rédiges des briefings opérationnels pour des gestionnaires de flotte Getaround. Réponds directement sans introduction.',
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return response.content[0]?.type === 'text' ? response.content[0].text.trim() : '';
 }
 
 export async function suggestReply(
@@ -317,6 +380,7 @@ export async function suggestReply(
     system: `Tu es un assistant pour Sun and Drive, service de location de voitures partagées.
 Tu rédiges des réponses professionnelles, chaleureuses et concises en français.
 Utilise le ${tone} avec le locataire.
+Ne jamais suggérer de modifier les prix. Getaround gère la tarification automatiquement.
 Réponds directement avec le texte du message, sans introduction ni explication.`,
     messages: [
       {

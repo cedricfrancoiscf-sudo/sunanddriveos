@@ -149,6 +149,7 @@ model Vehicle {
   accessoryReservations AccessoryReservation[]
   carkeepers            VehicleCarkeeper[]
   photos                VehiclePhoto[]
+  ratings               VehicleRating[]
 
   @@map("vehicles")
 }
@@ -496,6 +497,21 @@ model Notification {
   createdAt         DateTime @default(now())
 
   @@map("notifications")
+}
+
+model VehicleRating {
+  id          String   @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  rating      Float
+  reviewCount Int      @default(0)
+  period      String   // format "YYYY-MM"
+  keywords    String[]
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  @@unique([vehicleId, period])
+  @@map("vehicle_ratings")
 }
 
 model CompanySettings {

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
-import { analyzeMessage, suggestReply, suggestCarSeatReply, forecastCashflow, detectMileageAnomalies, getPricingSuggestions } from './ai.service';
+import { analyzeMessage, suggestReply, suggestCarSeatReply, forecastCashflow, detectMileageAnomalies, getQualityAlerts } from './ai.service';
 import { createOutboundMessage } from '../messages/messages.service';
 
 const router: Router = Router();
@@ -180,12 +180,12 @@ router.get('/mileage-anomalies', async (req: Request, res: Response, next: NextF
   } catch (err: unknown) { next(err); }
 });
 
-// GET /api/v1/ai/pricing-suggestions — suggestions tarifaires IA
-router.get('/pricing-suggestions', async (req: Request, res: Response, next: NextFunction) => {
+// GET /api/v1/ai/quality-alerts — alertes qualité de service (note, propreté, inactivité)
+router.get('/quality-alerts', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
-    const suggestions = await getPricingSuggestions(db);
-    res.json({ suggestions });
+    const alerts = await getQualityAlerts(db);
+    res.json({ alerts });
   } catch (err: unknown) { next(err); }
 });
 

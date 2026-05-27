@@ -357,6 +357,64 @@ cron.schedule('30 * * * *', () => {
   void runAutoEvaluations();
 });
 
+// ─── Rappel mensuel saisie notes Getaround (le 25 de chaque mois) ────────────
+
+async function runMonthlyRatingReminder(): Promise<void> {
+  try {
+    const master = getMasterClient();
+    const companies = await master.company.findMany({
+      where: { isActive: true },
+      select: { tenantDbUrl: true, slug: true },
+    });
+
+    const now = new Date();
+    const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    for (const company of companies) {
+      try {
+        const db = getTenantClient(company.tenantDbUrl);
+        const [vehicles, admins] = await Promise.all([
+          db.vehicle.findMany({
+            where: { isActive: true },
+            select: { id: true, make: true, model: true, licensePlate: true },
+          }),
+          db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+        ]);
+
+        for (const vehicle of vehicles) {
+          const existing = await db.vehicleRating.findUnique({
+            where: { vehicleId_period: { vehicleId: vehicle.id, period: currentPeriod } },
+          });
+          if (existing) continue;
+
+          for (const admin of admins) {
+            const alreadyNotified = await db.notification.findFirst({
+              where: { userId: admin.id, type: 'rating_reminder', relatedEntityId: vehicle.id },
+            });
+            if (alreadyNotified) continue;
+            await db.notification.create({
+              data: {
+                userId: admin.id,
+                type: 'rating_reminder',
+                title: `📊 Pensez à mettre à jour la note Getaround — ${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`,
+                body: `Notes utilisées par l'IA pour améliorer ses suggestions qualité`,
+                relatedEntityType: 'vehicle',
+                relatedEntityId: vehicle.id,
+              },
+            });
+          }
+        }
+      } catch (err: unknown) {
+        console.error(`[RatingReminder] Erreur tenant ${company.slug} :`, err);
+      }
+    }
+  } catch (err: unknown) {
+    console.error('[RatingReminder] Erreur :', err);
+  }
+}
+
+cron.schedule('0 9 25 * *', () => void runMonthlyRatingReminder());
+
 // Fermeture gracieuse — libère connexions Prisma proprement
 const shutdown = async (signal: string): Promise<void> => {
   console.log(`[SunanddriveOS] Signal ${signal} reçu — arrêt en cours...`);

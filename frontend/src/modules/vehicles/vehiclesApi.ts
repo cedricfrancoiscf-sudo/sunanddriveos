@@ -114,6 +114,25 @@ export const vehicleCarkeepersApi = {
     api.delete(`/vehicles/${vehicleId}/carkeepers/${userId}`),
 };
 
+export interface VehicleRating {
+  id: string;
+  vehicleId: string;
+  rating: number;
+  reviewCount: number;
+  period: string;
+  keywords: string[];
+  notes: string | null;
+  createdAt: string;
+}
+
+export const vehicleRatingsApi = {
+  list: (vehicleId: string) =>
+    api.get<{ ratings: VehicleRating[] }>(`/vehicles/${vehicleId}/ratings`).then(r => r.data.ratings),
+
+  upsert: (vehicleId: string, data: { rating: number; reviewCount?: number; keywords?: string[]; notes?: string; period?: string }) =>
+    api.post<{ rating: VehicleRating }>(`/vehicles/${vehicleId}/ratings`, data).then(r => r.data.rating),
+};
+
 export const getaroundSyncApi = {
   listAccounts: () =>
     api.get<{ accounts: GetaroundAccount[] }>('/getaround-sync/accounts').then((r) => r.data.accounts),

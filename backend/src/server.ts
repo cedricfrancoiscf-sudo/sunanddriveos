@@ -16,6 +16,7 @@ import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
 import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
 import { notifyMileageAnomalies } from './modules/ai/ai.service';
 import { sendEmail } from './utils/mailer';
+import { sendTelegramMessage, getTelegramChatId } from './utils/telegram';
 
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 const app = createApp();
@@ -238,6 +239,19 @@ async function checkUnresponsiveRenters(): Promise<void> {
               },
             });
           }
+          // Telegram — locataire non répondant (une seule fois, premier admin)
+          if (admins.length > 0) {
+            void (async () => {
+              try {
+                const chatId = await getTelegramChatId(db as never);
+                if (chatId) {
+                  await sendTelegramMessage(chatId,
+                    `⚠️ <b>Locataire non répondant</b>\n${rental.driverName}\n${vehicleLabel}\nRemise dans ${minUntil} min`,
+                  );
+                }
+              } catch (e) { console.error('[Telegram] Unresponsive:', e); }
+            })();
+          }
         }
       } catch (err: unknown) {
         console.error(`[UnresponsiveRenter] Erreur tenant ${company.slug} :`, err);
@@ -414,6 +428,61 @@ async function runMonthlyRatingReminder(): Promise<void> {
 }
 
 cron.schedule('0 9 25 * *', () => void runMonthlyRatingReminder());
+
+// ─── CT / Révision — alerte Telegram J-30 (quotidien 9h) ────────────────────
+
+async function runDocumentExpiryAlerts(): Promise<void> {
+  try {
+    const master = getMasterClient();
+    const companies = await master.company.findMany({
+      where: { isActive: true },
+      select: { tenantDbUrl: true, slug: true },
+    });
+    const in30d = new Date(Date.now() + 30 * 86_400_000);
+    for (const company of companies) {
+      try {
+        const db = getTenantClient(company.tenantDbUrl);
+        const expiring = await db.technicalControl.findMany({
+          where: { expiryAt: { lte: in30d, gte: new Date() } },
+          include: { vehicle: { select: { make: true, model: true, licensePlate: true } } },
+        });
+        if (expiring.length === 0) continue;
+
+        const chatId = await getTelegramChatId(db as never);
+        for (const ct of expiring) {
+          const days = Math.ceil((new Date(ct.expiryAt).getTime() - Date.now()) / 86_400_000);
+          const label = `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`;
+
+          const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
+          for (const admin of admins) {
+            const existing = await db.notification.findFirst({
+              where: { userId: admin.id, type: 'ct_expiry_30d', relatedEntityId: ct.id },
+            });
+            if (existing) continue;
+            await db.notification.create({
+              data: {
+                userId: admin.id,
+                type: 'ct_expiry_30d',
+                title: `🔧 CT expire dans ${days} jour${days > 1 ? 's' : ''} — ${label}`,
+                body: `Expiration : ${new Date(ct.expiryAt).toLocaleDateString('fr-FR')}`,
+                relatedEntityType: 'vehicle',
+                relatedEntityId: ct.vehicleId,
+              },
+            });
+          }
+
+          if (chatId) {
+            await sendTelegramMessage(chatId,
+              `🔧 <b>CT expire dans ${days} jour${days > 1 ? 's' : ''}</b>\n${label}\nExpiration : ${new Date(ct.expiryAt).toLocaleDateString('fr-FR')}`,
+            );
+          }
+        }
+      } catch (err: unknown) { console.error(`[CTExpiry] Erreur tenant ${company.slug}:`, err); }
+    }
+  } catch (err: unknown) { console.error('[CTExpiry] Erreur:', err); }
+}
+
+cron.schedule('0 9 * * *', () => void runDocumentExpiryAlerts());
 
 // Fermeture gracieuse — libère connexions Prisma proprement
 const shutdown = async (signal: string): Promise<void> => {

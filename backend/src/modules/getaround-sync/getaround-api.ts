@@ -59,6 +59,24 @@ export interface GetaroundCheckout {
   occurred_at: string;
 }
 
+// GET /invoices.json
+export interface GetaroundInvoiceApi {
+  id: number;
+  rental_id?: number;
+  total_price: number;  // centimes
+  currency: string;
+  pdf_url?: string;
+  emitted_at?: string;
+}
+
+// GET /payouts.json
+export interface GetaroundPayoutApi {
+  id: number;
+  amount: number;       // centimes
+  currency: string;
+  completed_at?: string;
+}
+
 // GET /rentals/{rental_id}/messages/{id}.json
 export interface GetaroundMessage {
   id: number;
@@ -217,6 +235,28 @@ export function createGetaroundClient(apiKey: string) {
         { content },
       );
       return res.data;
+    },
+
+    async createUnavailability(carId: number, startsAt: Date, endsAt: Date, reason: string): Promise<void> {
+      await client.post(`/cars/${carId}/unavailabilities.json`, {
+        starts_at: toGetaroundDate(startsAt),
+        ends_at: toGetaroundDate(endsAt),
+        reason,
+      });
+    },
+
+    async deleteUnavailability(carId: number, startsAt: Date, endsAt: Date): Promise<void> {
+      await client.delete(`/cars/${carId}/unavailabilities.json`, {
+        data: { starts_at: toGetaroundDate(startsAt), ends_at: toGetaroundDate(endsAt) },
+      });
+    },
+
+    async getInvoices(): Promise<GetaroundInvoiceApi[]> {
+      return fetchAllPages<GetaroundInvoiceApi>(client, '/invoices.json', {});
+    },
+
+    async getPayouts(): Promise<GetaroundPayoutApi[]> {
+      return fetchAllPages<GetaroundPayoutApi>(client, '/payouts.json', {});
     },
   };
 }

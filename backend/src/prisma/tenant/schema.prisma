@@ -191,6 +191,8 @@ model Rental {
   evaluationRating    Int?
   evaluationComment   String?
   invoiceData         Json?               // Données brutes facture Getaround
+  fuelLevelCheckin    Float?              // Niveau carburant check-in (0-100)
+  fuelLevelCheckout   Float?              // Niveau carburant check-out (0-100)
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   messages            Message[]
@@ -198,6 +200,7 @@ model Rental {
   incidents             Incident[]
   carSeatRequests       CarSeatRequest[]
   accessoryReservations AccessoryReservation[]
+  invoices              GetaroundInvoice[]
 
   @@map("rentals")
 }
@@ -308,6 +311,8 @@ model VehicleCheck {
   engineBattery  Json        // 5 moteur et batterie
   safety         Json        // 5 sécurité
   roadTest       Json        // 4 essai routier
+  fuelLevel      Int?        // Niveau carburant 0-100% au contrôle
+  mileage        Int?        // Kilométrage au contrôle
   notes          String?
   photos         Json        @default("[]") // URLs photos smartphone
   overallResult  CheckResult @default(pass)
@@ -512,6 +517,29 @@ model VehicleRating {
 
   @@unique([vehicleId, period])
   @@map("vehicle_ratings")
+}
+
+model GetaroundInvoice {
+  id          String   @id @default(cuid())
+  getaroundId Int      @unique
+  pdfUrl      String?
+  totalPrice  Int
+  currency    String   @default("EUR")
+  emittedAt   DateTime?
+  rentalId    String?
+  rental      Rental?  @relation(fields: [rentalId], references: [id])
+
+  @@map("getaround_invoices")
+}
+
+model GetaroundPayout {
+  id          String   @id @default(cuid())
+  getaroundId Int      @unique
+  amount      Int
+  currency    String   @default("EUR")
+  completedAt DateTime?
+
+  @@map("getaround_payouts")
 }
 
 model CompanySettings {

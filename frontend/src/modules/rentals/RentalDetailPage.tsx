@@ -72,6 +72,19 @@ function FinancialRow({ label, value, highlight }: { label: string; value: numbe
   );
 }
 
+function FuelBar({ level, label, alert }: { level: number; label: string; alert?: boolean }): React.JSX.Element {
+  const color = level < 25 ? 'bg-red-500' : level < 50 ? 'bg-orange-400' : 'bg-green-500';
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-16 shrink-0 text-xs text-gray-500">{label}</span>
+      <div className="flex-1 h-2.5 rounded-full bg-gray-100 overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${level}%` }} />
+      </div>
+      <span className={`w-10 text-right text-xs font-semibold ${alert ? 'text-orange-600' : 'text-gray-700'}`}>{Math.round(level)}%</span>
+    </div>
+  );
+}
+
 function Stars({ rating }: { rating: number }): React.JSX.Element {
   return (
     <div className="flex gap-0.5">
@@ -270,6 +283,30 @@ export default function RentalDetailPage(): React.JSX.Element {
               )}
             </div>
           </div>
+
+          {/* Carburant */}
+          {(rental.fuelLevelCheckin != null || rental.fuelLevelCheckout != null) && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Carburant</h2>
+                {rental.fuelLevelCheckin != null && rental.fuelLevelCheckout != null &&
+                 rental.fuelLevelCheckout < rental.fuelLevelCheckin - 15 && (
+                  <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                    ⛽ Insuffisant
+                  </span>
+                )}
+              </div>
+              <div className="space-y-2.5">
+                {rental.fuelLevelCheckin != null && (
+                  <FuelBar level={rental.fuelLevelCheckin} label="Départ" />
+                )}
+                {rental.fuelLevelCheckout != null && (
+                  <FuelBar level={rental.fuelLevelCheckout} label="Retour"
+                    alert={rental.fuelLevelCheckin != null && rental.fuelLevelCheckout < rental.fuelLevelCheckin - 15} />
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Messages */}
           {rental.messages.length > 0 && (

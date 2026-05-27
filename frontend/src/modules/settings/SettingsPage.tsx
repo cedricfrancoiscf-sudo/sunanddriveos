@@ -388,6 +388,60 @@ function GetaroundSection(): React.JSX.Element {
   );
 }
 
+// ─── Telegram ─────────────────────────────────────────────────────────────────
+
+function TelegramSection(): React.JSX.Element {
+  const qc = useQueryClient();
+  const [chatId, setChatId] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<{ settings: CompanySettings & { notificationSettings?: Record<string, unknown> } }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
+  });
+
+  useEffect(() => {
+    const ns = settings?.notificationSettings as Record<string, unknown> | undefined;
+    if (typeof ns?.telegram_chat_id === 'string') setChatId(ns.telegram_chat_id);
+  }, [settings]);
+
+  const saveMutation = useMutation({
+    mutationFn: (id: string) => api.put('/settings', { notificationSettings: { telegram_chat_id: id } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  return (
+    <div className="border-t border-gray-100 pt-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-gray-900">Telegram</p>
+          <p className="text-xs text-gray-400 mt-0.5">Alertes temps réel : nouvelles réservations, carburant, sièges auto, locataires non répondants, CT</p>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <input value={chatId} onChange={e => setChatId(e.target.value)}
+          placeholder="Chat ID Telegram (ex: -1001234567890)"
+          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono outline-none focus:border-[#01696e]" />
+        <button type="button" disabled={saveMutation.isPending}
+          onClick={() => saveMutation.mutate(chatId)}
+          className="rounded-xl px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+          style={{ backgroundColor: '#01696e' }}>
+          {saveMutation.isPending ? '...' : 'Sauvegarder'}
+        </button>
+      </div>
+      {saved && <p className="mt-1 text-xs text-green-600">Chat ID sauvegardé ✓</p>}
+      <p className="mt-1.5 text-[11px] text-gray-400">
+        Pour obtenir votre Chat ID : créez un bot avec @BotFather, ajoutez-le au groupe, puis envoyez un message et vérifiez <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>
+      </p>
+    </div>
+  );
+}
+
 // ─── AI Modes + Ton ──────────────────────────────────────────────────────────
 
 const AI_MODES = [
@@ -537,12 +591,14 @@ export default function SettingsPage(): React.JSX.Element {
         </section>
 
         {/* 4. Notifications */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-gray-900">Notifications</h2>
-          <p className="mt-0.5 text-xs text-gray-400">Alertes et rappels automatiques</p>
-          <div className="mt-4 flex items-center justify-between">
+          <p className="mt-0.5 text-xs text-gray-400">Alertes automatiques et intégrations</p>
+
+          {/* TV Dashboard */}
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold text-gray-900">Tableau de bord TV</p>
+              <p className="text-sm font-medium text-gray-900">Tableau de bord TV</p>
               <p className="text-xs text-gray-400 mt-0.5">Affichage plein écran pour moniteur ou TV de bureau</p>
             </div>
             <a href="/tv" target="_blank" rel="noopener noreferrer"
@@ -551,6 +607,9 @@ export default function SettingsPage(): React.JSX.Element {
               Ouvrir le TV
             </a>
           </div>
+
+          {/* Telegram */}
+          <TelegramSection />
         </section>
 
         {/* 5. Messagerie automatique */}

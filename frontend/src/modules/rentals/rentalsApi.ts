@@ -16,6 +16,8 @@ export interface Rental {
   startMileage: number | null;
   endMileage: number | null;
   kmDriven: number | null;
+  fuelLevelCheckin: number | null;
+  fuelLevelCheckout: number | null;
   grossRevenue: number | null;
   ownerPayout: number | null;
   driverMessFee: number | null;

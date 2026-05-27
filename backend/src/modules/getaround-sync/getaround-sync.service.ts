@@ -3,6 +3,7 @@ import { decrypt, encrypt } from '../../utils/crypto';
 import { createGetaroundClient, type GetaroundRental } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
 import { analyzeMessage } from '../ai/ai.service';
+import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
 
 export interface SyncResult {
   accountId: string;
@@ -119,6 +120,7 @@ export async function syncAllAccounts(
     const vehicles = await syncAccountVehicles(db, a.id);
     const rentals  = await syncAccountRentals(db, a.id);
     const messages = await syncAccountMessages(db, a.id);
+    void syncAccountInvoicesPayouts(db, a.id).catch(e => console.error('[Sync] Erreur invoices/payouts:', e));
     results.push({ vehicles, rentals, messages });
   }
   return results;
@@ -168,7 +170,7 @@ export async function syncAccountRentals(
       // Liaison au véhicule via car_id Getaround
       const vehicle = await db.vehicle.findUnique({
         where: { getaroundId: String(r.car_id) },
-        select: { id: true, currentMileage: true },
+        select: { id: true, currentMileage: true, make: true, model: true, licensePlate: true },
       });
 
       if (!vehicle) {
@@ -197,7 +199,7 @@ export async function syncAccountRentals(
       // startMileage/endMileage : pour éviter des appels checkin/checkout redondants
       const existingRental = await db.rental.findUnique({
         where: { getaroundId: String(r.id) },
-        select: { id: true, status: true, startMileage: true, endMileage: true },
+        select: { id: true, status: true, startMileage: true, endMileage: true, fuelLevelCheckin: true },
       });
       const prevStatus = existingRental?.status;
       const newStatus = prevStatus === 'cancelled' ? 'cancelled' : status;
@@ -231,6 +233,18 @@ export async function syncAccountRentals(
         result.created++;
         if (status === 'booked') {
           void scheduleSequencesForRental(db, upserted.id, 'rental.booked').catch(console.error);
+          // Telegram — nouvelle réservation
+          void (async () => {
+            try {
+              const chatId = await getTelegramChatId(db as never);
+              if (!chatId) return;
+              const vehicleLabel = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
+              const startLabel = new Date(r.starts_at).toLocaleDateString('fr-FR');
+              await sendTelegramMessage(chatId,
+                `🚗 <b>Nouvelle réservation</b>\n${driverName}\n${vehicleLabel}\nDépart : ${startLabel}`,
+              );
+            } catch (e) { console.error('[Telegram] Nouvelle réservation:', e); }
+          })();
         }
         // Alerte si le locataire est blacklisté
         void (async () => {
@@ -260,16 +274,16 @@ export async function syncAccountRentals(
         }
       }
 
-      // Kilométrage depuis checkin/checkout — l'API retourne des dixièmes de km
-      // On ne refetch que si la valeur n'est pas encore stockée
+      // Kilométrage + carburant depuis checkin/checkout
       if (newStatus !== 'booked' && existingRental?.startMileage == null) {
         try {
           const checkin = await ga.getCheckin(r.id);
-          if (checkin.mileage != null) {
-            await db.rental.update({
-              where: { id: upserted.id },
-              data: { startMileage: Math.round(checkin.mileage / 1000) },
-            });
+          const checkinData: Record<string, unknown> = {};
+          // API Getaround retourne le kilométrage en km directement
+          if (checkin.mileage != null) checkinData.startMileage = Math.round(checkin.mileage);
+          if (checkin.fuel_level != null) checkinData.fuelLevelCheckin = checkin.fuel_level;
+          if (Object.keys(checkinData).length > 0) {
+            await db.rental.update({ where: { id: upserted.id }, data: checkinData });
           }
         } catch (err: unknown) { console.error(`[Sync Checkin] rental=${r.id}`, err); }
       }
@@ -277,21 +291,46 @@ export async function syncAccountRentals(
       if (newStatus === 'completed' && existingRental?.endMileage == null) {
         try {
           const checkout = await ga.getCheckout(r.id);
-          const mileageData: { endMileage?: number; kmDriven?: number } = {};
+          const checkoutData: Record<string, unknown> = {};
           if (checkout.mileage != null) {
-            mileageData.endMileage = Math.round(checkout.mileage / 1000);
-            // Mettre à jour le compteur du véhicule si la valeur progresse
-            const newOdometer = mileageData.endMileage;
+            checkoutData.endMileage = Math.round(checkout.mileage); // API Getaround retourne le kilométrage en km directement
+            const newOdometer = checkoutData.endMileage as number;
             if (newOdometer > vehicle.currentMileage) {
-              await db.vehicle.update({
-                where: { id: vehicle.id },
-                data: { currentMileage: newOdometer },
-              });
+              await db.vehicle.update({ where: { id: vehicle.id }, data: { currentMileage: newOdometer } });
             }
           }
-          if (checkout.distance_driven != null) mileageData.kmDriven = Math.round(checkout.distance_driven / 1000);
-          if (Object.keys(mileageData).length > 0) {
-            await db.rental.update({ where: { id: upserted.id }, data: mileageData });
+          if (checkout.distance_driven != null) checkoutData.kmDriven = Math.round(checkout.distance_driven); // API Getaround retourne le kilométrage en km directement
+          if (checkout.fuel_level != null) checkoutData.fuelLevelCheckout = checkout.fuel_level;
+          if (Object.keys(checkoutData).length > 0) {
+            await db.rental.update({ where: { id: upserted.id }, data: checkoutData });
+          }
+
+          // Alerte carburant insuffisant : niveau retour < 25% (fuel_level est un décimal 0-1)
+          const fuelIn = existingRental?.fuelLevelCheckin ?? null;
+          const fuelOut = checkout.fuel_level;
+          if (fuelOut != null && fuelOut < 0.25) {
+            const vehicleLabel = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
+            const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
+            await db.notification.createMany({
+              data: admins.map(a => ({
+                userId: a.id,
+                type: 'fuel_insufficient',
+                title: `⛽ Carburant insuffisant — ${driverName}`,
+                body: `${vehicleLabel} — Retour: ${Math.round(fuelOut * 100)}%${fuelIn != null ? ` / Départ: ${Math.round(fuelIn * 100)}%` : ''}`,
+                relatedEntityType: 'rental',
+                relatedEntityId: upserted.id,
+              })),
+              skipDuplicates: true,
+            });
+            void (async () => {
+              try {
+                const chatId = await getTelegramChatId(db as never);
+                if (!chatId) return;
+                await sendTelegramMessage(chatId,
+                  `⛽ <b>Carburant insuffisant</b>\n${driverName} — ${vehicleLabel}\nRetour : ${Math.round(fuelOut * 100)}%${fuelIn != null ? ` (départ : ${Math.round(fuelIn * 100)}%)` : ''}`,
+                );
+              } catch (e) { console.error('[Telegram] Fuel:', e); }
+            })();
           }
         } catch (err: unknown) { console.error(`[Sync Checkout] rental=${r.id}`, err); }
       }
@@ -410,6 +449,16 @@ export async function syncAccountMessages(
                   })),
                   skipDuplicates: true,
                 });
+                // Telegram siège auto
+                void (async () => {
+                  try {
+                    const chatId = await getTelegramChatId(db as never);
+                    if (!chatId) return;
+                    await sendTelegramMessage(chatId,
+                      `🪑 <b>Siège auto demandé</b>\n${rental.driverName} — ${vehicleLabel}\nDépart le ${startLabel}`,
+                    );
+                  } catch (e) { console.error('[Telegram] Siège auto:', e); }
+                })();
               } catch (e) { console.error('[CarSeatDetect]', e); }
             })();
           }
@@ -425,6 +474,127 @@ export async function syncAccountMessages(
   }
 
   return result;
+}
+
+// ─── 4. Factures + virements ────────────────────────────────────────────────
+
+export async function syncAccountInvoicesPayouts(db: PrismaClient, accountId: string): Promise<void> {
+  const account = await db.getaroundAccount.findUnique({ where: { id: accountId } });
+  if (!account) return;
+  const apiKey = decrypt(account.apiKeyHash);
+  const ga = createGetaroundClient(apiKey);
+
+  const [invoices, payouts] = await Promise.allSettled([ga.getInvoices(), ga.getPayouts()]);
+
+  if (invoices.status === 'fulfilled') {
+    for (const inv of invoices.value) {
+      const rentalDb = inv.rental_id
+        ? await db.rental.findUnique({ where: { getaroundId: String(inv.rental_id) }, select: { id: true } })
+        : null;
+      await db.getaroundInvoice.upsert({
+        where: { getaroundId: inv.id },
+        create: {
+          getaroundId: inv.id,
+          pdfUrl: inv.pdf_url,
+          totalPrice: inv.total_price,
+          currency: inv.currency ?? 'EUR',
+          emittedAt: inv.emitted_at ? new Date(inv.emitted_at) : null,
+          rentalId: rentalDb?.id ?? null,
+        },
+        update: {
+          pdfUrl: inv.pdf_url,
+          emittedAt: inv.emitted_at ? new Date(inv.emitted_at) : null,
+          rentalId: rentalDb?.id ?? null,
+        },
+      });
+    }
+  }
+
+  if (payouts.status === 'fulfilled') {
+    for (const pay of payouts.value) {
+      await db.getaroundPayout.upsert({
+        where: { getaroundId: pay.id },
+        create: {
+          getaroundId: pay.id,
+          amount: pay.amount,
+          currency: pay.currency ?? 'EUR',
+          completedAt: pay.completed_at ? new Date(pay.completed_at) : null,
+        },
+        update: {
+          completedAt: pay.completed_at ? new Date(pay.completed_at) : null,
+        },
+      });
+    }
+  }
+}
+
+// ─── 5. Analyse one-shot des messages existants ─────────────────────────────
+
+export async function analyzeExistingMessages(db: PrismaClient): Promise<{ analyzed: number; detected: number }> {
+  const messages = await db.message.findMany({
+    where: {
+      direction: 'inbound',
+      rental: { carSeatRequests: { none: {} } },
+    },
+    select: {
+      id: true,
+      content: true,
+      rentalId: true,
+      rental: {
+        select: {
+          vehicleId: true,
+          driverName: true,
+          startAt: true,
+          vehicle: { select: { make: true, model: true, licensePlate: true } },
+        },
+      },
+    },
+  });
+
+  let analyzed = 0;
+  let detected = 0;
+
+  for (const msg of messages) {
+    try {
+      const analysis = await analyzeMessage(msg.content);
+      analyzed++;
+
+      if (analysis.isCarSeatRequest) {
+        const existing = await db.carSeatRequest.findFirst({ where: { rentalId: msg.rentalId } });
+        if (!existing) {
+          await db.carSeatRequest.create({
+            data: { vehicleId: msg.rental.vehicleId, rentalId: msg.rentalId },
+          });
+          const vehicleLabel = `${msg.rental.vehicle.make} ${msg.rental.vehicle.model} (${msg.rental.vehicle.licensePlate})`;
+          const startLabel = msg.rental.startAt.toLocaleDateString('fr-FR');
+          const [admins, carkeepers] = await Promise.all([
+            db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+            db.vehicleCarkeeper.findMany({ where: { vehicleId: msg.rental.vehicleId }, select: { userId: true } }),
+          ]);
+          const recipientIds = [...new Set([...admins.map(a => a.id), ...carkeepers.map(c => c.userId)])];
+          await db.notification.createMany({
+            data: recipientIds.map(userId => ({
+              userId,
+              type: 'car_seat_request',
+              title: `🪑 Siège auto demandé par ${msg.rental.driverName} pour ${vehicleLabel} le ${startLabel}`,
+              body: `Message : ${msg.content.slice(0, 120)}`,
+              relatedEntityType: 'rental',
+              relatedEntityId: msg.rentalId,
+            })),
+            skipDuplicates: true,
+          });
+          detected++;
+        }
+      }
+
+      await new Promise<void>(resolve => setTimeout(resolve, 500));
+    } catch (e) {
+      console.error(`[Analyse] Message ${msg.id}:`, e);
+    }
+  }
+
+  console.log(`[Analyse] ${analyzed} messages analysés, ${detected} sièges détectés`);
+  return { analyzed, detected };
 }
 
 // ─── Gestion des comptes Getaround ──────────────────────────────────────────

@@ -1,6 +1,6 @@
 ﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth, requireRole } from '../../middleware/auth';
+import { requireAuth, requireRole, requireSuperAdmin } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import {
@@ -12,6 +12,7 @@ import {
   syncAllAccounts,
   syncAccountRentals,
   syncAccountMessages,
+  analyzeExistingMessages,
 } from './getaround-sync.service';
 
 const router: Router = Router();
@@ -112,6 +113,17 @@ router.post('/sync-messages/:accountId', adminOnly, async (req: Request, res: Re
     const db = getTenantClient(req.tenantDbUrl!);
     const result = await syncAccountMessages(db, (req.params.accountId as string));
     res.json({ result });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/getaround-sync/analyze-existing-messages — analyse one-shot (superadmin uniquement)
+router.get('/analyze-existing-messages', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    void analyzeExistingMessages(db)
+      .then(r => console.log('[Analyse] Terminé:', r))
+      .catch(e => console.error('[Analyse] Erreur:', e));
+    res.json({ message: 'Analyse lancée en arrière-plan' });
   } catch (err: unknown) { next(err); }
 });
 

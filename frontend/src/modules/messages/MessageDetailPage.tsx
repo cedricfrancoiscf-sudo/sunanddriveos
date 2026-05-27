@@ -90,14 +90,6 @@ export default function MessageDetailPage(): React.JSX.Element {
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['message', id] }); },
   });
 
-  const markSentMutation = useMutation({
-    mutationFn: () => messagesApi.markSent(id!),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['message', id] });
-      void qc.invalidateQueries({ queryKey: ['inbox-summary'] });
-    },
-  });
-
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   async function handleAnalyze(): Promise<void> {
@@ -270,15 +262,7 @@ export default function MessageDetailPage(): React.JSX.Element {
                   </>
                 )}
                 {isApproved && (
-                  <button
-                    type="button"
-                    onClick={() => markSentMutation.mutate()}
-                    disabled={markSentMutation.isPending}
-                    className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
-                    style={{ backgroundColor: '#01696e' }}
-                  >
-                    {markSentMutation.isPending ? '...' : 'Marquer comme envoyé'}
-                  </button>
+                  <p className="w-full text-center text-xs text-gray-400 py-2">En attente d'envoi sur Getaround</p>
                 )}
               </div>
             </>

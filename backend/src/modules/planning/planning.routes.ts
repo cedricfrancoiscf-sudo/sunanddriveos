@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
+import { decrypt } from '../../utils/crypto';
+import { createGetaroundClient } from '../getaround-sync/getaround-api';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -61,14 +63,28 @@ router.post('/blockings', async (req: Request, res: Response, next: NextFunction
     const body = blockingSchema.safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
     const db = getTenantClient(req.tenantDbUrl!);
+    const startAt = new Date(body.data.startAt);
+    const endAt = new Date(body.data.endAt);
     const blocking = await db.blocking.create({
-      data: {
-        ...body.data,
-        startAt: new Date(body.data.startAt),
-        endAt: new Date(body.data.endAt),
-        createdById: req.auth!.userId!,
-      },
+      data: { ...body.data, startAt, endAt, createdById: req.auth!.userId! },
     });
+
+    // Sync indisponibilité vers Getaround (fire-and-forget)
+    void (async () => {
+      try {
+        const vehicle = await db.vehicle.findUnique({
+          where: { id: body.data.vehicleId },
+          select: { getaroundId: true, getaroundAccount: { select: { apiKeyHash: true } } },
+        });
+        if (!vehicle?.getaroundId || !vehicle.getaroundAccount) return;
+        const apiKey = decrypt(vehicle.getaroundAccount.apiKeyHash);
+        await createGetaroundClient(apiKey).createUnavailability(
+          parseInt(vehicle.getaroundId, 10), startAt, endAt, body.data.reason ?? body.data.type,
+        );
+        console.log(`[Planning] Indisponibilité créée sur Getaround: véhicule ${vehicle.getaroundId}`);
+      } catch (err: unknown) { console.error('[Planning] Erreur createUnavailability:', err); }
+    })();
+
     res.status(201).json({ blocking });
   } catch (err: unknown) { next(err); }
 });
@@ -77,7 +93,25 @@ router.post('/blockings', async (req: Request, res: Response, next: NextFunction
 router.delete('/blockings/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
-    await db.blocking.delete({ where: { id: (req.params.id as string) } });
+    const blocking = await db.blocking.findUnique({
+      where: { id: req.params.id as string },
+      select: { vehicleId: true, startAt: true, endAt: true, vehicle: { select: { getaroundId: true, getaroundAccount: { select: { apiKeyHash: true } } } } },
+    });
+    await db.blocking.delete({ where: { id: req.params.id as string } });
+
+    // Suppression indisponibilité Getaround (fire-and-forget)
+    if (blocking?.vehicle.getaroundId && blocking.vehicle.getaroundAccount) {
+      void (async () => {
+        try {
+          const apiKey = decrypt(blocking.vehicle.getaroundAccount!.apiKeyHash);
+          await createGetaroundClient(apiKey).deleteUnavailability(
+            parseInt(blocking.vehicle.getaroundId!, 10), blocking.startAt, blocking.endAt,
+          );
+          console.log(`[Planning] Indisponibilité supprimée sur Getaround: véhicule ${blocking.vehicle.getaroundId}`);
+        } catch (err: unknown) { console.error('[Planning] Erreur deleteUnavailability:', err); }
+      })();
+    }
+
     res.json({ success: true });
   } catch (err: unknown) { next(err); }
 });

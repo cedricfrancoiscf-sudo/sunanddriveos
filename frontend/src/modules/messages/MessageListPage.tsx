@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
+import { trackEvent } from '../../utils/tracking';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
@@ -17,6 +18,7 @@ interface Conversation {
 export default function MessageListPage(): React.JSX.Element {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  useEffect(() => { void trackEvent('messages', 'view'); }, []);
   const rentalIdFilter = searchParams.get('rentalId') ?? '';
 
   const { data: summary } = useQuery({

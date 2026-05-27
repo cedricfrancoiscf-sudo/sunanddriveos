@@ -199,6 +199,113 @@ router.put('/companies/:id', async (req: Request, res: Response, next: NextFunct
   } catch (err: unknown) { next(err); }
 });
 
+// ─── Analytics par tenant ────────────────────────────────────────────────────
+
+// GET /api/v1/superadmin/analytics
+router.get('/analytics', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const companies = await master.company.findMany({
+      where: { isActive: true },
+      select: {
+        id: true, name: true, slug: true, plan: true, isActive: true,
+        trialEndsAt: true, tenantDbUrl: true,
+        tenantEvents: {
+          orderBy: { occurredAt: 'desc' },
+          take: 200,
+          select: { module: true, occurredAt: true },
+        },
+      },
+    });
+
+    const now = new Date();
+
+    const analytics = await Promise.all(companies.map(async (c) => {
+      let vehicleCount = 0;
+      let rentalCount = 0;
+      let messageCount = 0;
+
+      try {
+        const db = getTenantClient(c.tenantDbUrl);
+        [vehicleCount, rentalCount, messageCount] = await Promise.all([
+          db.vehicle.count({ where: { isActive: true } }),
+          db.rental.count(),
+          db.message.count(),
+        ]);
+      } catch { /* tenant DB inaccessible */ }
+
+      const lastActivityAt = c.tenantEvents[0]?.occurredAt ?? null;
+      const inactiveDays = lastActivityAt
+        ? Math.floor((now.getTime() - new Date(lastActivityAt).getTime()) / 86_400_000)
+        : null;
+
+      const moduleUsage: Record<string, number> = {};
+      for (const ev of c.tenantEvents) {
+        moduleUsage[ev.module] = (moduleUsage[ev.module] ?? 0) + 1;
+      }
+
+      const trialDaysLeft = c.trialEndsAt
+        ? Math.ceil((new Date(c.trialEndsAt).getTime() - now.getTime()) / 86_400_000)
+        : null;
+
+      return {
+        id: c.id, name: c.name, slug: c.slug, plan: c.plan,
+        vehicleCount, rentalCount, messageCount,
+        lastActivityAt: lastActivityAt?.toISOString() ?? null,
+        inactiveDays,
+        moduleUsage: Object.entries(moduleUsage)
+          .sort((a, b) => b[1] - a[1])
+          .map(([module, count]) => ({ module, count })),
+        trialEndsAt: c.trialEndsAt?.toISOString() ?? null,
+        trialDaysLeft,
+        alertInactive: inactiveDays !== null && inactiveDays > 7,
+        alertTrial: trialDaysLeft !== null && trialDaysLeft >= 0 && trialDaysLeft < 3,
+      };
+    }));
+
+    res.json({ analytics });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Feedbacks tenants ────────────────────────────────────────────────────────
+
+// GET /api/v1/superadmin/feedbacks
+router.get('/feedbacks', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const type = typeof req.query.type === 'string' ? req.query.type : undefined;
+
+    const feedbacks = await master.tenantFeedback.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        ...(type ? { type } : {}),
+      },
+      include: { company: { select: { id: true, name: true, slug: true } } },
+      orderBy: { submittedAt: 'desc' },
+      take: 200,
+    });
+
+    res.json({ feedbacks });
+  } catch (err: unknown) { next(err); }
+});
+
+// PATCH /api/v1/superadmin/feedbacks/:id
+router.patch('/feedbacks/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({ status: z.enum(['new', 'in_progress', 'done', 'rejected']) }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Statut invalide' }); return; }
+
+    const master = getMasterClient();
+    const feedback = await master.tenantFeedback.update({
+      where: { id: req.params.id as string },
+      data: { status: body.data.status },
+      select: { id: true, status: true },
+    });
+    res.json({ feedback });
+  } catch (err: unknown) { next(err); }
+});
+
 // ─── Super admins ─────────────────────────────────────────────────────────────
 
 // GET /api/v1/superadmin/admins

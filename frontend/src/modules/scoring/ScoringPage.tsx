@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { trackEvent } from '../../utils/tracking';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -131,6 +132,7 @@ export default function ScoringPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState<Tier | ''>('');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  useEffect(() => { void trackEvent('scoring', 'view'); }, []);
 
   const { data, isLoading } = useQuery<DriversResponse>({
     queryKey: ['scoring-drivers', tierFilter, search],

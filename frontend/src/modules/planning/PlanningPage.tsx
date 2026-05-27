@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { trackEvent } from '../../utils/tracking';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, addDays, startOfWeek, parseISO, isSameDay, differenceInMinutes, startOfDay } from 'date-fns';
@@ -150,6 +151,7 @@ function ZoneHeader({ zone, count }: { zone: string; count: number }) {
 
 export default function PlanningPage(): React.JSX.Element {
   const navigate = useNavigate();
+  useEffect(() => { void trackEvent('planning', 'view'); }, []);
   const qc = useQueryClient();
   const [viewMode, setViewMode] = useState<ViewMode>(14);
   const [periodStart, setPeriodStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));

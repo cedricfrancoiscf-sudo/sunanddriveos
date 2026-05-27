@@ -4,6 +4,112 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../utils/api';
 import { getaroundSyncApi, type GetaroundAccount } from '../vehicles/vehiclesApi';
 
+// ─── Section Feedback ─────────────────────────────────────────────────────────
+
+interface TenantFeedback {
+  id: string;
+  type: string;
+  title: string;
+  status: string;
+  submittedAt: string;
+}
+
+const FEEDBACK_TYPE_LABELS: Record<string, string> = {
+  bug: '🐛 Bug',
+  feature: '💡 Fonctionnalité',
+  feedback: '💬 Retour',
+};
+
+function FeedbackSection(): React.JSX.Element {
+  const [form, setForm] = useState({ type: 'feedback', title: '', description: '' });
+  const [sent, setSent] = useState(false);
+
+  const { data: feedbacks = [], refetch } = useQuery<TenantFeedback[]>({
+    queryKey: ['my-feedbacks'],
+    queryFn: () => api.get<{ feedbacks: TenantFeedback[] }>('/feedback/mine').then(r => r.data.feedbacks),
+    staleTime: 5 * 60_000,
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: () => api.post('/feedback', form),
+    onSuccess: () => {
+      setSent(true);
+      setForm({ type: 'feedback', title: '', description: '' });
+      void refetch();
+      setTimeout(() => setSent(false), 3000);
+    },
+  });
+
+  const STATUS_COLORS: Record<string, string> = {
+    new: 'bg-blue-100 text-blue-700',
+    in_progress: 'bg-yellow-100 text-yellow-700',
+    done: 'bg-green-100 text-green-700',
+    rejected: 'bg-gray-100 text-gray-500',
+  };
+  const STATUS_LABELS: Record<string, string> = {
+    new: 'Nouveau', in_progress: 'En cours', done: 'Traité', rejected: 'Refusé',
+  };
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-900">Demandes & remontées</h2>
+        <p className="mt-0.5 text-xs text-gray-400">Signalez un bug, suggérez une fonctionnalité ou partagez un retour</p>
+      </div>
+
+      <form onSubmit={e => { e.preventDefault(); submitMutation.mutate(); }} className="space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+          <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30">
+            {Object.entries(FEEDBACK_TYPE_LABELS).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Titre</label>
+          <input required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+            placeholder="Résumé en quelques mots..."
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+          <textarea required rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+            placeholder="Décrivez le problème ou la fonctionnalité souhaitée..."
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30 resize-none" />
+        </div>
+        <div className="flex items-center gap-3">
+          <button type="submit" disabled={submitMutation.isPending}
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            style={{ backgroundColor: '#01696e' }}>
+            {submitMutation.isPending ? 'Envoi...' : 'Envoyer'}
+          </button>
+          {sent && <p className="text-sm text-green-600">Demande envoyée ✓</p>}
+          {submitMutation.isError && <p className="text-sm text-red-600">Erreur lors de l'envoi</p>}
+        </div>
+      </form>
+
+      {feedbacks.length > 0 && (
+        <div className="space-y-2 pt-2 border-t border-gray-100">
+          <p className="text-xs font-medium text-gray-400">Mes demandes</p>
+          {feedbacks.map(fb => (
+            <div key={fb.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm">
+              <div className="min-w-0">
+                <span className="text-xs text-gray-400 mr-2">{FEEDBACK_TYPE_LABELS[fb.type] ?? fb.type}</span>
+                <span className="text-gray-700 truncate">{fb.title}</span>
+              </div>
+              <span className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[fb.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                {STATUS_LABELS[fb.status] ?? fb.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 interface CompanySettings {
   id: string;
   primaryColor: string | null;
@@ -564,6 +670,9 @@ export default function SettingsPage(): React.JSX.Element {
               </div>
             </div>
           </section>
+
+          {/* Demandes & remontées */}
+          <FeedbackSection />
 
           {/* Actions */}
           <div className="flex items-center gap-3">

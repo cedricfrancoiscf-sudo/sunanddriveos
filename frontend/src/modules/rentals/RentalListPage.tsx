@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { trackEvent } from '../../utils/tracking';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { format, differenceInDays, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
@@ -90,6 +91,7 @@ function RentalRow({ rental }: { rental: Rental }): React.JSX.Element {
 export default function RentalListPage(): React.JSX.Element {
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [search, setSearch] = useState('');
+  useEffect(() => { void trackEvent('rentals', 'view'); }, []);
 
   const { data: statsData } = useQuery({
     queryKey: ['rental-stats'],

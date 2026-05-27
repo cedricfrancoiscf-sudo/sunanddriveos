@@ -44,6 +44,8 @@ model Company {
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
   billingEvents        BillingEvent[]
+  tenantEvents         TenantEvent[]
+  tenantFeedbacks      TenantFeedback[]
 
   @@map("companies")
 }
@@ -58,6 +60,33 @@ model SuperAdmin {
   updatedAt    DateTime @updatedAt
 
   @@map("super_admins")
+}
+
+// Événements d'usage par module (tracking analytics)
+model TenantEvent {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  module     String
+  action     String
+  occurredAt DateTime @default(now())
+
+  @@index([companyId, occurredAt])
+  @@map("tenant_events")
+}
+
+// Remontées tenants (bug, feature, feedback)
+model TenantFeedback {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  type        String   // bug | feature | feedback
+  title       String
+  description String
+  status      String   @default("new") // new | in_progress | done | rejected
+  submittedAt DateTime @default(now())
+
+  @@map("tenant_feedbacks")
 }
 
 // Événements de facturation Stripe

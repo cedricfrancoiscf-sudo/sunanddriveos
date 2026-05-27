@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { trackEvent } from '../../utils/tracking';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { vehiclesApi, getaroundSyncApi, type Vehicle } from './vehiclesApi';
@@ -218,6 +219,7 @@ export default function VehicleListPage(): React.JSX.Element {
   const [showSync, setShowSync] = useState(false);
   const [search, setSearch] = useState('');
   const [fleetView, setFleetView] = useState<FleetViewMode>(getStoredViewMode);
+  useEffect(() => { void trackEvent('vehicles', 'view'); }, []);
   function toggleView(mode: FleetViewMode): void {
     setFleetView(mode);
     localStorage.setItem('fleet_view_mode', mode);

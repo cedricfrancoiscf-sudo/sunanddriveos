@@ -9,6 +9,20 @@ import saApi, { getSuperAdminUser, clearSuperAdminSession } from './superadminAp
 
 type Plan = 'starter' | 'pro' | 'enterprise';
 
+interface AnalyticsEntry {
+  id: string; name: string; slug: string; plan: Plan;
+  vehicleCount: number; rentalCount: number; messageCount: number;
+  lastActivityAt: string | null; inactiveDays: number | null;
+  moduleUsage: Array<{ module: string; count: number }>;
+  trialEndsAt: string | null; trialDaysLeft: number | null;
+  alertInactive: boolean; alertTrial: boolean;
+}
+
+interface TenantFeedback {
+  id: string; type: string; title: string; description: string; status: string; submittedAt: string;
+  company: { id: string; name: string; slug: string };
+}
+
 interface Company {
   id: string;
   name: string;
@@ -96,7 +110,7 @@ function DashboardContent(): React.JSX.Element {
   const currentAdmin = getSuperAdminUser();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'companies' | 'admins'>('companies');
+  const [activeSection, setActiveSection] = useState<'companies' | 'analytics' | 'feedbacks' | 'admins'>('companies');
   const [showCompanyForm, setShowCompanyForm] = useState(false);
   const [showAdminForm, setShowAdminForm] = useState(false);
   const [companyForm, setCompanyForm] = useState(EMPTY_COMPANY_FORM);
@@ -125,6 +139,26 @@ function DashboardContent(): React.JSX.Element {
     queryKey: ['sa-admins'],
     queryFn: () => saApi.get('/superadmin/admins').then(r => r.data as { admins: SuperAdmin[] }),
     enabled: activeSection === 'admins',
+  });
+
+  const { data: analyticsData } = useQuery<{ analytics: AnalyticsEntry[] }>({
+    queryKey: ['sa-analytics'],
+    queryFn: () => saApi.get('/superadmin/analytics').then(r => r.data as { analytics: AnalyticsEntry[] }),
+    enabled: activeSection === 'analytics',
+    staleTime: 5 * 60_000,
+  });
+
+  const [feedbackFilter, setFeedbackFilter] = useState<string>('');
+  const { data: feedbacksData, refetch: refetchFeedbacks } = useQuery<{ feedbacks: TenantFeedback[] }>({
+    queryKey: ['sa-feedbacks', feedbackFilter],
+    queryFn: () => saApi.get(`/superadmin/feedbacks${feedbackFilter ? `?status=${feedbackFilter}` : ''}`).then(r => r.data as { feedbacks: TenantFeedback[] }),
+    enabled: activeSection === 'feedbacks',
+  });
+
+  const updateFeedbackStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      saApi.patch(`/superadmin/feedbacks/${id}`, { status }),
+    onSuccess: () => { void refetchFeedbacks(); },
   });
 
   // ── Mutations ────────────────────────────────────────────────────────────────
@@ -186,12 +220,12 @@ function DashboardContent(): React.JSX.Element {
           </div>
           <span className="text-sm font-semibold text-white">Super Admin</span>
           <div className="flex gap-1 ml-4">
-            {(['companies', 'admins'] as const).map(s => (
+            {(['companies', 'analytics', 'feedbacks', 'admins'] as const).map(s => (
               <button key={s} type="button" onClick={() => setActiveSection(s)}
                 className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
                   activeSection === s ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'
                 }`}>
-                {s === 'companies' ? 'Sociétés' : 'Super admins'}
+                {s === 'companies' ? 'Sociétés' : s === 'analytics' ? 'Analytics' : s === 'feedbacks' ? 'Feedbacks' : 'Super admins'}
               </button>
             ))}
           </div>
@@ -391,6 +425,150 @@ function DashboardContent(): React.JSX.Element {
               )}
             </div>
           </>
+        )}
+
+        {/* ── Section Analytics ─────────────────────────────────────────────── */}
+        {activeSection === 'analytics' && (
+          <div className="flex-1 p-6 overflow-y-auto">
+            <div className="max-w-4xl space-y-4">
+              <h2 className="text-lg font-bold text-white">Analytics — Activité tenants</h2>
+              {!analyticsData ? (
+                <div className="flex justify-center py-12">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent border-[#01696e]" />
+                </div>
+              ) : analyticsData.analytics.length === 0 ? (
+                <p className="text-sm text-gray-600 py-8">Aucune donnée</p>
+              ) : (
+                <div className="space-y-3">
+                  {analyticsData.analytics.map(entry => (
+                    <div key={entry.id}
+                      className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-white">{entry.name}</p>
+                            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${PLAN_CONFIG[entry.plan].bg} ${PLAN_CONFIG[entry.plan].text}`}>
+                              {PLAN_CONFIG[entry.plan].label}
+                            </span>
+                            {entry.alertInactive && (
+                              <span className="rounded-full bg-red-900/40 px-2 py-0.5 text-[10px] font-medium text-red-400">
+                                Inactif {entry.inactiveDays}j
+                              </span>
+                            )}
+                            {entry.alertTrial && (
+                              <span className="rounded-full bg-orange-900/40 px-2 py-0.5 text-[10px] font-medium text-orange-400">
+                                Essai J-{entry.trialDaysLeft}
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-mono text-xs text-gray-500 mt-0.5">{entry.slug}</p>
+                        </div>
+                        <div className="flex gap-4 text-center shrink-0">
+                          {[
+                            { label: 'Véh.', value: entry.vehicleCount },
+                            { label: 'Loc.', value: entry.rentalCount },
+                            { label: 'Msg.', value: entry.messageCount },
+                          ].map(s => (
+                            <div key={s.label}>
+                              <p className="text-lg font-bold text-white">{s.value}</p>
+                              <p className="text-[10px] text-gray-500">{s.label}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {entry.moduleUsage.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {entry.moduleUsage.map(m => (
+                            <div key={m.module} className="flex items-center gap-1.5 rounded-lg bg-gray-800 px-2.5 py-1">
+                              <span className="text-xs text-gray-400 capitalize">{m.module}</span>
+                              <span className="text-xs font-semibold text-[#01696e]">{m.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {entry.lastActivityAt && (
+                        <p className="mt-2 text-[10px] text-gray-600">
+                          Dernière activité : {format(new Date(entry.lastActivityAt), 'dd/MM/yyyy HH:mm', { locale: fr })}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Section Feedbacks ─────────────────────────────────────────────── */}
+        {activeSection === 'feedbacks' && (
+          <div className="flex-1 p-6 overflow-y-auto">
+            <div className="max-w-3xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white">Feedbacks tenants</h2>
+                <div className="flex gap-1">
+                  {(['', 'new', 'in_progress', 'done', 'rejected'] as const).map(f => (
+                    <button key={f} type="button" onClick={() => setFeedbackFilter(f)}
+                      className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+                        feedbackFilter === f ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'
+                      }`}>
+                      {f === '' ? 'Tous' : f === 'new' ? 'Nouveau' : f === 'in_progress' ? 'En cours' : f === 'done' ? 'Résolu' : 'Rejeté'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {!feedbacksData ? (
+                <div className="flex justify-center py-12">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent border-[#01696e]" />
+                </div>
+              ) : feedbacksData.feedbacks.length === 0 ? (
+                <p className="text-sm text-gray-600 py-8">Aucun feedback</p>
+              ) : (
+                <div className="space-y-3">
+                  {feedbacksData.feedbacks.map(fb => (
+                    <div key={fb.id} className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              fb.type === 'bug' ? 'bg-red-900/40 text-red-400'
+                              : fb.type === 'feature' ? 'bg-blue-900/40 text-blue-400'
+                              : 'bg-gray-700 text-gray-300'
+                            }`}>
+                              {fb.type === 'bug' ? 'Bug' : fb.type === 'feature' ? 'Fonctionnalité' : 'Retour'}
+                            </span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              fb.status === 'new' ? 'bg-yellow-900/40 text-yellow-400'
+                              : fb.status === 'in_progress' ? 'bg-blue-900/40 text-blue-400'
+                              : fb.status === 'done' ? 'bg-emerald-900/40 text-emerald-400'
+                              : 'bg-gray-700 text-gray-500'
+                            }`}>
+                              {fb.status === 'new' ? 'Nouveau' : fb.status === 'in_progress' ? 'En cours' : fb.status === 'done' ? 'Résolu' : 'Rejeté'}
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-mono">{fb.company.name}</span>
+                          </div>
+                          <p className="font-medium text-white text-sm">{fb.title}</p>
+                          <p className="text-xs text-gray-400 mt-1 line-clamp-2">{fb.description}</p>
+                          <p className="text-[10px] text-gray-600 mt-2">
+                            {format(new Date(fb.submittedAt), 'dd/MM/yyyy HH:mm', { locale: fr })}
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-1 shrink-0">
+                          {(['new', 'in_progress', 'done', 'rejected'] as const).filter(s => s !== fb.status).map(s => (
+                            <button key={s} type="button"
+                              onClick={() => updateFeedbackStatus.mutate({ id: fb.id, status: s })}
+                              disabled={updateFeedbackStatus.isPending}
+                              className="rounded-lg border border-gray-700 px-2 py-1 text-[10px] text-gray-400 hover:text-white hover:border-gray-500 transition-colors disabled:opacity-40">
+                              {s === 'new' ? 'Nouveau' : s === 'in_progress' ? 'En cours' : s === 'done' ? 'Résolu' : 'Rejeter'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {/* ── Section Super admins ──────────────────────────────────────────── */}

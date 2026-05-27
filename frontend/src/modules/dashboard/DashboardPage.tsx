@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { trackEvent } from '../../utils/tracking';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, differenceInDays, isPast } from 'date-fns';
@@ -50,6 +51,7 @@ function AlertCard({ alert }: { alert: Alert }): React.JSX.Element {
 
 export default function DashboardPage(): React.JSX.Element {
   const { user } = useAuth();
+  useEffect(() => { void trackEvent('dashboard', 'view'); }, []);
 
   type CtExpiring = { id: string; expiryAt: string; vehicle: { make: string; model: string; licensePlate: string } };
   type DocExpiring = { id: string; name: string; expiryDate: string; vehicle: { make: string; model: string; licensePlate: string } };

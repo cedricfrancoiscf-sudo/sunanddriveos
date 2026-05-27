@@ -210,5 +210,13 @@ export function createGetaroundClient(apiKey: string) {
       const res = await client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`);
       return res.data;
     },
+
+    async sendMessage(rentalId: number, content: string): Promise<GetaroundMessage> {
+      const res = await client.post<GetaroundMessage>(
+        `/rentals/${rentalId}/messages.json`,
+        { content },
+      );
+      return res.data;
+    },
   };
 }

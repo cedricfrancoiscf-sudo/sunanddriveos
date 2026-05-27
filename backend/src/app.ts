@@ -63,6 +63,7 @@ import onboardingRoutes from './modules/onboarding/onboarding.routes';
 import vehicleCarkeepersRoutes from './modules/vehicles/vehicle-carkeepers.routes';
 import renterProfileRoutes from './modules/rentals/renter-profile.routes';
 import renterBlacklistRoutes from './modules/blocking/renter-blacklist.routes';
+import getaroundWebhooksRoutes from './modules/getaround-sync/getaround-webhooks.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -84,6 +85,9 @@ export function createApp(): Express {
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID'],
     }),
   );
+
+  // Webhook Getaround — raw body avant le parser JSON global (pour signature verification future)
+  app.use('/api/v1/webhooks/getaround', express.raw({ type: '*/*' }), getaroundWebhooksRoutes);
 
   // Parsing requêtes
   app.use(express.json({ limit: '10mb' }));

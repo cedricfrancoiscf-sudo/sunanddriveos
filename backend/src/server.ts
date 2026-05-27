@@ -11,6 +11,9 @@ import { createApp } from './app';
 import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client';
 import { executePendingSequences } from './modules/sequences/sequences.service';
 import { syncAllAccounts } from './modules/getaround-sync/getaround-sync.service';
+import { decrypt } from './utils/crypto';
+import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
+import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
 import { notifyMileageAnomalies } from './modules/ai/ai.service';
 import { sendEmail } from './utils/mailer';
 
@@ -23,6 +26,8 @@ let isSyncRunning = false;
 let isMorningSummaryRunning = false;
 let isMileageRunning = false;
 let isUnresponsiveRunning = false;
+
+registerSyncTrigger(() => runGetaroundSyncForAllTenants());
 
 const server = app.listen(PORT, () => {
   console.log(`[SunanddriveOS] Backend démarré — port ${PORT}`);
@@ -42,7 +47,21 @@ async function runSequenceScheduler(): Promise<void> {
     });
     for (const company of companies) {
       const db = getTenantClient(company.tenantDbUrl);
-      const result = await executePendingSequences(db);
+
+      const sendToGetaround = async (rentalGetaroundId: number, content: string): Promise<void> => {
+        const rental = await db.rental.findFirst({
+          where: { getaroundId: String(rentalGetaroundId) },
+          include: { vehicle: { select: { getaroundAccountId: true } } },
+        });
+        const accountId = rental?.vehicle.getaroundAccountId;
+        if (!accountId) throw new Error(`Compte Getaround introuvable pour location ${rentalGetaroundId}`);
+        const account = await db.getaroundAccount.findUnique({ where: { id: accountId } });
+        if (!account) throw new Error(`Compte Getaround ${accountId} introuvable`);
+        const apiKey = decrypt(account.apiKeyHash);
+        await createGetaroundClient(apiKey).sendMessage(rentalGetaroundId, content);
+      };
+
+      const result = await executePendingSequences(db, sendToGetaround);
       if (result.executed > 0) {
         console.log(`[Séquences] ${company.slug} : ${result.executed}/${result.total} message(s) créé(s)`);
       }

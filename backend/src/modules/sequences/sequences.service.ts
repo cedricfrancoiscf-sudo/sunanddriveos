@@ -83,13 +83,18 @@ export async function scheduleSequencesForRental(
 }
 
 // Exécute les séquences planifiées dont l'heure est venue
-export async function executePendingSequences(db: PrismaClient) {
+export async function executePendingSequences(
+  db: PrismaClient,
+  sendToGetaround?: (rentalGetaroundId: number, content: string) => Promise<void>,
+) {
   const pending = await db.sequenceExecution.findMany({
     where: { status: 'pending', scheduledAt: { lte: new Date() } },
     include: {
       sequence: true,
       rental: {
-        include: { vehicle: { select: { make: true, model: true, licensePlate: true } } },
+        include: {
+          vehicle: { select: { make: true, model: true, licensePlate: true } },
+        },
       },
     },
     take: 50,
@@ -109,12 +114,28 @@ export async function executePendingSequences(db: PrismaClient) {
 
       const content = renderTemplate(exec.sequence.content, vars);
 
+      let messageStatus: 'sent' | 'pending_approval' = 'pending_approval';
+
+      const rentalGetaroundId = exec.rental.getaroundId
+        ? parseInt(exec.rental.getaroundId, 10)
+        : null;
+
+      if (rentalGetaroundId && sendToGetaround) {
+        try {
+          await sendToGetaround(rentalGetaroundId, content);
+          messageStatus = 'sent';
+        } catch (sendErr: unknown) {
+          console.error('[Séquences] Échec envoi Getaround rental', rentalGetaroundId, sendErr);
+        }
+      }
+
       const message = await db.message.create({
         data: {
           rentalId: exec.rentalId,
           direction: 'outbound',
           content,
-          status: 'pending_approval',
+          status: messageStatus,
+          sentAt: messageStatus === 'sent' ? new Date() : undefined,
         },
       });
 

@@ -21,12 +21,16 @@ function Bubble({ msg, isLast }: { msg: { direction: string; content: string; se
         >
           {msg.content}
         </div>
-        <p className="mt-1 px-1 text-xs text-gray-400">
+        <p className="mt-1 px-1 text-xs text-gray-400 flex items-center gap-1">
           {msg.sentAt
             ? format(new Date(msg.sentAt), 'dd/MM HH:mm', { locale: fr })
             : format(new Date(msg.createdAt), 'dd/MM HH:mm', { locale: fr })}
           {!isInbound && (
-            <span className="ml-2 capitalize text-gray-300">{msg.status}</span>
+            msg.status === 'sent' ? (
+              <span title="Envoyé sur Getaround" style={{ fontSize: 10 }}>✅</span>
+            ) : msg.status === 'pending_approval' ? (
+              <span title="En attente" style={{ fontSize: 10 }}>🕐</span>
+            ) : null
           )}
         </p>
       </div>

@@ -14,7 +14,7 @@ const filtersSchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
   page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 
 const updateSchema = z.object({

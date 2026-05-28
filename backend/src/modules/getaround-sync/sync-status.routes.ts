@@ -27,12 +27,14 @@ router.post('/force-full', requireRole('admin'), async (req: Request, res: Respo
     const db = getTenantClient(req.tenantDbUrl!);
     const tenantSlug = req.auth?.tenantSlug ?? 'default';
 
-    // Forcer une re-sync complète depuis le début
+    // Remet lastSyncAt à NULL — syncAccountRentals calculera startDate = 2 ans en arrière
     await db.getaroundAccount.updateMany({
       where: { isActive: true },
       data: { lastSyncAt: null },
     });
 
+    // Aucun paramètre from/to : syncAllAccounts passe undefined à syncAccountRentals,
+    // qui re-lit lastSyncAt (maintenant NULL) et part de 2 ans en arrière.
     void syncAllAccounts(db, tenantSlug)
       .then(r => console.log('[ForceFull] Terminé:', r.length, 'compte(s)'))
       .catch(e => console.error('[ForceFull] Erreur:', e));

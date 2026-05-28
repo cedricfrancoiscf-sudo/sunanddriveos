@@ -210,9 +210,9 @@ export async function syncAccountRentals(
       ? new Date(account.lastSyncAt.getTime() - 2 * 3_600_000)
       : new Date(Date.now() - 2 * 365 * 86_400_000)
   );
-  const defaultEnd = new Date();
-  defaultEnd.setMonth(defaultEnd.getMonth() + 3);
-  const endDate = to ?? defaultEnd;
+  // end_date ne doit jamais être dans le futur — l'API Getaround retourne 422 sinon
+  const endDate = to ?? new Date();
+  console.log('[Sync] Date de début :', startDate.toISOString(), '| lastSyncAt était :', account.lastSyncAt);
 
   // Mode trial : limiter la sync aux 90 derniers jours
   if (tenantSlug !== 'default') {

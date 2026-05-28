@@ -9,6 +9,14 @@ import { blockingsApi, BLOCKING_TYPE_LABELS, BLOCKING_TYPE_COLORS } from './bloc
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../utils/api';
 
+interface VehicleCost {
+  id: string;
+  label: string;
+  amount: number;
+  type: string;
+  createdAt: string;
+}
+
 const RATING_KEYWORDS = ['Propreté', 'Ponctualité', 'Communication', 'État du véhicule'] as const;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
@@ -63,6 +71,30 @@ export default function VehicleDetailPage(): React.JSX.Element {
   const qc = useQueryClient();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.isSuperAdmin;
+
+  const [activeTab, setActiveTab] = useState<'overview' | 'costs'>('overview');
+
+  const [costLabel, setCostLabel] = useState('');
+  const [costAmount, setCostAmount] = useState('');
+
+  const { data: costs = [], refetch: refetchCosts } = useQuery<VehicleCost[]>({
+    queryKey: ['vehicle-costs', id],
+    queryFn: () => api.get<{ costs: VehicleCost[] }>(`/vehicles/${id}/costs`).then(r => r.data.costs),
+    enabled: Boolean(id),
+    staleTime: 2 * 60_000,
+  });
+
+  const addCost = useMutation({
+    mutationFn: () => api.post(`/vehicles/${id}/costs`, { label: costLabel, amount: parseFloat(costAmount) }),
+    onSuccess: () => { void refetchCosts(); setCostLabel(''); setCostAmount(''); },
+  });
+
+  const deleteCost = useMutation({
+    mutationFn: (costId: string) => api.delete(`/vehicles/${id}/costs/${costId}`),
+    onSuccess: () => { void refetchCosts(); },
+  });
+
+  const totalMonthlyCosts = costs.reduce((s, c) => s + c.amount, 0);
 
   const [blockingModal, setBlockingModal] = useState(false);
   const [blockingForm, setBlockingForm] = useState<BlockingFormData>(emptyForm);
@@ -287,6 +319,106 @@ export default function VehicleDetailPage(): React.JSX.Element {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="mb-4 flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 w-fit">
+        {(['overview', 'costs'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab === 'overview' ? 'Vue générale' : 'Coûts'}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'costs' && (
+        <div className="space-y-4 mb-6">
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Ajouter un coût fixe</h2>
+            <form
+              onSubmit={(e) => { e.preventDefault(); if (costLabel && costAmount) addCost.mutate(); }}
+              className="flex flex-wrap gap-3"
+            >
+              <input
+                type="text"
+                placeholder="Libellé (ex : Assurance)"
+                value={costLabel}
+                onChange={(e) => setCostLabel(e.target.value)}
+                required
+                className="flex-1 min-w-40 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30"
+              />
+              <input
+                type="number"
+                placeholder="Montant (€/mois)"
+                value={costAmount}
+                onChange={(e) => setCostAmount(e.target.value)}
+                required
+                min="0"
+                step="0.01"
+                className="w-40 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30"
+              />
+              <button
+                type="submit"
+                disabled={!costLabel || !costAmount || addCost.isPending}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                style={{ backgroundColor: '#01696e' }}
+              >
+                Ajouter
+              </button>
+            </form>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Coûts fixes mensuels</h2>
+              <div className="text-right">
+                <p className="text-xs text-gray-400">Total mensuel</p>
+                <p className="text-lg font-bold text-gray-900">{totalMonthlyCosts.toFixed(2)} €</p>
+              </div>
+            </div>
+
+            {costs.length === 0 ? (
+              <p className="text-sm text-gray-400">Aucun coût enregistré</p>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {costs.map((cost) => (
+                  <div key={cost.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{cost.label}</p>
+                      <p className="text-xs text-gray-400 capitalize">{cost.type}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-gray-700">{cost.amount.toFixed(2)} €</span>
+                      <button
+                        type="button"
+                        onClick={() => { if (confirm(`Supprimer "${cost.label}" ?`)) deleteCost.mutate(cost.id); }}
+                        className="rounded p-1 text-gray-400 hover:text-red-500"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {costs.length > 0 && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-xs font-medium text-amber-700">Seuil de rentabilité mensuel</p>
+                <p className="mt-0.5 text-base font-bold text-amber-800">{totalMonthlyCosts.toFixed(2)} € de revenus nécessaires pour couvrir les coûts fixes</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className={activeTab !== 'overview' ? 'hidden' : ''}>
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Colonne gauche — infos principales */}
         <div className="lg:col-span-2 space-y-4">
@@ -698,6 +830,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
           )}
         </div>
       </div>
+      </div>{/* fin overview */}
     </div>
 
     {/* Modal Blocage */}

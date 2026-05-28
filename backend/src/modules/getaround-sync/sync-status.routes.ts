@@ -1,18 +1,23 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
-import { getTenantClient } from '../../prisma/client';
+import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { getSyncState, syncAllAccounts } from './getaround-sync.service';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 // GET /api/v1/sync/status
-router.get('/status', (req: Request, res: Response, next: NextFunction) => {
+router.get('/status', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tenantSlug = req.auth?.tenantSlug ?? 'default';
     const state = getSyncState(tenantSlug);
-    res.json({ state });
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug: tenantSlug },
+      select: { plan: true },
+    });
+    res.json({ state, plan: company?.plan ?? 'starter' });
   } catch (err: unknown) { next(err); }
 });
 

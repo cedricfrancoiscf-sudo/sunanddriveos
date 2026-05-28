@@ -61,6 +61,7 @@ import thirdPartyOwnersRoutes from './modules/third-party-owners/third-party-own
 import superAdminRoutes from './modules/tenants/tenants.routes';
 import onboardingRoutes from './modules/onboarding/onboarding.routes';
 import vehicleCarkeepersRoutes from './modules/vehicles/vehicle-carkeepers.routes';
+import vehicleCostsRoutes from './modules/vehicles/vehicle-costs.routes';
 import renterProfileRoutes from './modules/rentals/renter-profile.routes';
 import renterBlacklistRoutes from './modules/blocking/renter-blacklist.routes';
 import getaroundWebhooksRoutes from './modules/getaround-sync/getaround-webhooks.routes';
@@ -116,6 +117,7 @@ export function createApp(): Express {
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/vehicles', vehiclesRoutes);
   app.use('/api/v1/vehicles/:vehicleId/carkeepers', vehicleCarkeepersRoutes);
+  app.use('/api/v1/vehicles/:vehicleId/costs', vehicleCostsRoutes);
   // renter-profile AVANT rentals pour éviter conflit /:id
   app.use('/api/v1/rentals', renterProfileRoutes);
   app.use('/api/v1/rentals', rentalsRoutes);

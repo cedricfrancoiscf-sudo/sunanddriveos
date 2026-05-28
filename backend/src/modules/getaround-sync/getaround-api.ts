@@ -106,9 +106,10 @@ export interface GetaroundMessage {
   content: string;
 }
 
-// Format exact attendu par l'API Getaround : 2024-01-01T00:00:00Z (sans millisecondes)
+// Format attendu par Getaround : YYYY-MM-DD
 function toGetaroundDate(d: Date): string {
-  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // Découpe une plage en tranches ≤ 30 jours (limite API Getaround)
@@ -190,6 +191,7 @@ export function createGetaroundClient(apiKey: string) {
       // Collecter tous les IDs uniques sur toutes les fenêtres
       const seenIds = new Set<number>();
       for (const w of windows) {
+        console.log(`[Sync] Fenêtre : ${toGetaroundDate(w.start)} → ${toGetaroundDate(w.end)}`);
         const chunk = await fetchAllPages<{ id: number }>(client, '/rentals.json', {
           start_date: toGetaroundDate(w.start),
           end_date: toGetaroundDate(w.end),

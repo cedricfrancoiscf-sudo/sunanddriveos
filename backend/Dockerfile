@@ -6,6 +6,8 @@ RUN npm install -g pnpm
 COPY package*.json pnpm-lock.yaml* ./
 RUN pnpm install || npm install
 
+ARG CACHEBUST=1
+RUN echo "Cache bust: $CACHEBUST"
 COPY . .
 # Génération des clients Prisma
 RUN npm run generate

@@ -203,16 +203,23 @@ export async function syncAccountRentals(
   const apiKey = decrypt(account.apiKeyHash);
   const ga = createGetaroundClient(apiKey);
 
-  // Par défaut : lastSyncAt - 2h si déjà syncé, sinon 2 ans en arrière
-  // getRentals découpe automatiquement en fenêtres ≤ 30 jours
+  // Recharger lastSyncAt depuis la DB au moment du calcul — évite les valeurs
+  // stale du pool de connexions quand force-full a remis lastSyncAt à NULL juste avant.
+  const freshAccount = await db.getaroundAccount.findUnique({
+    where: { id: accountId },
+    select: { lastSyncAt: true },
+  });
+  console.log('[Sync] lastSyncAt frais depuis DB :', freshAccount?.lastSyncAt);
+
   let startDate = from ?? (
-    account.lastSyncAt != null
-      ? new Date(account.lastSyncAt.getTime() - 2 * 3_600_000)
+    freshAccount?.lastSyncAt != null
+      ? new Date(freshAccount.lastSyncAt.getTime() - 2 * 60 * 60 * 1000)
       : new Date(Date.now() - 2 * 365 * 86_400_000)
   );
+  console.log('[Sync] Date de début calculée :', startDate.toISOString());
+
   // end_date ne doit jamais être dans le futur — l'API Getaround retourne 422 sinon
   const endDate = to ?? new Date();
-  console.log('[Sync] Date de début :', startDate.toISOString(), '| lastSyncAt était :', account.lastSyncAt);
 
   // Mode trial : limiter la sync aux 90 derniers jours
   if (tenantSlug !== 'default') {

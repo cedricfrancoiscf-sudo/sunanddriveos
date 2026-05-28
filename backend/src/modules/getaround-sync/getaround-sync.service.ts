@@ -442,12 +442,7 @@ export async function syncAccountRentals(
     await sleep(500);
   }
 
-  const shouldUpdateLastSyncAt = syncCompleted && rentalsApiSucceeded &&
-    (result.created + result.updated > 0 || rentals.length >= 0);
-
-  console.log('[DEBUG lastSyncAt] shouldUpdateLastSyncAt:', shouldUpdateLastSyncAt);
-  console.log('[DEBUG lastSyncAt] syncCompleted:', syncCompleted);
-  console.log('[DEBUG lastSyncAt] rentalsApiSucceeded:', rentalsApiSucceeded);
+  const shouldUpdateLastSyncAt = syncCompleted && rentalsApiSucceeded && rentals.length > 0;
 
   if (shouldUpdateLastSyncAt) {
     await db.getaroundAccount.update({

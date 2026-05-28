@@ -445,6 +445,10 @@ export async function syncAccountRentals(
   const shouldUpdateLastSyncAt = syncCompleted && rentalsApiSucceeded &&
     (result.created + result.updated > 0 || rentals.length >= 0);
 
+  console.log('[DEBUG lastSyncAt] shouldUpdateLastSyncAt:', shouldUpdateLastSyncAt);
+  console.log('[DEBUG lastSyncAt] syncCompleted:', syncCompleted);
+  console.log('[DEBUG lastSyncAt] rentalsApiSucceeded:', rentalsApiSucceeded);
+
   if (shouldUpdateLastSyncAt) {
     await db.getaroundAccount.update({
       where: { id: accountId },

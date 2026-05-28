@@ -237,7 +237,16 @@ export async function syncAccountRentals(
 
   updateSyncState(tenantSlug, { progress: 15, currentStep: 'Récupération des locations...' });
 
-  const rentals = await ga.getRentals(startDate, endDate);
+  let rentals: Awaited<ReturnType<typeof ga.getRentals>> = [];
+  let rentalsApiSucceeded = false;
+  try {
+    rentals = await ga.getRentals(startDate, endDate);
+    rentalsApiSucceeded = true;
+    console.log('[Sync] getRentals OK —', rentals.length, 'location(s) collectée(s)');
+  } catch (err: unknown) {
+    const httpStatus = (err as { response?: { status?: number } }).response?.status;
+    console.error(`[Sync] getRentals échoué (HTTP ${httpStatus ?? 'inconnu'}) — lastSyncAt ne sera PAS mis à jour`);
+  }
   updateSyncState(tenantSlug, { totalItems: rentals.length, processedItems: 0 });
 
   // Cache conducteurs : évite un appel API par location pour le même conducteur
@@ -433,13 +442,18 @@ export async function syncAccountRentals(
     await sleep(500);
   }
 
-  if (syncCompleted) {
+  const shouldUpdateLastSyncAt = syncCompleted && rentalsApiSucceeded &&
+    (result.created + result.updated > 0 || rentals.length >= 0);
+
+  if (shouldUpdateLastSyncAt) {
     await db.getaroundAccount.update({
       where: { id: accountId },
       data: { lastSyncAt: new Date() },
     });
+    console.log('[Sync] lastSyncAt mis à jour — API OK, créées:', result.created, ', mises à jour:', result.updated);
   } else {
-    console.warn('[Sync] lastSyncAt non mis à jour — rate limit 429 non récupéré');
+    console.warn('[Sync] lastSyncAt NON mis à jour —',
+      !rentalsApiSucceeded ? 'échec getRentals (422 ?)' : !syncCompleted ? 'rate limit 429 non récupéré' : '0 résultat');
   }
 
   return result;

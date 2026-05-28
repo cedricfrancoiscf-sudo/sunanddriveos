@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../utils/api';
+import { captureGPS } from '../../utils/geoCapture';
 
 const SECTIONS = [
   { key: 'lighting', label: 'Éclairage', points: ['Feux avant gauche', 'Feux avant droit', 'Feux arrière gauche', 'Feux arrière droit', 'Feux de recul', 'Clignotants', 'Feux de détresse'] },
@@ -73,7 +74,9 @@ export default function VehicleCheckFormPage(): React.JSX.Element {
   const [fuelLevel, setFuelLevel] = useState(75);
   const [mileage, setMileage] = useState('');
   const [notes, setNotes] = useState('');
-  const [photos, setPhotos] = useState<string[]>([]);
+  interface CheckPhoto { url: string; latitude?: number; longitude?: number; accuracy?: number; takenAt?: string; deviceInfo?: string; }
+  const [photos, setPhotos] = useState<CheckPhoto[]>([]);
+  const [checkGpsWarning, setCheckGpsWarning] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
   const [submitted, setSubmitted] = useState(false);
 
@@ -102,12 +105,18 @@ export default function VehicleCheckFormPage(): React.JSX.Element {
   function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files) return;
+    setCheckGpsWarning(false);
     Array.from(files).forEach(file => {
       const reader = new FileReader();
-      reader.onload = ev => {
-        if (typeof ev.target?.result === 'string') {
-          setPhotos(prev => [...prev, ev.target!.result as string]);
-        }
+      reader.onload = async (ev) => {
+        if (typeof ev.target?.result !== 'string') return;
+        const url = ev.target.result as string;
+        const geo = await captureGPS();
+        if (!geo) setCheckGpsWarning(true);
+        setPhotos(prev => [...prev, {
+          url,
+          ...(geo ? { latitude: geo.latitude, longitude: geo.longitude, accuracy: geo.accuracy, takenAt: geo.takenAt, deviceInfo: geo.deviceInfo } : {}),
+        }]);
       };
       reader.readAsDataURL(file);
     });
@@ -281,11 +290,20 @@ export default function VehicleCheckFormPage(): React.JSX.Element {
                     <input ref={photoInputRef} type="file" accept="image/*" capture="environment"
                       multiple onChange={handlePhotoCapture} className="hidden" />
                   </div>
+                  {checkGpsWarning && (
+                    <p className="text-xs text-amber-600 flex items-center gap-1">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
+                      Photo sans géolocalisation
+                    </p>
+                  )}
                   {photos.length > 0 && (
                     <div className="flex gap-2 flex-wrap">
                       {photos.map((p, i) => (
                         <div key={i} className="relative">
-                          <img src={p} alt={`Photo ${i + 1}`} className="h-16 w-16 rounded-lg object-cover border border-gray-200" />
+                          <img src={p.url} alt={`Photo ${i + 1}`} className="h-16 w-16 rounded-lg object-cover border border-gray-200" />
+                          {p.latitude && (
+                            <span className="absolute bottom-0.5 left-0.5 rounded-full bg-black/60 px-1 text-[8px] text-white">GPS</span>
+                          )}
                           <button type="button" onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
                             className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white text-[10px] leading-none">
                             ×

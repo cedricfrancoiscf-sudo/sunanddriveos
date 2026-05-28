@@ -1,4 +1,5 @@
 import { api } from '../../utils/api';
+import { captureGPS } from '../../utils/geoCapture';
 
 export interface Vehicle {
   id: string;
@@ -67,33 +68,47 @@ export interface VehiclePhoto {
   uploadedAt: string;
   uploadedById: string | null;
   isCover: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+  takenAt: string | null;
+  deviceInfo: string | null;
 }
 
 export const vehiclePhotosApi = {
   list: (vehicleId: string) =>
     api.get<{ photos: VehiclePhoto[] }>(`/vehicles/${vehicleId}/photos`).then(r => r.data.photos),
 
-  upload: (vehicleId: string, file: File, onProgress?: (pct: number) => void): Promise<VehiclePhoto> =>
+  upload: (vehicleId: string, file: File, onProgress?: (pct: number) => void): Promise<{ photo: VehiclePhoto; gpsWarning?: boolean }> =>
     new Promise((resolve, reject) => {
-      const fd = new FormData();
-      fd.append('photo', file);
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${api.defaults.baseURL ?? ''}/vehicles/${vehicleId}/photos`);
-      const token = localStorage.getItem('token');
-      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      const tenantId = localStorage.getItem('tenantId');
-      if (tenantId) xhr.setRequestHeader('X-Tenant-ID', tenantId);
-      if (onProgress) xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const data = JSON.parse(xhr.responseText) as { photo: VehiclePhoto };
-          resolve(data.photo);
-        } else {
-          reject(new Error(`Upload échoué (${xhr.status})`));
+      captureGPS().then((geo) => {
+        const fd = new FormData();
+        fd.append('photo', file);
+        if (geo) {
+          fd.append('latitude',   String(geo.latitude));
+          fd.append('longitude',  String(geo.longitude));
+          fd.append('accuracy',   String(geo.accuracy));
+          fd.append('takenAt',    geo.takenAt);
+          fd.append('deviceInfo', geo.deviceInfo);
         }
-      };
-      xhr.onerror = () => reject(new Error('Erreur réseau upload'));
-      xhr.send(fd);
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${api.defaults.baseURL ?? ''}/vehicles/${vehicleId}/photos`);
+        const token = localStorage.getItem('auth_token');
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        const tenantId = localStorage.getItem('tenantId');
+        if (tenantId) xhr.setRequestHeader('X-Tenant-ID', tenantId);
+        if (onProgress) xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const data = JSON.parse(xhr.responseText) as { photo: VehiclePhoto };
+            resolve({ photo: data.photo, gpsWarning: !geo });
+          } else {
+            reject(new Error(`Upload échoué (${xhr.status})`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Erreur réseau upload'));
+        xhr.send(fd);
+      }).catch(() => reject(new Error('Erreur GPS/upload')));
     }),
 
   delete: (vehicleId: string, photoId: string) =>

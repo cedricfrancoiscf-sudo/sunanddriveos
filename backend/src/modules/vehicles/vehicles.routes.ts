@@ -116,7 +116,7 @@ router.get('/:id/photos', async (req: Request, res: Response, next: NextFunction
     const photos = await db.vehiclePhoto.findMany({
       where: { vehicleId: req.params.id as string },
       orderBy: [{ isCover: 'desc' }, { uploadedAt: 'desc' }],
-      select: { id: true, url: true, filename: true, uploadedAt: true, uploadedById: true, isCover: true },
+      select: { id: true, url: true, filename: true, uploadedAt: true, uploadedById: true, isCover: true, latitude: true, longitude: true, accuracy: true, takenAt: true, deviceInfo: true },
     });
     res.json({ photos });
   } catch (err: unknown) { next(err); }
@@ -128,14 +128,20 @@ router.post('/:id/photos', upload.single('photo'), async (req: Request, res: Res
     if (!req.file) { res.status(400).json({ error: 'Fichier requis (jpg/png/webp/heic, max 10 Mo)' }); return; }
     const db = getTenantClient(req.tenantDbUrl!);
     const publicUrl = `/uploads/vehicles/${req.params.id as string}/${req.file.filename}`;
+    const body = req.body as Record<string, string | undefined>;
     const photo = await db.vehiclePhoto.create({
       data: {
         vehicleId: req.params.id as string,
         filename: req.file.filename,
         url: publicUrl,
         uploadedById: req.auth?.userId ?? null,
+        ...(body.latitude   ? { latitude:   parseFloat(body.latitude)  } : {}),
+        ...(body.longitude  ? { longitude:  parseFloat(body.longitude) } : {}),
+        ...(body.accuracy   ? { accuracy:   parseFloat(body.accuracy)  } : {}),
+        ...(body.takenAt    ? { takenAt:    new Date(body.takenAt)     } : {}),
+        ...(body.deviceInfo ? { deviceInfo: body.deviceInfo            } : {}),
       },
-      select: { id: true, url: true, uploadedAt: true, isCover: true },
+      select: { id: true, url: true, uploadedAt: true, isCover: true, latitude: true, longitude: true, accuracy: true, takenAt: true, deviceInfo: true },
     });
     res.status(201).json({ photo });
   } catch (err: unknown) { next(err); }

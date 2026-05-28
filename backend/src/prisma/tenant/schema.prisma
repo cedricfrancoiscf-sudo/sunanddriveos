@@ -156,14 +156,19 @@ model Vehicle {
 }
 
 model VehiclePhoto {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   vehicleId    String
-  vehicle      Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
   filename     String
   url          String
-  uploadedAt   DateTime @default(now())
+  uploadedAt   DateTime  @default(now())
   uploadedById String?
-  isCover      Boolean  @default(false)
+  isCover      Boolean   @default(false)
+  latitude     Float?
+  longitude    Float?
+  accuracy     Float?
+  takenAt      DateTime?
+  deviceInfo   String?
 
   @@map("vehicle_photos")
 }

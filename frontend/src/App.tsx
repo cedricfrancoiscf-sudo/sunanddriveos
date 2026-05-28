@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './modules/auth/authContext';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import AppLayout from './components/layout/AppLayout';
+import PwaInstallBanner from './components/PwaInstallBanner';
 
 // Auth
 const LoginPage = React.lazy(() => import('./modules/auth/LoginPage'));
@@ -62,6 +63,7 @@ export default function App(): React.JSX.Element {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <PwaInstallBanner />
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
             {/* Routes publiques */}

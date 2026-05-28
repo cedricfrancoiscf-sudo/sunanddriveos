@@ -26,7 +26,6 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        // Fiche contrôle véhicule disponible hors ligne
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -37,11 +36,30 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /\/api\/v1\/(vehicles|vehicle-checks).*/i,
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-static',
+              expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 60 * 60 },
+            },
+          },
+          {
+            // Tous les endpoints GET de l'API — network-first, fallback cache 24h
+            urlPattern: /\/api\/v1\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 },
+              expiration: { maxEntries: 200, maxAgeSeconds: 24 * 60 * 60 },
+              networkTimeoutSeconds: 10,
+            },
+          },
+          {
+            // Photos et documents uploadés — cache-first (immutables une fois uploadés)
+            urlPattern: /\/uploads\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'uploads-cache',
+              expiration: { maxEntries: 500, maxAgeSeconds: 30 * 24 * 60 * 60 },
             },
           },
         ],

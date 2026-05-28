@@ -100,6 +100,8 @@ export default function VehicleDetailPage(): React.JSX.Element {
   const [blockingForm, setBlockingForm] = useState<BlockingFormData>(emptyForm);
   const [editingBlockingId, setEditingBlockingId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [gpsWarning, setGpsWarning] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<VehiclePhoto | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const now = new Date();
@@ -186,10 +188,12 @@ export default function VehicleDetailPage(): React.JSX.Element {
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     const files = Array.from(e.target.files ?? []);
     if (!files.length || !id) return;
+    setGpsWarning(false);
     for (const file of files) {
       setUploadProgress(0);
       try {
-        await vehiclePhotosApi.upload(id, file, setUploadProgress);
+        const { gpsWarning: warn } = await vehiclePhotosApi.upload(id, file, setUploadProgress);
+        if (warn) setGpsWarning(true);
       } catch (err) { console.error('[Upload]', err); }
     }
     setUploadProgress(null);
@@ -579,6 +583,15 @@ export default function VehicleDetailPage(): React.JSX.Element {
               </div>
             )}
 
+            {gpsWarning && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                </svg>
+                Photo sans géolocalisation (GPS refusé ou indisponible)
+              </div>
+            )}
+
             {sortedPhotos.length === 0 ? (
               <p className="text-sm text-gray-400">Aucune photo</p>
             ) : (
@@ -590,17 +603,20 @@ export default function VehicleDetailPage(): React.JSX.Element {
                         src={photo.url}
                         alt=""
                         className="h-full w-full object-cover cursor-pointer"
-                        onClick={async () => {
-                          if (!photo.isCover) {
-                            await vehiclePhotosApi.setCover(id!, photo.id);
-                            void refetchPhotos();
-                          }
-                        }}
+                        onClick={() => setSelectedPhoto(photo)}
                       />
                     </div>
                     {photo.isCover && (
                       <span className="absolute top-1 left-1 rounded-full bg-[#01696e] px-2 py-0.5 text-[10px] font-semibold text-white">
                         Couverture
+                      </span>
+                    )}
+                    {photo.latitude && (
+                      <span className="absolute bottom-1 left-1 flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                        <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        </svg>
+                        GPS
                       </span>
                     )}
                     {isAdmin && (
@@ -832,6 +848,86 @@ export default function VehicleDetailPage(): React.JSX.Element {
       </div>
       </div>{/* fin overview */}
     </div>
+
+    {/* Modal métadonnées photo */}
+    {selectedPhoto && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setSelectedPhoto(null)}>
+        <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <img src={selectedPhoto.url} alt="" className="w-full max-h-64 object-cover" />
+          <div className="p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Métadonnées</h3>
+              <button type="button" onClick={() => setSelectedPhoto(null)} className="text-gray-400 hover:text-gray-600">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {selectedPhoto.latitude && selectedPhoto.longitude ? (
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 space-y-1">
+                <p className="text-xs font-semibold text-blue-700">Position GPS</p>
+                <p className="text-xs text-blue-600 font-mono">
+                  {selectedPhoto.latitude.toFixed(6)}, {selectedPhoto.longitude.toFixed(6)}
+                </p>
+                {selectedPhoto.accuracy && (
+                  <p className="text-xs text-blue-500">Précision : ±{Math.round(selectedPhoto.accuracy)} m</p>
+                )}
+                <a
+                  href={`https://www.google.com/maps?q=${selectedPhoto.latitude},${selectedPhoto.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  Voir sur Google Maps
+                </a>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 italic">Aucune donnée GPS</p>
+            )}
+
+            <div className="divide-y divide-gray-100 text-xs">
+              {selectedPhoto.takenAt && (
+                <div className="flex justify-between py-2">
+                  <span className="text-gray-500">Prise de vue</span>
+                  <span className="font-medium text-gray-800">{format(new Date(selectedPhoto.takenAt), 'dd/MM/yyyy HH:mm', { locale: fr })}</span>
+                </div>
+              )}
+              <div className="flex justify-between py-2">
+                <span className="text-gray-500">Upload</span>
+                <span className="font-medium text-gray-800">{format(new Date(selectedPhoto.uploadedAt), 'dd/MM/yyyy HH:mm', { locale: fr })}</span>
+              </div>
+              {selectedPhoto.deviceInfo && (
+                <div className="py-2">
+                  <p className="text-gray-500 mb-0.5">Appareil</p>
+                  <p className="text-gray-700 break-all leading-snug" style={{ wordBreak: 'break-word' }}>
+                    {selectedPhoto.deviceInfo.length > 80 ? selectedPhoto.deviceInfo.slice(0, 80) + '…' : selectedPhoto.deviceInfo}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {isAdmin && !selectedPhoto.isCover && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await vehiclePhotosApi.setCover(id!, selectedPhoto.id);
+                  void refetchPhotos();
+                  setSelectedPhoto(null);
+                }}
+                className="w-full rounded-lg py-2 text-sm font-medium text-white"
+                style={{ backgroundColor: '#01696e' }}
+              >
+                Définir comme couverture
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Modal Blocage */}
     {blockingModal && (

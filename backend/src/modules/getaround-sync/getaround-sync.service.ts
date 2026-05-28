@@ -131,7 +131,7 @@ export async function syncAccountVehicles(
 
     await db.getaroundAccount.update({
       where: { id: accountId },
-      data: { syncStatus: 'success', lastSyncAt: new Date(), syncError: null },
+      data: { syncStatus: 'success', syncError: null },
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Erreur inconnue';

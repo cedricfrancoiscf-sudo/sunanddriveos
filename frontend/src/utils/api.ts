@@ -27,7 +27,10 @@ api.interceptors.response.use(
       window.location.href = '/login';
     }
     if (status === 402) {
-      window.location.href = '/upgrade';
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/login' && currentPath !== '/upgrade') {
+        window.location.href = '/upgrade';
+      }
     }
     return Promise.reject(error);
   },

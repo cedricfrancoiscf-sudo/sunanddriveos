@@ -115,7 +115,7 @@ export function createApp(): Express {
   app.use('/ical', icalLimiter);
 
   // Trial enforcement — toutes les routes sauf auth, billing webhook, health, iCal
-  const EXEMPTED_PATHS = ['/auth/', '/billing/webhook', '/health', '/superadmin'];
+  const EXEMPTED_PATHS = ['/auth/', '/billing/webhook', '/health', '/superadmin', '/billing/'];
   app.use('/api/v1', (req: Request, res: Response, next: NextFunction) => {
     if (EXEMPTED_PATHS.some(p => req.path.startsWith(p))) { next(); return; }
     void requireActiveSubscription(req, res, next);

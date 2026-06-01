@@ -99,33 +99,31 @@ export default function RentalListPage(): React.JSX.Element {
     staleTime: 2 * 60_000,
   });
 
+  const monthStart = currentMonth;
+  const monthEnd = endOfMonth(currentMonth);
+  const fromIso = monthStart.toISOString();
+  const toIso = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), monthEnd.getDate(), 23, 59, 59).toISOString();
+  const isCurrentMonth = currentMonth.getFullYear() === new Date().getFullYear() &&
+    currentMonth.getMonth() === new Date().getMonth();
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['rentals'],
-    queryFn: () => rentalsApi.list({ limit: 500 }),
+    queryKey: ['rentals', fromIso, toIso],
+    queryFn: () => rentalsApi.list({ from: fromIso, to: toIso, limit: 500 }),
     staleTime: 2 * 60_000,
   });
 
   const rentals = data?.rentals ?? [];
 
-  const monthStart = currentMonth;
-  const monthEnd = endOfMonth(currentMonth);
-
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return rentals.filter((r) => {
-      const start = new Date(r.startAt);
-      const end = new Date(r.endAt);
-      const inMonth = start <= monthEnd && end >= monthStart;
-      if (!inMonth) return false;
-      if (!q) return true;
-      return (
-        r.driverName.toLowerCase().includes(q) ||
-        r.vehicle.licensePlate.toLowerCase().includes(q) ||
-        r.vehicle.make.toLowerCase().includes(q) ||
-        r.vehicle.model.toLowerCase().includes(q)
-      );
-    });
-  }, [rentals, monthStart, monthEnd, search]);
+    if (!q) return rentals;
+    return rentals.filter((r) =>
+      r.driverName.toLowerCase().includes(q) ||
+      r.vehicle.licensePlate.toLowerCase().includes(q) ||
+      r.vehicle.make.toLowerCase().includes(q) ||
+      r.vehicle.model.toLowerCase().includes(q)
+    );
+  }, [rentals, search]);
 
   const monthRevenue = useMemo(
     () => filtered.reduce((sum, r) => sum + (r.grossRevenue ?? 0), 0),
@@ -141,7 +139,7 @@ export default function RentalListPage(): React.JSX.Element {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Locations</h1>
-          <p className="text-sm text-gray-500">{data?.total ?? 0} location{(data?.total ?? 0) !== 1 ? 's' : ''} au total</p>
+          <p className="text-sm text-gray-500">{filtered.length} location{filtered.length !== 1 ? 's' : ''} en {monthLabel}</p>
         </div>
       </div>
 
@@ -189,7 +187,8 @@ export default function RentalListPage(): React.JSX.Element {
           <button
             type="button"
             onClick={() => setCurrentMonth(m => addMonths(m, 1))}
-            className="rounded p-1 text-gray-400 hover:text-gray-700"
+            disabled={isCurrentMonth}
+            className="rounded p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

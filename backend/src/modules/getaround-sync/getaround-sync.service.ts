@@ -427,19 +427,14 @@ async function syncMessagesForWindow(
 
       for (const msg of messages) {
         try {
-          const existing = await db.message.findUnique({
-            where: { getaroundId: String(msg.id) },
-            select: { id: true },
-          });
-          if (existing) continue;
-
           const direction =
             rental.driverGetaroundId && String(msg.sending_user_id) === rental.driverGetaroundId
               ? ('inbound' as const)
               : ('outbound' as const);
 
-          await db.message.create({
-            data: {
+          const { id: msgDbId, createdAt: msgCreatedAt } = await db.message.upsert({
+            where: { getaroundId: String(msg.id) },
+            create: {
               getaroundId: String(msg.id),
               rentalId: rental.id,
               direction,
@@ -447,9 +442,18 @@ async function syncMessagesForWindow(
               sentAt: new Date(msg.sent_at),
               status: 'sent',
             },
+            update: {
+              content: msg.content,
+            },
+            select: { id: true, createdAt: true },
           });
 
-          if (direction === 'inbound') {
+          // Détection siège auto uniquement sur les messages entrants nouveaux
+          // (createdAt proche de now = vient d'être créé par l'upsert)
+          const isNew = Date.now() - msgCreatedAt.getTime() < 10_000;
+          void msgDbId; // utilisé dans les closures ci-dessous
+
+          if (direction === 'inbound' && isNew) {
             void (async () => {
               try {
                 const analysis = await analyzeMessage(msg.content);
@@ -703,32 +707,31 @@ export async function syncAccountMessages(
 
       for (const msg of messages) {
         try {
-          const existing = await db.message.findUnique({
-            where: { getaroundId: String(msg.id) },
-            select: { id: true },
-          });
-          if (existing) { result.skipped++; continue; }
-
           // Direction : inbound si l'expéditeur est le conducteur (user_id du rental)
           const direction =
             rental.driverGetaroundId && String(msg.sending_user_id) === rental.driverGetaroundId
               ? ('inbound' as const)
               : ('outbound' as const);
 
-          const created = await db.message.create({
-            data: {
+          const upserted = await db.message.upsert({
+            where: { getaroundId: String(msg.id) },
+            create: {
               getaroundId: String(msg.id),
               rentalId: rental.id,
               direction,
               content: msg.content,
               sentAt: new Date(msg.sent_at),
-              status: 'sent', // déjà envoyé côté Getaround
+              status: 'sent',
             },
+            update: { content: msg.content },
+            select: { id: true, createdAt: true },
           });
-          result.created++;
+          const isNew = Date.now() - upserted.createdAt.getTime() < 10_000;
+          if (isNew) result.created++;
+          else result.skipped++;
 
           // Détection siège auto sur messages entrants nouvellement créés
-          if (direction === 'inbound') {
+          if (direction === 'inbound' && isNew) {
             void (async () => {
               try {
                 const analysis = await analyzeMessage(msg.content);
@@ -775,7 +778,7 @@ export async function syncAccountMessages(
             })();
           }
 
-          void created; // référence utilisée ci-dessus
+          void upserted; // référence utilisée ci-dessus
         } catch (err: unknown) {
           result.errors.push(`Message ${msg.id}: ${err instanceof Error ? err.message : 'erreur'}`);
         }

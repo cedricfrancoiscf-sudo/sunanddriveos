@@ -99,9 +99,8 @@ export default function MessageListPage(): React.JSX.Element {
       }
     }
 
-    return Array.from(map.values()).sort(
-      (a, b) => new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime(),
-    );
+    // L'ordre vient du backend (groupBy _max createdAt desc)
+    return Array.from(map.values());
   }, [messages]);
 
   return (

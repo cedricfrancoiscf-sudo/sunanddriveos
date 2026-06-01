@@ -1,6 +1,6 @@
 ﻿import type { PrismaClient } from '../../generated/tenant';
 
-const TRIGGER_EVENTS = ['rental.booked', 'rental.car_checked_in', 'rental.car_checked_out', 'before_checkin', 'before_checkout'] as const;
+const TRIGGER_EVENTS = ['rental.booked', 'rental.car_checked_in', 'rental.car_checked_out', 'rental.before_checkin', 'rental.before_checkout'] as const;
 export type TriggerEvent = typeof TRIGGER_EVENTS[number];
 
 export type SequenceCreateInput = {
@@ -67,52 +67,47 @@ export async function scheduleSequencesForRental(
   // Ne jamais déclencher si la date de fin est dépassée depuis plus de 2h
   if (rental.endAt < twoHoursAgo) return;
 
-  const sequences = await db.messageSequence.findMany({
-    where: {
-      triggerEvent,
-      isActive: true,
-      OR: [{ vehicleId: null }, { vehicleId: rental.vehicleId }],
-    },
-  });
+  // À la réservation, planifier aussi les séquences "avant événement"
+  const triggersToSchedule: TriggerEvent[] =
+    triggerEvent === 'rental.booked'
+      ? ['rental.booked', 'rental.before_checkin', 'rental.before_checkout']
+      : [triggerEvent];
 
-  for (const seq of sequences) {
-    const scheduledAt = new Date(Date.now() + seq.delayMinutes * 60_000);
+  let totalScheduled = 0;
 
-    await db.sequenceExecution.create({
-      data: {
-        rentalId,
-        sequenceId: seq.id,
-        scheduledAt,
-        status: 'pending',
+  for (const t of triggersToSchedule) {
+    const sequences = await db.messageSequence.findMany({
+      where: {
+        triggerEvent: t,
+        isActive: true,
+        OR: [{ vehicleId: null }, { vehicleId: rental.vehicleId }],
       },
     });
-  }
 
-  // Lors d'une réservation, planifier aussi les séquences "avant événement"
-  if (triggerEvent === 'rental.booked') {
-    const beforeCheckinSeqs = await db.messageSequence.findMany({
-      where: { triggerEvent: 'before_checkin', isActive: true, OR: [{ vehicleId: null }, { vehicleId: rental.vehicleId }] },
-    });
-    for (const seq of beforeCheckinSeqs) {
-      // delayMinutes = temps avant la prise en charge (ex: 120 = 2h avant)
-      const scheduledAt = new Date(rental.startAt.getTime() - seq.delayMinutes * 60_000);
-      if (scheduledAt > new Date()) {
-        await db.sequenceExecution.create({ data: { rentalId, sequenceId: seq.id, scheduledAt, status: 'pending' } });
-      }
-    }
+    for (const seq of sequences) {
+      let scheduledAt: Date;
 
-    const beforeCheckoutSeqs = await db.messageSequence.findMany({
-      where: { triggerEvent: 'before_checkout', isActive: true, OR: [{ vehicleId: null }, { vehicleId: rental.vehicleId }] },
-    });
-    for (const seq of beforeCheckoutSeqs) {
-      const scheduledAt = new Date(rental.endAt.getTime() - seq.delayMinutes * 60_000);
-      if (scheduledAt > new Date()) {
-        await db.sequenceExecution.create({ data: { rentalId, sequenceId: seq.id, scheduledAt, status: 'pending' } });
+      if (t === 'rental.before_checkin') {
+        scheduledAt = new Date(rental.startAt.getTime() - seq.delayMinutes * 60_000);
+      } else if (t === 'rental.before_checkout') {
+        scheduledAt = new Date(rental.endAt.getTime() - seq.delayMinutes * 60_000);
+      } else {
+        scheduledAt = new Date(Date.now() + seq.delayMinutes * 60_000);
       }
+
+      if (scheduledAt <= now) {
+        console.log(`[Séquences] Skip ${seq.name} — sendAt ${scheduledAt.toISOString()} déjà passé`);
+        continue;
+      }
+
+      await db.sequenceExecution.create({
+        data: { rentalId, sequenceId: seq.id, scheduledAt, status: 'pending' },
+      });
+      totalScheduled++;
     }
   }
 
-  return sequences.length;
+  return totalScheduled;
 }
 
 // Exécute les séquences planifiées dont l'heure est venue

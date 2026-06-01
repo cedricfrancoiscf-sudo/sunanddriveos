@@ -788,6 +788,8 @@ export async function syncAccountMessages(
     } catch (err: unknown) {
       result.errors.push(`Rental ${rental.getaroundId}: ${err instanceof Error ? err.message : 'erreur'}`);
     }
+
+    await sleep(500); // toujours exécuté, même en cas d'erreur
   }
 
   return result;

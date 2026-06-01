@@ -6,6 +6,7 @@ import {
   type SequenceInput,
   type TriggerEvent,
   TRIGGER_LABELS,
+  DELAY_LABELS,
   TEMPLATE_VARS,
   BEFORE_TRIGGERS,
 } from './sequencesApi';
@@ -19,10 +20,10 @@ function delayLabel(minutes: number): string {
 
 const TRIGGER_OPTIONS: TriggerEvent[] = [
   'rental.booked',
+  'rental.before_checkin',
   'rental.car_checked_in',
+  'rental.before_checkout',
   'rental.car_checked_out',
-  'before_checkin',
-  'before_checkout',
 ];
 
 const EMPTY_FORM: SequenceInput = {
@@ -87,7 +88,7 @@ function SequenceForm({
       {/* Délai */}
       <div>
         <label className="mb-1 block text-sm font-medium text-gray-700">
-          {BEFORE_TRIGGERS.includes(form.triggerEvent) ? 'Délai avant l\'événement' : 'Délai d\'envoi'}
+          {DELAY_LABELS[form.triggerEvent]}
         </label>
         <div className="flex gap-2">
           <div className="flex-1">
@@ -112,12 +113,16 @@ function SequenceForm({
             <p className="mt-0.5 text-xs text-gray-400">minutes</p>
           </div>
         </div>
-        {form.delayMinutes > 0 && (
-          <p className="mt-1 text-xs text-[#01696e]">
-            {BEFORE_TRIGGERS.includes(form.triggerEvent)
-              ? `${delayLabel(form.delayMinutes).replace(' après', '')} avant`
-              : delayLabel(form.delayMinutes)}
+        {BEFORE_TRIGGERS.includes(form.triggerEvent) && form.delayMinutes === 0 && (
+          <p className="mt-1 text-xs text-red-500">Le délai doit être supérieur à 0</p>
+        )}
+        {BEFORE_TRIGGERS.includes(form.triggerEvent) && form.delayMinutes > 0 && (
+          <p className="mt-1 text-xs font-medium text-orange-600">
+            Le message sera envoyé {delayLabel(form.delayMinutes).replace(' après', '')} avant l&apos;événement
           </p>
+        )}
+        {!BEFORE_TRIGGERS.includes(form.triggerEvent) && form.delayMinutes > 0 && (
+          <p className="mt-1 text-xs text-[#01696e]">{delayLabel(form.delayMinutes)}</p>
         )}
       </div>
 

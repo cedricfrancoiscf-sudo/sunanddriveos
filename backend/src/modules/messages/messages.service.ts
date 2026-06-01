@@ -14,43 +14,72 @@ export type MessageFilters = {
 export async function listMessages(db: PrismaClient, filters: MessageFilters = {}) {
   const { rentalId, vehicleId, rentalStatus, startDate, endDate, direction, page = 1, limit = 50 } = filters;
 
-  const rentalWhere: Record<string, unknown> = {
-    ...(vehicleId ? { vehicleId } : {}),
-    ...(rentalStatus ? { status: rentalStatus } : {}),
-    ...(startDate ? { startAt: { gte: new Date(startDate) } } : {}),
-    ...(endDate ? { endAt: { lte: new Date(endDate) } } : {}),
-  };
+  // Étape 1 : si filtres sur la location, résoudre les rentalIds éligibles
+  let eligibleRentalIds: string[] | null = null;
+  if (vehicleId || rentalStatus || startDate || endDate) {
+    const matchingRentals = await db.rental.findMany({
+      where: {
+        ...(vehicleId ? { vehicleId } : {}),
+        ...(rentalStatus ? { status: rentalStatus as never } : {}),
+        ...(startDate ? { startAt: { gte: new Date(startDate) } } : {}),
+        ...(endDate ? { endAt: { lte: new Date(endDate) } } : {}),
+      },
+      select: { id: true },
+    });
+    eligibleRentalIds = matchingRentals.map(r => r.id);
+    if (eligibleRentalIds.length === 0) return { messages: [], total: 0, page, limit };
+  }
 
-  const where = {
+  const msgWhere = {
     ...(rentalId ? { rentalId } : {}),
     ...(direction ? { direction } : {}),
-    ...(Object.keys(rentalWhere).length > 0 ? { rental: { is: rentalWhere } } : {}),
+    ...(eligibleRentalIds ? { rentalId: { in: eligibleRentalIds } } : {}),
   } as never;
 
-  const [messages, total] = await Promise.all([
-    db.message.findMany({
-      where,
-      include: {
-        rental: {
-          select: {
-            id: true,
-            driverName: true,
-            startAt: true,
-            endAt: true,
-            status: true,
-            vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
-          },
-        },
-        approvedBy: { select: { id: true, name: true } },
-      },
-      orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    db.message.count({ where }),
-  ]);
+  // Étape 2 : groupBy rentalId → conversations distinctes triées par dernier message
+  const rentalGroups = await db.message.groupBy({
+    by: ['rentalId'],
+    _max: { createdAt: true },
+    where: msgWhere,
+    orderBy: { _max: { createdAt: 'desc' } },
+    skip: (page - 1) * limit,
+    take: limit,
+  });
 
-  return { messages, total, page, limit };
+  const rentalIds = rentalGroups.map(g => g.rentalId).filter((id): id is string => id !== null);
+
+  if (rentalIds.length === 0) {
+    const total = await db.message.groupBy({ by: ['rentalId'], where: msgWhere }).then(g => g.length);
+    return { messages: [], total, page, limit };
+  }
+
+  // Étape 3 : message le plus récent par conversation (distinct rentalId)
+  const messages = await db.message.findMany({
+    where: { rentalId: { in: rentalIds } },
+    include: {
+      rental: {
+        select: {
+          id: true,
+          driverName: true,
+          startAt: true,
+          endAt: true,
+          status: true,
+          vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
+        },
+      },
+      approvedBy: { select: { id: true, name: true } },
+    },
+    orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
+    distinct: ['rentalId'],
+  });
+
+  // Étape 4 : réordonner selon l'ordre des groupes
+  const messageMap = new Map(messages.map(m => [m.rentalId, m]));
+  const ordered = rentalIds.map(rid => messageMap.get(rid)).filter((m): m is NonNullable<typeof m> => m != null);
+
+  const total = await db.message.groupBy({ by: ['rentalId'], where: msgWhere }).then(g => g.length);
+
+  return { messages: ordered, total, page, limit };
 }
 
 export async function getMessage(db: PrismaClient, id: string) {

@@ -35,12 +35,12 @@ interface PlanningBlocking {
 }
 
 const BLOCKING_LABELS: Record<string, string> = {
-  maintenance: 'Maintenance', incident: 'Incident',
-  administrative: 'Administratif', other: 'Autre',
+  maintenance: 'Maintenance',
+  incident: 'Incident',
 };
 const BLOCKING_COLORS: Record<string, string> = {
-  maintenance: 'bg-orange-400', incident: 'bg-red-500',
-  administrative: 'bg-purple-400', other: 'bg-gray-400',
+  maintenance: 'bg-orange-400',
+  incident: 'bg-red-500',
 };
 
 // Positionnement précis à la minute près dans la grille
@@ -73,7 +73,9 @@ function RentalBar({ rental, periodStart, totalDays, onClick }: { rental: Planni
       className={`absolute top-1.5 h-7 rounded flex items-center overflow-hidden cursor-pointer group z-10 transition-opacity hover:opacity-90 ${isPast ? 'opacity-60' : ''}`}
       style={{
         ...getBarStyle(rental.startAt, rental.endAt, periodStart, totalDays),
-        backgroundColor: rental.status === 'active' ? '#01696e' : '#01696eaa',
+        backgroundColor: hasCarSeat
+          ? (rental.status === 'active' ? '#c2600a' : '#c2600aaa')
+          : (rental.status === 'active' ? '#01696e' : '#01696eaa'),
       }}
       title={tooltip}
       onClick={onClick}
@@ -359,18 +361,21 @@ export default function PlanningPage(): React.JSX.Element {
           <div className="h-3 w-6 rounded-sm" style={{ backgroundColor: '#01696eaa' }} />
           <span>Réservée</span>
         </div>
-        {Object.entries(BLOCKING_LABELS).map(([k, v]) => (
-          <div key={k} className="flex items-center gap-1.5">
-            <div className={`h-3 w-6 rounded-sm ${BLOCKING_COLORS[k]}`} />
-            <span>{v}</span>
-          </div>
-        ))}
+        <div className="flex items-center gap-1.5">
+          <div className="h-3 w-6 rounded-sm" style={{ backgroundColor: '#c2600a' }} />
+          <span>🪑 Siège auto demandé</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="h-3 w-6 rounded-sm bg-orange-400" />
+          <span>Maintenance</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="h-3 w-6 rounded-sm bg-red-500" />
+          <span>Incident</span>
+        </div>
         <div className="flex items-center gap-1.5">
           <div className="h-3 w-6 rounded-sm opacity-60" style={{ backgroundColor: '#01696eaa' }} />
           <span>Terminée</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span>🪑</span><span>Siège auto</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span>📦</span><span>Accessoire</span>

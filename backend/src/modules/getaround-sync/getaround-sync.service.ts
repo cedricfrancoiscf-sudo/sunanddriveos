@@ -280,7 +280,8 @@ export async function syncAccountRentals(
   console.log(`[Sync][${tenantSlug}] Date de début calculée :`, startDate.toISOString());
 
   // end_date ne doit jamais être dans le futur — l'API Getaround retourne 422 sinon
-  const endDate = to ?? new Date();
+  // On inclut 3 mois dans le futur pour récupérer les réservations à venir
+  const endDate = to ?? new Date(Date.now() + 90 * 86_400_000);
 
   updateSyncState(tenantSlug, { progress: 15, currentStep: 'Récupération des locations...' });
 

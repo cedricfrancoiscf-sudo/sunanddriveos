@@ -357,8 +357,52 @@ export function createGetaroundClient(apiKey: string) {
       return fetchAllPages<GetaroundInvoiceApi>(client, '/invoices.json', {});
     },
 
-    async getPayouts(): Promise<GetaroundPayoutApi[]> {
+    async getPayoutsAll(): Promise<GetaroundPayoutApi[]> {
       return fetchAllPages<GetaroundPayoutApi>(client, '/payouts.json', {});
+    },
+
+    async getPayouts(startDate: Date, endDate: Date): Promise<Array<{ id: number }>> {
+      const qs = `start_date=${toGetaroundDate(startDate)}&end_date=${toGetaroundDate(endDate)}&per_page=100&page=1`;
+      const res = await withRetry(() => client.get<Array<{ id: number }>>(`/payouts.json?${qs}`));
+      return res.data ?? [];
+    },
+
+    async getPayout(payoutId: number): Promise<{
+      id: number;
+      amount: number;
+      completed_at: string;
+      currency: string;
+      invoices: Array<{ id: number }>;
+    }> {
+      const res = await withRetry(() => client.get<{
+        id: number;
+        amount: number;
+        completed_at: string;
+        currency: string;
+        invoices: Array<{ id: number }>;
+      }>(`/payouts/${payoutId}.json`));
+      return res.data;
+    },
+
+    async getInvoice(invoiceId: number): Promise<{
+      id: number;
+      product_type: string;
+      product_id: number;
+      total_price: number;
+      emitted_at: string;
+      pdf_url: string;
+      charges: Array<{ type: string; amount: number }>;
+    }> {
+      const res = await withRetry(() => client.get<{
+        id: number;
+        product_type: string;
+        product_id: number;
+        total_price: number;
+        emitted_at: string;
+        pdf_url: string;
+        charges: Array<{ type: string; amount: number }>;
+      }>(`/invoices/${invoiceId}.json`));
+      return res.data;
     },
   };
 }

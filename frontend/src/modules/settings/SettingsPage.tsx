@@ -290,6 +290,15 @@ function GetaroundSection(): React.JSX.Element {
     },
   });
 
+  const [recalcMsg, setRecalcMsg] = useState<string | null>(null);
+  const recalcPayoutsMutation = useMutation({
+    mutationFn: () => api.get<{ message: string }>('/sync/recalculate-payouts').then(r => r.data.message),
+    onSuccess: () => {
+      setRecalcMsg('Recalcul lancé — données disponibles dans 20-30 minutes');
+      setTimeout(() => setRecalcMsg(null), 10_000);
+    },
+  });
+
   const isSyncing = syncVehiclesMutation.isPending || syncRentalsMutation.isPending || syncAllMutation.isPending || (syncStatus?.isRunning ?? false);
 
   return (
@@ -304,6 +313,11 @@ function GetaroundSection(): React.JSX.Element {
             title="Remet lastSyncAt à zéro et resynchronise tout l'historique"
             className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-40">
             {forceFullMutation.isPending ? 'Lancement...' : 'Resync complète'}
+          </button>
+          <button type="button" onClick={() => recalcPayoutsMutation.mutate()} disabled={recalcPayoutsMutation.isPending}
+            title="Recalcule la décomposition CA depuis les virements Getaround sur 24 mois"
+            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-40">
+            {recalcPayoutsMutation.isPending ? 'Lancement...' : 'Recalculer les virements'}
           </button>
           {accounts.length > 1 && (
             <button type="button" onClick={() => syncAllMutation.mutate()} disabled={isSyncing}
@@ -324,6 +338,13 @@ function GetaroundSection(): React.JSX.Element {
       {forceFullMsg && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           {forceFullMsg} — cela peut prendre 20-30 minutes
+        </div>
+      )}
+
+      {/* Toast recalcul virements */}
+      {recalcMsg && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
+          {recalcMsg}
         </div>
       )}
 

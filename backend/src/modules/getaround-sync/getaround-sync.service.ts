@@ -639,7 +639,10 @@ export async function syncAccountRentals(
       });
       await syncMessagesForWindow(db, ga, accountId, windowStart, windowEnd, tenantSlug);
 
-      // 4. Mettre à jour lastSyncAt avec le début de cette fenêtre
+      // 4. Payouts de la fenêtre
+      await syncPayoutsForWindow(db, ga, windowStart, windowEnd, tenantSlug);
+
+      // 5. Mettre à jour lastSyncAt avec le début de cette fenêtre
       await db.getaroundAccount.update({
         where: { id: accountId },
         data: { lastSyncAt: windowStart, syncStatus: 'success', syncError: null },
@@ -828,7 +831,7 @@ export async function syncAccountInvoicesPayouts(db: PrismaClient, accountId: st
   const apiKey = decrypt(account.apiKeyHash);
   const ga = createGetaroundClient(apiKey);
 
-  const [invoices, payouts] = await Promise.allSettled([ga.getInvoices(), ga.getPayouts()]);
+  const [invoices, payouts] = await Promise.allSettled([ga.getInvoices(), ga.getPayoutsAll()]);
 
   if (invoices.status === 'fulfilled') {
     for (const inv of invoices.value) {
@@ -1007,6 +1010,143 @@ export async function fixHistoricalMileage(db: PrismaClient): Promise<{ correcte
 
   console.log(`[FixMileage] ${corrected} locations corrigées`);
   return { corrected };
+}
+
+// ─── 7. Sync virements par fenêtre ──────────────────────────────────────────
+
+export async function syncPayoutsForWindow(
+  db: PrismaClient,
+  ga: GetaroundClient,
+  windowStart: Date,
+  windowEnd: Date,
+  tenantSlug: string,
+): Promise<{ updated: number; errors: number }> {
+  const result = { updated: 0, errors: 0 };
+
+  try {
+    const payouts = await ga.getPayouts(windowStart, windowEnd);
+    console.log(`[Sync][${tenantSlug}] Payouts : ${payouts.length} payout(s)`);
+
+    for (const p of payouts) {
+      const payout = await ga.getPayout(p.id);
+      await sleep(500);
+
+      for (const inv of payout.invoices) {
+        try {
+          const invoice = await ga.getInvoice(inv.id);
+          await sleep(300);
+
+          if (invoice.product_type !== 'Rental') continue;
+
+          const rental = await db.rental.findFirst({
+            where: { getaroundId: String(invoice.product_id) },
+          });
+          if (!rental) continue;
+
+          let basePrice = 0, insuranceFee = 0, extraDistanceFee = 0;
+          let driverMessFee = 0, damageCompensation = 0, lateReturnFee = 0;
+          let gasRefillFee = 0, deliveryFee = 0, assistanceFee = 0;
+
+          for (const charge of invoice.charges) {
+            const amount = charge.amount / 100;
+            switch (charge.type) {
+              case 'driver_rental_payment':
+                basePrice += amount; break;
+              case 'self_insurance_payment':
+              case 'additional_self_insurance_payment':
+              case 'mileage_package_insurance':
+                insuranceFee += amount; break;
+              case 'extra_distance_payment':
+              case 'mileage_package':
+                extraDistanceFee += amount; break;
+              case 'driver_mess_fee':
+              case 'drivy_mess_fee':
+                driverMessFee += Math.abs(amount); break;
+              case 'damage_compensation':
+                damageCompensation += Math.abs(amount); break;
+              case 'driver_late_return_fee':
+              case 'drivy_late_return_fee':
+                lateReturnFee += Math.abs(amount); break;
+              case 'driver_gas_refill_fee':
+              case 'driver_gas_compensation':
+                gasRefillFee += Math.abs(amount); break;
+              case 'delivery_fee':
+                deliveryFee += amount; break;
+              case 'assistance_fee':
+                assistanceFee += amount; break;
+            }
+          }
+
+          const grossRevenue = Math.round((
+            basePrice + insuranceFee + extraDistanceFee +
+            driverMessFee + damageCompensation + lateReturnFee +
+            gasRefillFee + deliveryFee + assistanceFee
+          ) * 100) / 100;
+
+          const ownerPayout = Math.round(
+            Math.abs(invoice.total_price) / 100 * 100,
+          ) / 100;
+
+          await db.rental.update({
+            where: { id: rental.id },
+            data: {
+              basePrice:          basePrice          || undefined,
+              insuranceFee:       insuranceFee       || undefined,
+              extraDistanceFee:   extraDistanceFee   || undefined,
+              driverMessFee:      driverMessFee      || undefined,
+              damageCompensation: damageCompensation || undefined,
+              lateReturnFee:      lateReturnFee      || undefined,
+              gasRefillFee:       gasRefillFee       || undefined,
+              deliveryFee:        deliveryFee        || undefined,
+              assistanceFee:      assistanceFee      || undefined,
+              grossRevenue:       grossRevenue       || undefined,
+              ownerPayout:        ownerPayout        || undefined,
+            },
+          });
+          result.updated++;
+
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[Sync][${tenantSlug}] Erreur invoice ${inv.id}: ${msg}`);
+          result.errors++;
+        }
+      }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[Sync][${tenantSlug}] Erreur sync payouts: ${msg}`);
+  }
+
+  console.log(`[Sync][${tenantSlug}] Payouts : ${result.updated} location(s) mises à jour`);
+  return result;
+}
+
+export async function recalculateHistoricalPayouts(db: PrismaClient, tenantSlug = 'default'): Promise<void> {
+  const accounts = await db.getaroundAccount.findMany({
+    where: { isActive: true },
+    select: { id: true, apiKeyHash: true },
+  });
+
+  const now = new Date();
+  const twoYearsAgo = new Date(now.getTime() - 24 * 30 * 86_400_000);
+
+  for (const account of accounts) {
+    const apiKey = decrypt(account.apiKeyHash);
+    const ga = createGetaroundClient(apiKey);
+
+    let windowEnd = new Date(now);
+    while (windowEnd > twoYearsAgo) {
+      const windowStart = new Date(Math.max(
+        windowEnd.getTime() - 30 * 86_400_000,
+        twoYearsAgo.getTime(),
+      ));
+      await syncPayoutsForWindow(db, ga, windowStart, windowEnd, tenantSlug);
+      windowEnd = new Date(windowStart);
+      await sleep(2_000);
+    }
+  }
+
+  console.log(`[RecalcPayouts][${tenantSlug}] Terminé`);
 }
 
 // ─── Gestion des comptes Getaround ──────────────────────────────────────────

@@ -1,4 +1,4 @@
-﻿import type { PrismaClient } from '../../generated/tenant';
+import type { PrismaClient } from '../../generated/tenant';
 import { decrypt, encrypt } from '../../utils/crypto';
 import { createGetaroundClient, type GetaroundRental } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
@@ -189,12 +189,12 @@ export async function syncAllAccounts(
     try {
       const vehicles = await syncAccountVehicles(db, account.id, tenantSlug);
       const rentals = await syncAccountRentals(db, account.id, undefined, undefined, tenantSlug);
-      updateSyncState(tenantSlug, { progress: 80, currentStep: 'Synchronisation des messages...' });
-      const messages = await syncAccountMessages(db, account.id, tenantSlug);
       updateSyncState(tenantSlug, { progress: 90, currentStep: 'Synchronisation des factures...' });
       void syncAccountInvoicesPayouts(db, account.id).catch(e =>
         console.error(`[Sync][${tenantSlug}] Erreur invoices/payouts:`, e)
       );
+      // syncAccountMessages couvre les locations actives/récentes non traitées par la fenêtre courante
+      const messages = await syncAccountMessages(db, account.id, tenantSlug);
       results.push({ vehicles, rentals, messages });
       console.log(`[Sync][${tenantSlug}] Compte ${account.id} : succès`);
     } catch (err: unknown) {
@@ -214,7 +214,7 @@ export async function syncAllAccounts(
   return results;
 }
 
-// ─── 2. Locations ───────────────────────────────────────────────────────────
+// ─── 2. Locations — fonctions privées ────────────────────────────────────────
 
 export interface RentalSyncResult {
   accountId: string;
@@ -222,6 +222,284 @@ export interface RentalSyncResult {
   updated: number;
   errors: string[];
 }
+
+type GetaroundClient = ReturnType<typeof createGetaroundClient>;
+
+// Traite une location : checkin + checkout + user + upsert + notifications
+async function processRental(
+  db: PrismaClient,
+  ga: GetaroundClient,
+  r: GetaroundRental,
+  result: RentalSyncResult,
+  tenantSlug: string,
+  userCache: Map<number, string>,
+): Promise<void> {
+  // Liaison au véhicule via car_id Getaround
+  const vehicle = await db.vehicle.findUnique({
+    where: { getaroundId: String(r.car_id) },
+    select: { id: true, currentMileage: true, make: true, model: true, licensePlate: true },
+  });
+  if (!vehicle) {
+    result.errors.push(`Location ${r.id}: véhicule ${r.car_id} non trouvé en base`);
+    return;
+  }
+
+  // Nom du conducteur via /users/{id}.json (mis en cache par user_id)
+  if (!userCache.has(r.user_id)) {
+    try {
+      const user = await ga.getUser(r.user_id);
+      await sleep(1000);
+      userCache.set(r.user_id, `${user.first_name} ${user.last_name}`);
+    } catch (err: unknown) {
+      console.error(`[Sync][${tenantSlug}] Erreur user ${r.user_id}:`, err);
+      userCache.set(r.user_id, `Conducteur ${r.user_id}`);
+    }
+  }
+  const driverName = userCache.get(r.user_id)!;
+
+  const status = inferStatus(r);
+  const grossRevenue = r.price / 100;
+
+  // Vérifier le statut existant pour ne pas écraser un 'cancelled' manuel
+  const existingRental = await db.rental.findUnique({
+    where: { getaroundId: String(r.id) },
+    select: { id: true, status: true, startMileage: true, endMileage: true, fuelLevelCheckin: true },
+  });
+  const prevStatus = existingRental?.status;
+  const newStatus = prevStatus === 'cancelled' ? 'cancelled' : status;
+
+  const commonData = {
+    vehicleId: vehicle.id,
+    driverName,
+    driverGetaroundId: String(r.user_id),
+    startAt: new Date(r.starts_at),
+    endAt: new Date(r.ends_at),
+    grossRevenue,
+  };
+
+  const upserted = await db.rental.upsert({
+    where: { getaroundId: String(r.id) },
+    create: { ...commonData, getaroundId: String(r.id), driverEmail: null, status },
+    update: { ...commonData, status: newStatus },
+    select: { id: true },
+  });
+
+  if (!existingRental) {
+    result.created++;
+    if (status === 'booked') {
+      void scheduleSequencesForRental(db, upserted.id, 'rental.booked').catch(console.error);
+      void (async () => {
+        try {
+          const chatId = await getTelegramChatId(db as never);
+          if (!chatId) return;
+          const vehicleLabel = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
+          const startLabel = new Date(r.starts_at).toLocaleDateString('fr-FR');
+          await sendTelegramMessage(chatId,
+            `🚗 <b>Nouvelle réservation</b>\n${driverName}\n${vehicleLabel}\nDépart : ${startLabel}`,
+          );
+        } catch (e) { console.error('[Telegram] Nouvelle réservation:', e); }
+      })();
+    }
+    void (async () => {
+      try {
+        const bl = await db.renterBlacklist.findUnique({ where: { driverGetaroundId: String(r.user_id) } });
+        if (!bl) return;
+        const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
+        await db.notification.createMany({
+          data: admins.map(a => ({
+            userId: a.id,
+            type: 'blacklisted_renter',
+            title: `⛔ Locataire blacklisté — ${driverName}`,
+            body: `Motif : ${bl.reason}`,
+            relatedEntityType: 'rental',
+            relatedEntityId: upserted.id,
+          })),
+          skipDuplicates: true,
+        });
+      } catch (e) { console.error('[BlacklistCheck]', e); }
+    })();
+  } else {
+    result.updated++;
+    if (prevStatus === 'booked' && newStatus === 'active') {
+      void scheduleSequencesForRental(db, upserted.id, 'rental.car_checked_in').catch(console.error);
+    } else if (prevStatus === 'active' && newStatus === 'completed') {
+      void scheduleSequencesForRental(db, upserted.id, 'rental.car_checked_out').catch(console.error);
+    }
+  }
+
+  // Checkin
+  if (newStatus !== 'booked' && existingRental?.startMileage == null) {
+    try {
+      const checkin = await ga.getCheckin(r.id);
+      await sleep(1000);
+      const checkinData: Record<string, unknown> = {};
+      if (checkin.mileage != null) checkinData.startMileage = Math.round(checkin.mileage);
+      if (checkin.fuel_level != null) checkinData.fuelLevelCheckin = checkin.fuel_level;
+      if (Object.keys(checkinData).length > 0) {
+        await db.rental.update({ where: { id: upserted.id }, data: checkinData });
+      }
+    } catch (err: unknown) { console.error(`[Sync][${tenantSlug}] Checkin ${r.id}:`, err); }
+  }
+
+  // Checkout
+  if (newStatus === 'completed' && existingRental?.endMileage == null) {
+    try {
+      const checkout = await ga.getCheckout(r.id);
+      await sleep(1000);
+      const checkoutData: Record<string, unknown> = {};
+      if (checkout.mileage != null) {
+        checkoutData.endMileage = Math.round(checkout.mileage);
+        const newOdometer = checkoutData.endMileage as number;
+        if (newOdometer > vehicle.currentMileage) {
+          await db.vehicle.update({ where: { id: vehicle.id }, data: { currentMileage: newOdometer } });
+        }
+      }
+      if (checkout.distance_driven != null) checkoutData.kmDriven = Math.round(checkout.distance_driven);
+      if (checkout.fuel_level != null) checkoutData.fuelLevelCheckout = checkout.fuel_level;
+      if (Object.keys(checkoutData).length > 0) {
+        await db.rental.update({ where: { id: upserted.id }, data: checkoutData });
+      }
+
+      // Alerte carburant insuffisant : niveau retour < 25%
+      const fuelIn = existingRental?.fuelLevelCheckin ?? null;
+      const fuelOut = checkout.fuel_level;
+      if (fuelOut != null && fuelOut < 0.25) {
+        const vehicleLabel = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
+        const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
+        await db.notification.createMany({
+          data: admins.map(a => ({
+            userId: a.id,
+            type: 'fuel_insufficient',
+            title: `⛽ Carburant insuffisant — ${driverName}`,
+            body: `${vehicleLabel} — Retour: ${Math.round(fuelOut * 100)}%${fuelIn != null ? ` / Départ: ${Math.round(fuelIn * 100)}%` : ''}`,
+            relatedEntityType: 'rental',
+            relatedEntityId: upserted.id,
+          })),
+          skipDuplicates: true,
+        });
+        void (async () => {
+          try {
+            const chatId = await getTelegramChatId(db as never);
+            if (!chatId) return;
+            await sendTelegramMessage(chatId,
+              `⛽ <b>Carburant insuffisant</b>\n${driverName} — ${vehicleLabel}\nRetour : ${Math.round(fuelOut * 100)}%${fuelIn != null ? ` (départ : ${Math.round(fuelIn * 100)}%)` : ''}`,
+            );
+          } catch (e) { console.error('[Telegram] Fuel:', e); }
+        })();
+      }
+    } catch (err: unknown) { console.error(`[Sync][${tenantSlug}] Checkout ${r.id}:`, err); }
+  }
+}
+
+// Sync les messages des locations dont startAt est dans la fenêtre
+async function syncMessagesForWindow(
+  db: PrismaClient,
+  ga: GetaroundClient,
+  accountId: string,
+  windowStart: Date,
+  windowEnd: Date,
+  tenantSlug: string,
+): Promise<void> {
+  const rentals = await db.rental.findMany({
+    where: {
+      vehicle: { getaroundAccountId: accountId },
+      startAt: { gte: windowStart, lte: windowEnd },
+    },
+    select: {
+      id: true,
+      getaroundId: true,
+      driverGetaroundId: true,
+      vehicleId: true,
+      driverName: true,
+      startAt: true,
+      vehicle: { select: { make: true, model: true, licensePlate: true } },
+    },
+  });
+
+  console.log(`[Sync][${tenantSlug}] Messages : ${rentals.length} location(s) dans la fenêtre`);
+
+  for (const rental of rentals) {
+    if (!rental.getaroundId) continue;
+    const gaRentalId = parseInt(rental.getaroundId, 10);
+
+    try {
+      const messages = await ga.getMessages(gaRentalId);
+
+      for (const msg of messages) {
+        try {
+          const existing = await db.message.findUnique({
+            where: { getaroundId: String(msg.id) },
+            select: { id: true },
+          });
+          if (existing) continue;
+
+          const direction =
+            rental.driverGetaroundId && String(msg.sending_user_id) === rental.driverGetaroundId
+              ? ('inbound' as const)
+              : ('outbound' as const);
+
+          await db.message.create({
+            data: {
+              getaroundId: String(msg.id),
+              rentalId: rental.id,
+              direction,
+              content: msg.content,
+              sentAt: new Date(msg.sent_at),
+              status: 'sent',
+            },
+          });
+
+          if (direction === 'inbound') {
+            void (async () => {
+              try {
+                const analysis = await analyzeMessage(msg.content);
+                if (!analysis.isCarSeatRequest) return;
+                const existingReq = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
+                if (existingReq) return;
+                await db.carSeatRequest.create({
+                  data: { vehicleId: rental.vehicleId, rentalId: rental.id },
+                });
+                const vehicleLabel = `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`;
+                const startLabel = rental.startAt.toLocaleDateString('fr-FR');
+                const [admins, carkeepersAssigned] = await Promise.all([
+                  db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+                  db.vehicleCarkeeper.findMany({ where: { vehicleId: rental.vehicleId }, select: { userId: true } }),
+                ]);
+                const recipientIds = [...new Set([...admins.map(a => a.id), ...carkeepersAssigned.map(c => c.userId)])];
+                await db.notification.createMany({
+                  data: recipientIds.map(userId => ({
+                    userId,
+                    type: 'car_seat_request',
+                    title: `🪑 Siège auto demandé par ${rental.driverName} pour ${vehicleLabel} le ${startLabel}`,
+                    body: `Message : ${msg.content.slice(0, 120)}`,
+                    relatedEntityType: 'rental',
+                    relatedEntityId: rental.id,
+                  })),
+                  skipDuplicates: true,
+                });
+                void (async () => {
+                  try {
+                    const chatId = await getTelegramChatId(db as never);
+                    if (!chatId) return;
+                    await sendTelegramMessage(chatId,
+                      `🪑 <b>Siège auto demandé</b>\n${rental.driverName} — ${vehicleLabel}\nDépart le ${startLabel}`,
+                    );
+                  } catch (e) { console.error('[Telegram] Siège auto:', e); }
+                })();
+              } catch (e) { console.error('[CarSeatDetect]', e); }
+            })();
+          }
+        } catch { /* ignorer erreurs message individuel */ }
+      }
+    } catch (err: unknown) {
+      console.error(`[Sync][${tenantSlug}] Erreur messages rental ${rental.getaroundId}:`, err);
+    }
+
+    await sleep(500);
+  }
+}
+
+// ─── 2. Locations — sync mois par mois ──────────────────────────────────────
 
 export async function syncAccountRentals(
   db: PrismaClient,
@@ -234,19 +512,10 @@ export async function syncAccountRentals(
   if (!account) throw Object.assign(new Error('Compte Getaround introuvable'), { status: 404 });
 
   const result: RentalSyncResult = { accountId, created: 0, updated: 0, errors: [] };
-
   const apiKey = decrypt(account.apiKeyHash);
   const ga = createGetaroundClient(apiKey);
 
-  // Recharger lastSyncAt depuis la DB au moment du calcul — évite les valeurs
-  // stale du pool de connexions quand force-full a remis lastSyncAt à NULL juste avant.
-  const freshAccount = await db.getaroundAccount.findUnique({
-    where: { id: accountId },
-    select: { lastSyncAt: true },
-  });
-  console.log(`[Sync][${tenantSlug}] lastSyncAt frais depuis DB :`, freshAccount?.lastSyncAt);
-
-  // Récupérer le plan tenant + statut trial depuis la DB master
+  // Récupérer plan + trial depuis la DB master
   let tenantPlan = 'starter';
   let trialActive = false;
   if (tenantSlug !== 'default') {
@@ -255,287 +524,138 @@ export async function syncAccountRentals(
       const company = await masterDb.company.findFirst({ where: { slug: tenantSlug } });
       tenantPlan = company?.plan ?? 'starter';
       trialActive = company?.trialEndsAt != null && company.trialEndsAt > new Date() && !company.stripeSubscriptionId;
-    } catch (e) { console.error(`[Sync][${tenantSlug}] Erreur vérification plan/trial:`, e); }
+    } catch (e) { console.error(`[Sync][${tenantSlug}] Erreur plan/trial:`, e); }
   }
 
-  const absoluteStart = getMaxHistoryStart(tenantPlan, account.accountStartDate ?? null);
-
-  const rawLastSync = freshAccount?.lastSyncAt ?? null;
-  let startDate: Date = from ?? (
-    rawLastSync === null
-      ? absoluteStart
-      : new Date(Math.max(
-          rawLastSync.getTime() - 2 * 60 * 60 * 1000,
-          absoluteStart.getTime()
-        ))
-  );
+  let absoluteStart = getMaxHistoryStart(tenantPlan, account.accountStartDate ?? null);
 
   if (trialActive) {
     const trialLimit = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    startDate = new Date(Math.max(startDate.getTime(), trialLimit.getTime()));
+    if (trialLimit > absoluteStart) absoluteStart = trialLimit;
     console.log(`[Sync][${tenantSlug}] Mode trial — sync limitée aux 90 derniers jours`);
     updateSyncState(tenantSlug, { isTrialLimited: true });
   }
 
-  console.log(`[Sync][${tenantSlug}] Date de début calculée :`, startDate.toISOString());
+  // Sync manuelle avec fenêtre explicite (route /sync-rentals/:id?from=&to=)
+  if (from !== undefined || to !== undefined) {
+    const windowStart = from ?? absoluteStart;
+    const windowEnd = to ?? new Date(Date.now() + 90 * 86_400_000);
+    console.log(`[Sync][${tenantSlug}] Sync manuelle : ${windowStart.toISOString().slice(0, 10)} → ${windowEnd.toISOString().slice(0, 10)}`);
+    const windowRentals = await ga.getRentals(windowStart, windowEnd);
+    const userCache = new Map<number, string>();
+    for (let i = 0; i < windowRentals.length; i++) {
+      await processRental(db, ga, windowRentals[i], result, tenantSlug, userCache);
+      console.log(`[Sync][${tenantSlug}] ${i + 1}/${windowRentals.length} Location sauvegardée: ${windowRentals[i].id}`);
+      await sleep(2_000);
+    }
+    return result;
+  }
 
-  // end_date ne doit jamais être dans le futur — l'API Getaround retourne 422 sinon
-  // On inclut 3 mois dans le futur pour récupérer les réservations à venir
-  const endDate = to ?? new Date(Date.now() + 90 * 86_400_000);
+  // ── Sync automatique mois par mois (du plus récent au plus ancien) ──────────
+  //
+  // Premier appel (lastSyncAt=null) : windowEnd = now+90j pour capturer les
+  // réservations futures. Chaque fenêtre traitée met lastSyncAt à windowStart
+  // (= début de la fenêtre), permettant de reprendre là où on s'est arrêté.
 
-  updateSyncState(tenantSlug, { progress: 15, currentStep: 'Récupération des locations...' });
+  let windowEnd = account.lastSyncAt
+    ? new Date(account.lastSyncAt)
+    : new Date(Date.now() + 90 * 86_400_000);
 
-  let rentals: Awaited<ReturnType<typeof ga.getRentals>> = [];
-  let rentalsApiSucceeded = false;
-  try {
-    rentals = await ga.getRentals(startDate, endDate);
-    rentalsApiSucceeded = true;
-    console.log(`[Sync][${tenantSlug}] getRentals OK — ${rentals.length} location(s) collectée(s)`);
-  } catch (err: unknown) {
-    const httpStatus = (err as { response?: { status?: number } }).response?.status;
-    const errMsg = err instanceof Error ? err.message : `HTTP ${httpStatus ?? 'inconnu'}`;
-    console.error(`[Sync][${tenantSlug}] getRentals échoué (HTTP ${httpStatus ?? 'inconnu'}) — lastSyncAt ne sera PAS mis à jour`);
-    // Mettre à jour syncStatus + notifier les admins du tenant
+  let windowStart = new Date(Math.max(
+    windowEnd.getTime() - 30 * 86_400_000,
+    absoluteStart.getTime(),
+  ));
+
+  const userCache = new Map<number, string>();
+
+  console.log(`[Sync][${tenantSlug}] ═══ DÉBUT SYNC ═══`);
+  console.log(`[Sync][${tenantSlug}] Plan: ${tenantPlan} | absoluteStart: ${absoluteStart.toISOString().slice(0, 10)}`);
+  updateSyncState(tenantSlug, { isRunning: true, progress: 10, currentStep: 'Démarrage sync...', error: null });
+
+  let windowIndex = 0;
+
+  while (windowEnd > absoluteStart) {
+    windowIndex++;
+    const winLabel = `${windowStart.toISOString().slice(0, 10)} → ${windowEnd.toISOString().slice(0, 10)}`;
+    console.log(`[Sync][${tenantSlug}] Fenêtre ${windowIndex} : ${winLabel}`);
+    updateSyncState(tenantSlug, {
+      currentStep: `Fenêtre ${windowStart.toISOString().slice(0, 7)} : chargement...`,
+      progress: 15,
+    });
+
     try {
+      // 1. Locations de la fenêtre
+      const windowRentals = await ga.getRentals(windowStart, windowEnd);
+      console.log(`[Sync][${tenantSlug}] ${windowRentals.length} location(s) récupérée(s)`);
+      updateSyncState(tenantSlug, { totalItems: windowRentals.length, processedItems: 0 });
+
+      // 2. Traiter chaque location séquentiellement
+      for (let i = 0; i < windowRentals.length; i++) {
+        const r = windowRentals[i];
+        await processRental(db, ga, r, result, tenantSlug, userCache);
+        console.log(`[Sync][${tenantSlug}] ${i + 1}/${windowRentals.length} Location sauvegardée: ${r.id}`);
+        updateSyncState(tenantSlug, {
+          processedItems: i + 1,
+          currentStep: `Fenêtre ${windowStart.toISOString().slice(0, 7)} : ${i + 1}/${windowRentals.length} locations`,
+          progress: Math.round(15 + ((i + 1) / Math.max(windowRentals.length, 1)) * 65),
+        });
+        await sleep(2_000);
+      }
+
+      // 3. Messages de la fenêtre
+      updateSyncState(tenantSlug, {
+        currentStep: `Fenêtre ${windowStart.toISOString().slice(0, 7)} : messages...`,
+      });
+      await syncMessagesForWindow(db, ga, accountId, windowStart, windowEnd, tenantSlug);
+
+      // 4. Mettre à jour lastSyncAt avec le début de cette fenêtre
       await db.getaroundAccount.update({
         where: { id: accountId },
-        data: { syncStatus: 'error', syncError: errMsg },
+        data: { lastSyncAt: windowStart, syncStatus: 'success', syncError: null },
       });
-      const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
-      if (admins.length > 0) {
-        await db.notification.createMany({
-          data: admins.map(a => ({
-            userId: a.id,
-            type: 'sync_error',
-            title: '⚠️ Erreur de synchronisation Getaround',
-            body: `${errMsg}. Vérifiez votre clé API.`,
-            relatedEntityType: 'getaround_account',
-            relatedEntityId: accountId,
-          })),
-          skipDuplicates: true,
-        });
-      }
-    } catch (notifyErr) {
-      console.error(`[Sync][${tenantSlug}] Erreur notification sync_error:`, notifyErr);
-    }
-  }
-  updateSyncState(tenantSlug, { totalItems: rentals.length, processedItems: 0 });
+      console.log(`[Sync][${tenantSlug}] Fenêtre terminée ✓ (${windowRentals.length}/${windowRentals.length})`);
+      console.log(`[Sync][${tenantSlug}] lastSyncAt → ${windowStart.toISOString().slice(0, 10)}`);
 
-  // Cache conducteurs : évite un appel API par location pour le même conducteur
-  const userCache = new Map<number, string>();
-  let processedItems = 0;
-  let syncCompleted = true;
-
-  for (const r of rentals) {
-    try {
-      // Liaison au véhicule via car_id Getaround
-      const vehicle = await db.vehicle.findUnique({
-        where: { getaroundId: String(r.car_id) },
-        select: { id: true, currentMileage: true, make: true, model: true, licensePlate: true },
-      });
-
-      if (!vehicle) {
-        result.errors.push(`Location ${r.id}: véhicule ${r.car_id} non trouvé en base`);
-        continue;
-      }
-
-      // Nom du conducteur via /users/{id}.json (mis en cache par user_id)
-      if (!userCache.has(r.user_id)) {
-        try {
-          const user = await ga.getUser(r.user_id);
-          await sleep(1000);
-          userCache.set(r.user_id, `${user.first_name} ${user.last_name}`);
-        } catch (err: unknown) {
-          console.error(`[Sync User] user_id=${r.user_id}`, err);
-          userCache.set(r.user_id, `Conducteur ${r.user_id}`);
-        }
-      }
-      const driverName = userCache.get(r.user_id)!;
-
-      // Status inféré depuis les dates (l'API ne retourne pas de champ state)
-      const status = inferStatus(r);
-      // price est en centimes → convertir en euros
-      const grossRevenue = r.price / 100;
-
-      // Vérifier le statut existant pour ne pas écraser un 'cancelled' manuel
-      // startMileage/endMileage : pour éviter des appels checkin/checkout redondants
-      const existingRental = await db.rental.findUnique({
-        where: { getaroundId: String(r.id) },
-        select: { id: true, status: true, startMileage: true, endMileage: true, fuelLevelCheckin: true },
-      });
-      const prevStatus = existingRental?.status;
-      const newStatus = prevStatus === 'cancelled' ? 'cancelled' : status;
-
-      const commonData = {
-        vehicleId: vehicle.id,
-        driverName,
-        driverGetaroundId: String(r.user_id),
-        startAt: new Date(r.starts_at),
-        endAt: new Date(r.ends_at),
-        grossRevenue,
-      };
-
-      const upserted = await db.rental.upsert({
-        where: { getaroundId: String(r.id) },
-        create: {
-          ...commonData,
-          getaroundId: String(r.id),
-          driverEmail: null,
-          status,
-        },
-        update: {
-          ...commonData,
-          status: newStatus,
-        },
-        select: { id: true },
-      });
-
-      console.log(`[Sync][${tenantSlug}] Location sauvegardée:`, r.id);
-      if (!existingRental) {
-        result.created++;
-        if (status === 'booked') {
-          void scheduleSequencesForRental(db, upserted.id, 'rental.booked').catch(console.error);
-          // Telegram — nouvelle réservation
-          void (async () => {
-            try {
-              const chatId = await getTelegramChatId(db as never);
-              if (!chatId) return;
-              const vehicleLabel = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
-              const startLabel = new Date(r.starts_at).toLocaleDateString('fr-FR');
-              await sendTelegramMessage(chatId,
-                `🚗 <b>Nouvelle réservation</b>\n${driverName}\n${vehicleLabel}\nDépart : ${startLabel}`,
-              );
-            } catch (e) { console.error('[Telegram] Nouvelle réservation:', e); }
-          })();
-        }
-        // Alerte si le locataire est blacklisté
-        void (async () => {
-          try {
-            const bl = await db.renterBlacklist.findUnique({ where: { driverGetaroundId: String(r.user_id) } });
-            if (!bl) return;
-            const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
-            await db.notification.createMany({
-              data: admins.map(a => ({
-                userId: a.id,
-                type: 'blacklisted_renter',
-                title: `⛔ Locataire blacklisté — ${driverName}`,
-                body: `Motif : ${bl.reason}`,
-                relatedEntityType: 'rental',
-                relatedEntityId: upserted.id,
-              })),
-              skipDuplicates: true,
-            });
-          } catch (e) { console.error('[BlacklistCheck]', e); }
-        })();
-      } else {
-        result.updated++;
-        if (prevStatus === 'booked' && newStatus === 'active') {
-          void scheduleSequencesForRental(db, upserted.id, 'rental.car_checked_in').catch(console.error);
-        } else if (prevStatus === 'active' && newStatus === 'completed') {
-          void scheduleSequencesForRental(db, upserted.id, 'rental.car_checked_out').catch(console.error);
-        }
-      }
-
-      // Kilométrage + carburant depuis checkin/checkout
-      if (newStatus !== 'booked' && existingRental?.startMileage == null) {
-        try {
-          const checkin = await ga.getCheckin(r.id);
-          await sleep(1000);
-          const checkinData: Record<string, unknown> = {};
-          // API Getaround retourne le kilométrage en km directement
-          if (checkin.mileage != null) checkinData.startMileage = Math.round(checkin.mileage);
-          if (checkin.fuel_level != null) checkinData.fuelLevelCheckin = checkin.fuel_level;
-          if (Object.keys(checkinData).length > 0) {
-            await db.rental.update({ where: { id: upserted.id }, data: checkinData });
-          }
-        } catch (err: unknown) { console.error(`[Sync Checkin] rental=${r.id}`, err); }
-      }
-
-      if (newStatus === 'completed' && existingRental?.endMileage == null) {
-        try {
-          const checkout = await ga.getCheckout(r.id);
-          await sleep(1000);
-          const checkoutData: Record<string, unknown> = {};
-          if (checkout.mileage != null) {
-            checkoutData.endMileage = Math.round(checkout.mileage); // API Getaround retourne le kilométrage en km directement
-            const newOdometer = checkoutData.endMileage as number;
-            if (newOdometer > vehicle.currentMileage) {
-              await db.vehicle.update({ where: { id: vehicle.id }, data: { currentMileage: newOdometer } });
-            }
-          }
-          if (checkout.distance_driven != null) checkoutData.kmDriven = Math.round(checkout.distance_driven); // API Getaround retourne le kilométrage en km directement
-          if (checkout.fuel_level != null) checkoutData.fuelLevelCheckout = checkout.fuel_level;
-          if (Object.keys(checkoutData).length > 0) {
-            await db.rental.update({ where: { id: upserted.id }, data: checkoutData });
-          }
-
-          // Alerte carburant insuffisant : niveau retour < 25% (fuel_level est un décimal 0-1)
-          const fuelIn = existingRental?.fuelLevelCheckin ?? null;
-          const fuelOut = checkout.fuel_level;
-          if (fuelOut != null && fuelOut < 0.25) {
-            const vehicleLabel = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
-            const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
-            await db.notification.createMany({
-              data: admins.map(a => ({
-                userId: a.id,
-                type: 'fuel_insufficient',
-                title: `⛽ Carburant insuffisant — ${driverName}`,
-                body: `${vehicleLabel} — Retour: ${Math.round(fuelOut * 100)}%${fuelIn != null ? ` / Départ: ${Math.round(fuelIn * 100)}%` : ''}`,
-                relatedEntityType: 'rental',
-                relatedEntityId: upserted.id,
-              })),
-              skipDuplicates: true,
-            });
-            void (async () => {
-              try {
-                const chatId = await getTelegramChatId(db as never);
-                if (!chatId) return;
-                await sendTelegramMessage(chatId,
-                  `⛽ <b>Carburant insuffisant</b>\n${driverName} — ${vehicleLabel}\nRetour : ${Math.round(fuelOut * 100)}%${fuelIn != null ? ` (départ : ${Math.round(fuelIn * 100)}%)` : ''}`,
-                );
-              } catch (e) { console.error('[Telegram] Fuel:', e); }
-            })();
-          }
-        } catch (err: unknown) { console.error(`[Sync Checkout] rental=${r.id}`, err); }
-      }
     } catch (err: unknown) {
-      result.errors.push(`Location ${r.id}: ${err instanceof Error ? err.message : 'erreur'}`);
-      const httpStatus = (err as { response?: { status?: number } }).response?.status;
+      const message = err instanceof Error ? err.message : String(err);
       const isRateLimitMax = err instanceof Error && err.message.includes('[RateLimit] Max');
-      if (httpStatus === 429 || isRateLimitMax) {
-        syncCompleted = false;
+      console.error(`[Sync][${tenantSlug}] Erreur fenêtre ${winLabel} : ${message}`);
+      if (isRateLimitMax) {
         console.log(`[RateLimit][${tenantSlug}] Pause globale 60s`);
         await sleep(60_000);
       }
+      try {
+        await db.getaroundAccount.update({
+          where: { id: accountId },
+          data: { syncStatus: 'error', syncError: message },
+        });
+      } catch { /* ignore */ }
+      // On reprendra depuis lastSyncAt au prochain cron
+      break;
     }
-    processedItems++;
-    if (processedItems % 50 === 0 && rentals.length > 0) {
-      console.log(`[Sync][${tenantSlug}] ${processedItems}/${rentals.length} locations (${Math.round(processedItems / rentals.length * 100)}%)`);
-    }
-    updateSyncState(tenantSlug, {
-      processedItems,
-      progress: Math.round(15 + (processedItems / Math.max(rentals.length, 1)) * 65),
-    });
-    await sleep(2_000);
+
+    // Fenêtre précédente
+    windowEnd = new Date(windowStart);
+    windowStart = new Date(Math.max(
+      windowEnd.getTime() - 30 * 86_400_000,
+      absoluteStart.getTime(),
+    ));
+
+    await sleep(3_000);
   }
 
-  const shouldUpdateLastSyncAt = syncCompleted && rentalsApiSucceeded && rentals.length > 0;
-
-  if (shouldUpdateLastSyncAt) {
-    await db.getaroundAccount.update({
-      where: { id: accountId },
-      data: { lastSyncAt: new Date() },
-    });
-    console.log(`[Sync][${tenantSlug}] lastSyncAt mis à jour — API OK, créées: ${result.created}, mises à jour: ${result.updated}`);
-  } else {
-    console.warn(`[Sync][${tenantSlug}] lastSyncAt NON mis à jour —`,
-      !rentalsApiSucceeded ? 'échec getRentals' : !syncCompleted ? 'rate limit 429 non récupéré' : '0 résultat');
-  }
+  console.log(`[Sync][${tenantSlug}] ═══ FIN SYNC ═══`);
+  updateSyncState(tenantSlug, {
+    isRunning: false,
+    progress: 100,
+    currentStep: 'Terminé',
+    lastSyncResult: { created: result.created, updated: result.updated },
+  });
 
   return result;
 }
 
-// ─── 3. Messages ────────────────────────────────────────────────────────────
+// ─── 3. Messages (endpoint manuel) ──────────────────────────────────────────
 
 export interface MessageSyncResult {
   accountId: string;

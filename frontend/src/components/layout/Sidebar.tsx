@@ -106,6 +106,7 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
     queryKey: ['onboarding-progress'],
     queryFn: () => api.get<{ progressPercent: number; allDone: boolean; dismissed: boolean; completedCount: number; totalCount: number }>('/onboarding/progress').then(r => r.data),
     staleTime: 60_000,
+    enabled: !!user,
   });
   const showOnboarding = onboarding && !onboarding.dismissed && !onboarding.allDone;
 
@@ -114,7 +115,7 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
     queryFn: () => api.get<{ state: { isRunning: boolean; error: string | null; progress: number }; plan: string }>('/sync/status').then(r => r.data),
     refetchInterval: 5_000,
     staleTime: 4_000,
-    enabled: user?.role !== 'carkeeper',
+    enabled: !!user && user.role !== 'carkeeper',
   });
   const syncStatus = syncData?.state;
   const isStarterPlan = !syncData || syncData.plan === 'starter';

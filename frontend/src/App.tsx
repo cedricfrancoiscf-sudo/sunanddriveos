@@ -89,9 +89,11 @@ function ProtectedLayout(): React.JSX.Element {
 export default function App(): React.JSX.Element {
   useEffect(() => {
     // Applique le thème depuis les settings du tenant au démarrage
+    const token = localStorage.getItem('auth_token');
+    if (!token) return;
     const apiBase = (import.meta as { env: Record<string, string> }).env.VITE_API_URL ?? '/api/v1';
     fetch(`${apiBase}/settings`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+      headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.ok ? r.json() : null)
       .then((data: { settings?: { primaryColor?: string | null; secondaryColor?: string | null; fontFamily?: string | null } } | null) => {

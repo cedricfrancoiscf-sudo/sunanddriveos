@@ -343,7 +343,7 @@ export async function syncAccountRentals(
       if (!userCache.has(r.user_id)) {
         try {
           const user = await ga.getUser(r.user_id);
-          await sleep(300);
+          await sleep(1000);
           userCache.set(r.user_id, `${user.first_name} ${user.last_name}`);
         } catch (err: unknown) {
           console.error(`[Sync User] user_id=${r.user_id}`, err);
@@ -440,7 +440,7 @@ export async function syncAccountRentals(
       if (newStatus !== 'booked' && existingRental?.startMileage == null) {
         try {
           const checkin = await ga.getCheckin(r.id);
-          await sleep(300);
+          await sleep(1000);
           const checkinData: Record<string, unknown> = {};
           // API Getaround retourne le kilométrage en km directement
           if (checkin.mileage != null) checkinData.startMileage = Math.round(checkin.mileage);
@@ -454,7 +454,7 @@ export async function syncAccountRentals(
       if (newStatus === 'completed' && existingRental?.endMileage == null) {
         try {
           const checkout = await ga.getCheckout(r.id);
-          await sleep(300);
+          await sleep(1000);
           const checkoutData: Record<string, unknown> = {};
           if (checkout.mileage != null) {
             checkoutData.endMileage = Math.round(checkout.mileage); // API Getaround retourne le kilométrage en km directement
@@ -501,7 +501,12 @@ export async function syncAccountRentals(
     } catch (err: unknown) {
       result.errors.push(`Location ${r.id}: ${err instanceof Error ? err.message : 'erreur'}`);
       const httpStatus = (err as { response?: { status?: number } }).response?.status;
-      if (httpStatus === 429) syncCompleted = false;
+      const isRateLimitMax = err instanceof Error && err.message.includes('[RateLimit] Max');
+      if (httpStatus === 429 || isRateLimitMax) {
+        syncCompleted = false;
+        console.log(`[RateLimit][${tenantSlug}] Pause globale 60s`);
+        await sleep(60_000);
+      }
     }
     processedItems++;
     if (processedItems % 50 === 0 && rentals.length > 0) {
@@ -511,7 +516,7 @@ export async function syncAccountRentals(
       processedItems,
       progress: Math.round(15 + (processedItems / Math.max(rentals.length, 1)) * 65),
     });
-    await sleep(500);
+    await sleep(2_000);
   }
 
   const shouldUpdateLastSyncAt = syncCompleted && rentalsApiSucceeded && rentals.length > 0;

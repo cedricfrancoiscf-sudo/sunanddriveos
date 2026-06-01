@@ -5,14 +5,18 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export interface MessageAnalysis {
   isCarSeatRequest: boolean;
+  isAccessoryRequest: boolean;
   isIncidentReport: boolean;
   isDissatisfaction: boolean;
   isUrgent: boolean;
-  isAccessoryRequest: boolean;
   needsHumanReply: boolean;
-  detectedAccessory: string | null;
-  intent: string;        // résumé court de l'intention
+  intent: string;
   sentiment: 'positive' | 'neutral' | 'negative';
+  detectedAccessory?: string;
+  childInfo?: {
+    ageMonths?: number;
+    weightKg?: number;
+  };
 }
 
 export interface RentalContext {
@@ -44,14 +48,15 @@ export async function analyzeMessage(content: string): Promise<MessageAnalysis> 
         role: 'user',
         content: `Analyse ce message d'un locataire et retourne un JSON avec ces champs :
 - isCarSeatRequest (boolean) : le locataire demande un siège auto enfant
+- isAccessoryRequest (boolean) : demande d'accessoire (GPS, rehausseur, chaînes neige, câble recharge, etc.)
 - isIncidentReport (boolean) : signalement de sinistre, accident, dommage, vol
 - isDissatisfaction (boolean) : insatisfaction, plainte, mécontentement
 - isUrgent (boolean) : situation urgente nécessitant réponse immédiate
-- isAccessoryRequest (boolean) : demande d'accessoire (GPS, câble, siège vélo, etc.)
-- needsHumanReply (boolean) : question complexe, litige, situation ambiguë nécessitant un humain
-- detectedAccessory (string | null) : nom de l'accessoire demandé, null si aucun
+- needsHumanReply (boolean) : true si problème mécanique, accident, litige, remboursement, situation nécessitant une décision humaine
 - intent (string, max 80 chars) : résumé court de l'intention en français
 - sentiment ("positive" | "neutral" | "negative")
+- detectedAccessory (string, optionnel) : nom exact de l'accessoire demandé (ex: "GPS", "rehausseur", "chaînes neige") — omis si aucun
+- childInfo (object, optionnel) : si isCarSeatRequest, extraire ageMonths (âge en mois) et/ou weightKg (poids en kg) si mentionnés — omis si non mentionnés
 
 Message : "${content}"`,
       },
@@ -64,12 +69,11 @@ Message : "${content}"`,
   } catch {
     return {
       isCarSeatRequest: false,
+      isAccessoryRequest: false,
       isIncidentReport: false,
       isDissatisfaction: false,
       isUrgent: false,
-      isAccessoryRequest: false,
       needsHumanReply: false,
-      detectedAccessory: null,
       intent: 'Analyse indisponible',
       sentiment: 'neutral',
     };

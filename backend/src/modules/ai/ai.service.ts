@@ -21,6 +21,8 @@ export interface RentalContext {
   fuelType?: string;
   licensePlate: string;
   parkingZone?: string;
+  pickupInstructions?: string;
+  returnInstructions?: string;
   startDate: string;
   endDate: string;
   companyName?: string;
@@ -384,11 +386,12 @@ export async function suggestReply(
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    system: `Tu t'appelles ${aiName} et tu es un assistant pour Sun and Drive, service de location de voitures partagées.
-Tu rédiges des réponses professionnelles, chaleureuses et concises en français.
-Utilise le ${tone} avec le locataire. Signe tes messages avec ton prénom "${aiName}".
-Ne jamais suggérer de modifier les prix. Getaround gère la tarification automatiquement.
-Réponds directement avec le texte du message, sans introduction ni explication.`,
+    system: `Tu es ${context.aiName ?? 'un assistant'} pour ${context.companyName ?? 'Sun and Drive'}.
+RÈGLES ABSOLUES :
+- Tu ne réponds QUE sur les informations fournies dans ce contexte
+- Si tu ne sais pas → réponds UNIQUEMENT "Je transmets votre question à notre équipe qui vous contactera très rapidement."
+- Ne jamais inventer une adresse, un code, une procédure, un délai
+- Ne jamais dire "je vais vérifier"`,
     messages: [
       {
         role: 'user',
@@ -399,6 +402,8 @@ Contexte de la location :
 - Véhicule : ${context.vehicleMake} ${context.vehicleModel}${context.vehicleYear ? ` ${context.vehicleYear}` : ''}${context.vehicleColor ? ` (${context.vehicleColor})` : ''} — ${context.licensePlate}
 ${context.fuelType ? `- Carburant : ${context.fuelType}` : ''}${context.parkingZone ? `\n- Zone : ${context.parkingZone}` : ''}
 - Du ${context.startDate} au ${context.endDate}
+${context.pickupInstructions ? `INSTRUCTIONS DE DÉPART :\n${context.pickupInstructions}` : "INSTRUCTIONS DE DÉPART : Non renseignées — si question sur récupération → transférer à l'équipe"}
+${context.returnInstructions ? `INSTRUCTIONS DE RETOUR :\n${context.returnInstructions}` : "INSTRUCTIONS DE RETOUR : Non renseignées — si question sur restitution → transférer à l'équipe"}
 ${historyBlock}
 
 Réponds en te présentant comme ${context.aiName ?? "l'équipe"} de ${context.companyName ?? 'Sun and Drive'}.

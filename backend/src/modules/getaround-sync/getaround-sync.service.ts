@@ -128,7 +128,7 @@ export async function syncAccountVehicles(
           select: { id: true },
         });
 
-        await db.vehicle.upsert({
+        const upserted = await db.vehicle.upsert({
           where: { getaroundId: String(car.id) },
           create: {
             ...commonData,
@@ -140,7 +140,11 @@ export async function syncAccountVehicles(
             ...commonData,
             ...(car.plate_number ? { licensePlate: car.plate_number.toUpperCase() } : {}),
           },
+          select: { id: true },
         });
+
+        const healthScore = await calculateHealthScore(db, upserted.id);
+        await db.vehicle.update({ where: { id: upserted.id }, data: { healthScore } });
 
         if (existingVehicle) result.updated++;
         else result.created++;
@@ -1288,6 +1292,43 @@ export async function recalculateHistoricalPayouts(db: PrismaClient, tenantSlug 
   }
 
   console.log(`[RecalcPayouts][${tenantSlug}] Terminé`);
+}
+
+// ─── Score santé véhicule ────────────────────────────────────────────────────
+
+export async function calculateHealthScore(
+  db: PrismaClient,
+  vehicleId: string,
+): Promise<number> {
+  const vehicle = await db.vehicle.findUnique({
+    where: { id: vehicleId },
+    select: { currentMileage: true, year: true },
+  });
+  if (!vehicle) return 100;
+
+  const now = new Date();
+  const twelveMonthsAgo = new Date(Date.now() - 365 * 86_400_000);
+
+  const [incidents, maintenances, ct] = await Promise.all([
+    db.incident.count({ where: { vehicleId, createdAt: { gte: twelveMonthsAgo } } }),
+    db.maintenance.count({ where: { vehicleId, nextServiceDate: { not: null, lte: now } } }),
+    db.technicalControl.findFirst({
+      where: { vehicleId }, orderBy: { expiryAt: 'desc' }, select: { expiryAt: true },
+    }),
+  ]);
+
+  const km = vehicle.currentMileage ?? 0;
+  const kmScore = km < 50_000 ? 25 : km < 100_000 ? 20 : km < 150_000 ? 12 : km < 200_000 ? 5 : 0;
+
+  const age = now.getFullYear() - (vehicle.year ?? now.getFullYear());
+  const ageScore = age < 2 ? 25 : age < 4 ? 20 : age < 6 ? 12 : age < 8 ? 5 : 0;
+
+  const incidentScore = incidents === 0 ? 25 : incidents === 1 ? 18 : incidents === 2 ? 10 : 0;
+
+  let maintenanceScore = maintenances === 0 ? 25 : maintenances === 1 ? 15 : 0;
+  if (ct?.expiryAt && ct.expiryAt < now) maintenanceScore = Math.max(0, maintenanceScore - 10);
+
+  return Math.max(0, Math.min(100, kmScore + ageScore + incidentScore + maintenanceScore));
 }
 
 // ─── Gestion des comptes Getaround ──────────────────────────────────────────

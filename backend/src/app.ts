@@ -69,6 +69,7 @@ import getaroundWebhooksRoutes from './modules/getaround-sync/getaround-webhooks
 import syncStatusRoutes from './modules/getaround-sync/sync-status.routes';
 import tenantEventsRoutes from './modules/tenant-events/tenant-events.routes';
 import feedbackRoutes from './modules/feedback/feedback.routes';
+import intelligenceRoutes from './modules/intelligence/intelligence.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -127,6 +128,7 @@ export function createApp(): Express {
   app.use('/api/v1/ai', requirePlan('pro'));
   app.use('/api/v1/exports', requirePlan('pro'));
   app.use('/api/v1/vehicle-checks', requirePlan('pro'));
+  app.use('/api/v1/intelligence', requirePlan('pro'));
 
   // Routes auth — login, me, superadmin
   app.use('/api/v1/auth', authRoutes);
@@ -163,6 +165,7 @@ export function createApp(): Express {
   app.use('/api/v1/tenant-events', tenantEventsRoutes);
   app.use('/api/v1/feedback', feedbackRoutes);
   app.use('/api/v1/sync', syncStatusRoutes);
+  app.use('/api/v1/intelligence', intelligenceRoutes);
   // Route publique iCal — pas de JWT, compatible abonnement calendriers
   app.use('/ical', icalRoutes);
 

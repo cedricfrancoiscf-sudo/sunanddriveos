@@ -1024,7 +1024,9 @@ export async function syncPayoutsForWindow(
   const result = { updated: 0, errors: 0 };
 
   try {
+    console.log('[Payouts] URL appelée avec start:', windowStart.toISOString(), 'end:', windowEnd.toISOString());
     const payouts = await ga.getPayouts(windowStart, windowEnd);
+    console.log('[Payouts] Résultat:', JSON.stringify(payouts));
     console.log(`[Sync][${tenantSlug}] Payouts : ${payouts.length} payout(s)`);
 
     for (const p of payouts) {
@@ -1114,6 +1116,7 @@ export async function syncPayoutsForWindow(
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.error('[Payouts] ERREUR PRINCIPALE:', err);
     console.error(`[Sync][${tenantSlug}] Erreur sync payouts: ${msg}`);
   }
 
@@ -1122,10 +1125,12 @@ export async function syncPayoutsForWindow(
 }
 
 export async function recalculateHistoricalPayouts(db: PrismaClient, tenantSlug = 'default'): Promise<void> {
+  console.log('[Payouts] Démarrage recalcul historique');
   const accounts = await db.getaroundAccount.findMany({
     where: { isActive: true },
     select: { id: true, apiKeyHash: true },
   });
+  console.log('[Payouts] Nb comptes actifs:', accounts.length);
 
   const now = new Date();
   const twoYearsAgo = new Date(now.getTime() - 24 * 30 * 86_400_000);
@@ -1140,6 +1145,7 @@ export async function recalculateHistoricalPayouts(db: PrismaClient, tenantSlug 
         windowEnd.getTime() - 30 * 86_400_000,
         twoYearsAgo.getTime(),
       ));
+      console.log('[Payouts] Fenêtre:', windowStart.toISOString().slice(0, 10), '->', windowEnd.toISOString().slice(0, 10));
       await syncPayoutsForWindow(db, ga, windowStart, windowEnd, tenantSlug);
       windowEnd = new Date(windowStart);
       await sleep(2_000);

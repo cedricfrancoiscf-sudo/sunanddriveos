@@ -7,10 +7,16 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Injecte le JWT à chaque requête
+// Pré-charge le token stocké dans les defaults au démarrage
+const _storedToken = localStorage.getItem('auth_token');
+if (_storedToken) {
+  api.defaults.headers.common['Authorization'] = `Bearer ${_storedToken}`;
+}
+
+// Injecte le JWT à chaque requête (fallback si defaults non encore défini)
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('auth_token');
-  if (token) {
+  if (token && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;

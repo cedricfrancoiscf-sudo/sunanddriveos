@@ -50,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const saveAuth = useCallback((newToken: string, newUser: AuthUser) => {
     localStorage.setItem('auth_token', newToken);
     localStorage.setItem('auth_user', JSON.stringify(newUser));
+    api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
     setToken(newToken);
     setUser(newUser);
   }, []);
@@ -57,6 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const clearAuth = useCallback(() => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
+    delete api.defaults.headers.common['Authorization'];
     setToken(null);
     setUser(null);
   }, []);

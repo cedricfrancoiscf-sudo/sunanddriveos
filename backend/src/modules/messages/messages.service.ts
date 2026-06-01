@@ -43,7 +43,7 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
         },
         approvedBy: { select: { id: true, name: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
       skip: (page - 1) * limit,
       take: limit,
     }),

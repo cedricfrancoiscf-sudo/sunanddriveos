@@ -193,8 +193,9 @@ export async function syncAllAccounts(
       void syncAccountInvoicesPayouts(db, account.id).catch(e =>
         console.error(`[Sync][${tenantSlug}] Erreur invoices/payouts:`, e)
       );
-      // syncAccountMessages couvre les locations actives/récentes non traitées par la fenêtre courante
-      const messages = await syncAccountMessages(db, account.id, tenantSlug);
+      // Les messages sont synchros par syncMessagesForWindow à l'intérieur de syncAccountRentals
+      // → pas d'appel séparé à syncAccountMessages pour éviter le double traitement
+      const messages: MessageSyncResult = { accountId: account.id, created: 0, skipped: 0, errors: [] };
       results.push({ vehicles, rentals, messages });
       console.log(`[Sync][${tenantSlug}] Compte ${account.id} : succès`);
     } catch (err: unknown) {
@@ -496,10 +497,11 @@ async function syncMessagesForWindow(
         } catch { /* ignorer erreurs message individuel */ }
       }
     } catch (err: unknown) {
-      console.error(`[Sync][${tenantSlug}] Erreur messages rental ${rental.getaroundId}:`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Sync][${tenantSlug}] Erreur messages rental ${rental.getaroundId}: ${msg}`);
     }
 
-    await sleep(500);
+    await sleep(500); // toujours exécuté, même en cas d'erreur
   }
 }
 

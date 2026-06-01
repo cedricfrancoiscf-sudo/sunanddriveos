@@ -42,16 +42,19 @@ const upload = multer({
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
+// Normalise chaîne vide → null pour les champs optionnels
+const emptyToNull = z.string().nullable().optional().transform(v => (v === '' ? null : v));
+
 const createSchema = z.object({
   licensePlate: z.string().min(1).max(20),
   make: z.string().min(1),
   model: z.string().min(1),
   year: z.number().int().min(1990).max(new Date().getFullYear() + 1),
-  color: z.string().nullable().optional(),
-  photoUrl: z.string().url().nullable().optional().or(z.literal('')),
+  color: emptyToNull,
+  photoUrl: emptyToNull,
   currentMileage: z.number().int().min(0).optional(),
-  thirdPartyOwnerId: z.string().nullable().optional(),
-  parkingZone: z.string().nullable().optional(),
+  thirdPartyOwnerId: emptyToNull,
+  parkingZone: emptyToNull,
 });
 
 const updateSchema = createSchema.partial().extend({
@@ -82,8 +85,10 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
 // POST /api/v1/vehicles
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    console.log('[Vehicle] Create body reçu:', JSON.stringify(req.body));
     const body = createSchema.safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+    console.log('[Vehicle] Après validation Zod:', JSON.stringify(body.data));
     const db = getTenantClient(req.tenantDbUrl!);
     const vehicle = await createVehicle(db, body.data);
     res.status(201).json({ vehicle });
@@ -93,8 +98,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 // PUT /api/v1/vehicles/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    console.log('[Vehicle] Update body reçu:', JSON.stringify(req.body));
     const body = updateSchema.safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+    console.log('[Vehicle] Après validation Zod:', JSON.stringify(body.data));
     const db = getTenantClient(req.tenantDbUrl!);
     const vehicle = await updateVehicle(db, (req.params.id as string), body.data);
     res.json({ vehicle });

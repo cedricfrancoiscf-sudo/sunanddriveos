@@ -106,10 +106,10 @@ export interface GetaroundMessage {
   content: string;
 }
 
-// Format attendu par Getaround : YYYY-MM-DD
+// L'API Getaround attend un format ISO8601 date-time (RFC3339)
+// ex: 2026-05-02T00:00:00.000Z — PAS un format date seul YYYY-MM-DD
 function toGetaroundDate(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return d.toISOString();
 }
 
 // Découpe une plage en tranches ≤ 30 jours, du plus récent au plus ancien

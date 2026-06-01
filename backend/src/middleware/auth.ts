@@ -80,12 +80,30 @@ export async function requireActiveUser(req: Request, res: Response, next: NextF
 
 export async function requireActiveSubscription(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (req.auth?.isSuperAdmin) { next(); return; }
-  if (!req.auth?.tenantSlug) { res.status(401).json({ error: 'Non authentifié' }); return; }
+
+  // requireActiveSubscription est monté avant requireAuth sur /api/v1 —
+  // on parse le JWT manuellement si req.auth n'est pas encore défini.
+  let tenantSlug = req.auth?.tenantSlug;
+  if (!tenantSlug) {
+    const header = req.headers.authorization;
+    if (!header?.startsWith('Bearer ')) { next(); return; } // pas de token → laisser requireAuth gérer
+    try {
+      const token = header.slice(7);
+      const payload = jwt.verify(token, process.env.JWT_SECRET!) as AuthPayload;
+      if (payload.isSuperAdmin) { next(); return; }
+      tenantSlug = payload.tenantSlug;
+      req.auth = payload; // populate req.auth pour les middlewares suivants
+    } catch {
+      next(); return; // token invalide → laisser requireAuth gérer
+    }
+  }
+
+  if (!tenantSlug) { next(); return; }
 
   try {
     const master = getMasterClient();
     const company = await master.company.findFirst({
-      where: { slug: req.auth.tenantSlug },
+      where: { slug: tenantSlug },
       select: { plan: true, trialEndsAt: true, stripeSubscriptionId: true, isActive: true },
     });
 

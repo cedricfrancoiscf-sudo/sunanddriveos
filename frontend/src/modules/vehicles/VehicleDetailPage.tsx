@@ -469,6 +469,28 @@ export default function VehicleDetailPage(): React.JSX.Element {
             {vehicle.thirdPartyOwner && <InfoRow label="Propriétaire tiers" value={vehicle.thirdPartyOwner.name} />}
           </Section>
 
+          {/* Instructions départ / retour */}
+          {(vehicle.pickupInstructions ?? vehicle.returnInstructions) && (
+            <Section title="Instructions locataire">
+              {vehicle.pickupInstructions && (
+                <div className="mb-4">
+                  <p className="mb-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Départ</p>
+                  <p className="whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-700 leading-relaxed">
+                    {vehicle.pickupInstructions}
+                  </p>
+                </div>
+              )}
+              {vehicle.returnInstructions && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Retour</p>
+                  <p className="whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-700 leading-relaxed">
+                    {vehicle.returnInstructions}
+                  </p>
+                </div>
+              )}
+            </Section>
+          )}
+
           {/* Blocages */}
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <div className="mb-4 flex items-center justify-between">

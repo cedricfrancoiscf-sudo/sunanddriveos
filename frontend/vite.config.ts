@@ -26,6 +26,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -44,14 +45,9 @@ export default defineConfig({
             },
           },
           {
-            // Tous les endpoints GET de l'API — network-first, fallback cache 24h
-            urlPattern: /\/api\/v1\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: { maxEntries: 200, maxAgeSeconds: 24 * 60 * 60 },
-              networkTimeoutSeconds: 10,
-            },
+            // Routes API — jamais de cache, toujours le réseau
+            urlPattern: /\/api\/.*/i,
+            handler: 'NetworkOnly',
           },
           {
             // Photos et documents uploadés — cache-first (immutables une fois uploadés)

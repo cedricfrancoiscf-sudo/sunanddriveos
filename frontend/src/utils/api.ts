@@ -21,17 +21,22 @@ api.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
     const status = (error as { response?: { status?: number } }).response?.status;
-    if (status === 401) {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('auth_user');
-      window.location.href = '/login';
-    }
+    const currentPath = window.location.pathname;
+
     if (status === 402) {
-      const currentPath = window.location.pathname;
       if (currentPath !== '/login' && currentPath !== '/upgrade') {
         window.location.href = '/upgrade';
       }
     }
+
+    if (status === 401) {
+      if (currentPath !== '/login') {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        window.location.href = '/login';
+      }
+    }
+
     return Promise.reject(error);
   },
 );

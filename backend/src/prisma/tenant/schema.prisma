@@ -583,6 +583,7 @@ model CompanySettings {
   aiModeGeneral        String   @default("approval")
   aiTone               String   @default("vouvoiement")
   aiName               String   @default("Alex")
+  fontFamily           String   @default("Montserrat") // Police Google Fonts configurable
   alertEmails          String[] @default([])   // Destinataires des alertes email
   replyToEmail         String?                 // Email de réponse affiché aux locataires
   senderName           String?                 // Nom affiché dans le champ "De"

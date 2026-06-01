@@ -164,7 +164,7 @@ export default function TechnicalControlPage(): React.JSX.Element {
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-gray-900">{c.vehicle.make} {c.vehicle.model}</span>
-                    <span className="font-mono text-xs text-gray-400">{c.vehicle.licensePlate}</span>
+                    <span className="text-xs text-gray-400 tracking-wide">{c.vehicle.licensePlate}</span>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${RESULT_COLORS[c.result]}`}>{RESULT_LABELS[c.result]}</span>
                     {expired && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">EXPIRÉ</span>}
                   </div>

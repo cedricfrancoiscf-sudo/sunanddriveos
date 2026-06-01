@@ -116,12 +116,18 @@ function FeedbackSection(): React.JSX.Element {
   );
 }
 
+const GOOGLE_FONTS = [
+  'Montserrat', 'Inter', 'Roboto', 'Poppins', 'Lato',
+  'Open Sans', 'Nunito', 'Raleway', 'Source Sans 3', 'DM Sans',
+] as const;
+
 interface CompanySettings {
   id: string;
   primaryColor: string | null;
   secondaryColor: string | null;
   accentColor: string | null;
   logoUrl: string | null;
+  fontFamily: string;
   aiModeCarSeat: string;
   aiModeIncident: string;
   aiModeGeneral: string;
@@ -822,6 +828,7 @@ export default function SettingsPage(): React.JSX.Element {
     secondaryColor: '#f8f9fa',
     accentColor: '#ff6b35',
     logoUrl: '',
+    fontFamily: 'Montserrat',
     aiModeCarSeat: 'approval',
     aiModeIncident: 'approval',
     aiModeGeneral: 'approval',
@@ -840,6 +847,7 @@ export default function SettingsPage(): React.JSX.Element {
         secondaryColor: settings.secondaryColor ?? '#f8f9fa',
         accentColor: settings.accentColor ?? '#ff6b35',
         logoUrl: settings.logoUrl ?? '',
+        fontFamily: settings.fontFamily ?? 'Montserrat',
         aiModeCarSeat: settings.aiModeCarSeat ?? 'approval',
         aiModeIncident: settings.aiModeIncident ?? 'approval',
         aiModeGeneral: settings.aiModeGeneral ?? 'approval',
@@ -856,6 +864,7 @@ export default function SettingsPage(): React.JSX.Element {
       secondaryColor: data.secondaryColor,
       accentColor: data.accentColor,
       logoUrl: data.logoUrl || undefined,
+      fontFamily: data.fontFamily,
       aiModeCarSeat: data.aiModeCarSeat as 'auto' | 'approval' | 'manual',
       aiModeIncident: data.aiModeIncident as 'auto' | 'approval' | 'manual',
       aiModeGeneral: data.aiModeGeneral as 'auto' | 'approval' | 'manual',
@@ -1032,6 +1041,28 @@ export default function SettingsPage(): React.JSX.Element {
           {/* 7. Apparence */}
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
             <h2 className="text-sm font-semibold text-gray-900">Apparence</h2>
+
+            {/* Sélecteur de police */}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-gray-600">Police</label>
+              <select
+                value={form.fontFamily}
+                onChange={e => {
+                  const f = e.target.value;
+                  setForm(prev => ({ ...prev, fontFamily: f }));
+                  // Prévisualisation en temps réel
+                  const applyThemeFn = (window as unknown as Record<string, unknown>).applyTheme as ((s: { fontFamily: string }) => void) | undefined;
+                  applyThemeFn?.({ fontFamily: f });
+                }}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+                style={{ fontFamily: form.fontFamily }}
+              >
+                {GOOGLE_FONTS.map(f => (
+                  <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
+                ))}
+              </select>
+              <p className="mt-0.5 text-[11px] text-gray-400">Prévisualisation en temps réel — Enregistrer pour appliquer définitivement</p>
+            </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
               {[

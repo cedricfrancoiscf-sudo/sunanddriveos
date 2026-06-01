@@ -243,4 +243,44 @@ router.post('/:id/ratings', async (req: Request, res: Response, next: NextFuncti
   } catch (err: unknown) { next(err); }
 });
 
+// ─── Carkeepers par véhicule ─────────────────────────────────────────────────
+
+// GET /api/v1/vehicles/:id/carkeepers
+router.get('/:id/carkeepers', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const rows = await db.vehicleCarkeeper.findMany({
+      where: { vehicleId: req.params.id as string },
+      include: { user: { select: { id: true, name: true, email: true, role: true } } },
+    });
+    res.json({ carkeepers: rows });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/vehicles/:id/carkeepers — assigner un carkeeper
+router.post('/:id/carkeepers', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({ userId: z.string().min(1) }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'userId requis' }); return; }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const assignment = await db.vehicleCarkeeper.upsert({
+      where: { vehicleId_userId: { vehicleId: req.params.id as string, userId: body.data.userId } },
+      create: { vehicleId: req.params.id as string, userId: body.data.userId },
+      update: {},
+    });
+    res.status(201).json({ assignment });
+  } catch (err: unknown) { next(err); }
+});
+
+// DELETE /api/v1/vehicles/:id/carkeepers/:userId — retirer un carkeeper
+router.delete('/:id/carkeepers/:userId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    await db.vehicleCarkeeper.delete({
+      where: { vehicleId_userId: { vehicleId: req.params.id as string, userId: req.params.userId as string } },
+    });
+    res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
 export default router;

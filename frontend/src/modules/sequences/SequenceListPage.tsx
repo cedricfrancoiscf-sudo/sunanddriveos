@@ -95,6 +95,7 @@ function SequenceForm({
             <input
               type="number"
               min={0}
+              max={72}
               value={delayHours}
               onChange={(e) => set('delayMinutes', parseInt(e.target.value || '0', 10) * 60 + delayMins)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
@@ -106,6 +107,7 @@ function SequenceForm({
               type="number"
               min={0}
               max={59}
+              step={5}
               value={delayMins}
               onChange={(e) => set('delayMinutes', delayHours * 60 + parseInt(e.target.value || '0', 10))}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"

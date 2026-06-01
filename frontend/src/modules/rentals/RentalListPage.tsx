@@ -43,7 +43,7 @@ function RentalRow({ rental }: { rental: Rental }): React.JSX.Element {
           <span className="font-medium text-gray-900">
             {rental.vehicle.make} {rental.vehicle.model}
           </span>
-          <span className="font-mono text-xs text-gray-400">{rental.vehicle.licensePlate}</span>
+          <span className="text-xs text-gray-400 tracking-wide">{rental.vehicle.licensePlate}</span>
         </div>
         <p className="mt-0.5 text-sm text-gray-500">{rental.driverName}</p>
       </div>

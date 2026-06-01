@@ -365,7 +365,7 @@ function AccessoriesTab(): React.JSX.Element {
                       {a.vehicles.map(av => (
                         <div key={av.vehicleId} className="flex items-center justify-between rounded-lg bg-white border border-gray-200 px-3 py-2">
                           <span className="text-sm text-gray-800">{av.vehicle.make} {av.vehicle.model}
-                            <span className="ml-2 font-mono text-xs text-gray-400">{av.vehicle.licensePlate}</span>
+                            <span className="ml-2 text-xs text-gray-400 tracking-wide">{av.vehicle.licensePlate}</span>
                           </span>
                           <button type="button" onClick={() => unassignMutation.mutate({ id: a.id, vehicleId: av.vehicleId })}
                             className="text-xs text-red-400 hover:text-red-600 font-medium">Retirer</button>
@@ -403,7 +403,7 @@ function AccessoriesTab(): React.JSX.Element {
                               </div>
                               <p className="text-xs text-gray-500">
                                 {res.rental.vehicle.make} {res.rental.vehicle.model}
-                                <span className="ml-1 font-mono">{res.rental.vehicle.licensePlate}</span>
+                                <span className="ml-1 tracking-wide">{res.rental.vehicle.licensePlate}</span>
                                 {res.rental.vehicle.parkingZone && <span className="ml-2 text-gray-400">· {res.rental.vehicle.parkingZone}</span>}
                               </p>
                               <p className="text-xs text-gray-400">

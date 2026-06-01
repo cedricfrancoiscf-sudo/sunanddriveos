@@ -432,7 +432,7 @@ export default function PlanningPage(): React.JSX.Element {
                     {/* Infos véhicule */}
                     <div className="w-44 shrink-0 border-r border-gray-200 px-3 py-2.5 flex flex-col justify-center">
                       <p className="text-xs font-semibold text-gray-800 truncate">{v.make} {v.model}</p>
-                      <p className="text-[11px] font-mono text-gray-400">{v.licensePlate}</p>
+                      <p className="text-[11px] text-gray-400 tracking-wide">{v.licensePlate}</p>
                     </div>
 
                     {/* Barre timeline */}

@@ -237,7 +237,7 @@ export default function RentalDetailPage(): React.JSX.Element {
               value={`${format(new Date(rental.startAt), 'dd MMM yyyy HH:mm', { locale: fr })} → ${format(new Date(rental.endAt), 'dd MMM yyyy HH:mm', { locale: fr })}`}
             />
             <Row label="Durée" value={`${duration} jour${duration !== 1 ? 's' : ''}`} />
-            <Row label="Immatriculation" value={<span className="font-mono">{rental.vehicle.licensePlate}</span>} />
+            <Row label="Immatriculation" value={<span className="tracking-wide">{rental.vehicle.licensePlate}</span>} />
             {rental.driverGetaroundId && (
               <Row label="ID Getaround" value={`Location #${rental.getaroundId} · Driver #${rental.driverGetaroundId}`} />
             )}

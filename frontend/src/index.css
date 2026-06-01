@@ -10,6 +10,7 @@
   --color-deep: #085659;
   --color-bg: #ffffff;
   --color-text: #000000;
+  --font-family: 'Montserrat', system-ui, sans-serif;
 }
 
 @layer base {
@@ -18,7 +19,7 @@
   }
 
   html {
-    font-family: 'Montserrat', system-ui, sans-serif;
+    font-family: var(--font-family);
     -webkit-tap-highlight-color: transparent;
   }
 

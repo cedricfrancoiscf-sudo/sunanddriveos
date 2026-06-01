@@ -47,6 +47,7 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       aiModeGeneral: z.enum(['auto', 'approval', 'manual']).optional(),
       aiTone: z.enum(['vouvoiement', 'tutoiement']).optional(),
       aiName: z.string().min(2).max(20).regex(/^[a-zA-ZÀ-ÿ]+$/, 'Lettres uniquement').optional(),
+      fontFamily: z.string().min(1).max(50).optional(),
       alertEmails: z.array(z.string().email()).max(10).optional(),
       replyToEmail: z.string().email().nullable().optional(),
       senderName: z.string().min(2).max(50).nullable().optional(),

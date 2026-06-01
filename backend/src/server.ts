@@ -503,15 +503,18 @@ async function runDocumentExpiryAlerts(): Promise<void> {
           const days = Math.ceil((new Date(ct.expiryAt).getTime() - Date.now()) / 86_400_000);
           const label = `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`;
 
+          // Admins + carkeepers assignés à ce véhicule
           const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
-          for (const admin of admins) {
+          const carkeepersRows = await db.vehicleCarkeeper.findMany({ where: { vehicleId: ct.vehicleId }, select: { userId: true } });
+          const allRecipientIds = [...new Set([...admins.map(a => a.id), ...carkeepersRows.map(c => c.userId)])];
+          for (const userId of allRecipientIds) {
             const existing = await db.notification.findFirst({
-              where: { userId: admin.id, type: 'ct_expiry_30d', relatedEntityId: ct.id },
+              where: { userId, type: 'ct_expiry_30d', relatedEntityId: ct.id },
             });
             if (existing) continue;
             await db.notification.create({
               data: {
-                userId: admin.id,
+                userId,
                 type: 'ct_expiry_30d',
                 title: `🔧 CT expire dans ${days} jour${days > 1 ? 's' : ''} — ${label}`,
                 body: `Expiration : ${new Date(ct.expiryAt).toLocaleDateString('fr-FR')}`,

@@ -1,9 +1,35 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './modules/auth/authContext';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import AppLayout from './components/layout/AppLayout';
 import PwaInstallBanner from './components/PwaInstallBanner';
+
+const SYSTEM_FONTS = new Set(['system-ui', 'sans-serif', 'serif', 'monospace']);
+
+function applyTheme(settings: { primaryColor?: string | null; secondaryColor?: string | null; fontFamily?: string | null }): void {
+  const root = document.documentElement;
+  if (settings.primaryColor) root.style.setProperty('--color-primary', settings.primaryColor);
+  if (settings.secondaryColor) root.style.setProperty('--color-secondary', settings.secondaryColor);
+  if (settings.fontFamily) {
+    if (!SYSTEM_FONTS.has(settings.fontFamily)) {
+      const linkId = 'google-font-link';
+      let link = document.getElementById(linkId) as HTMLLinkElement | null;
+      if (!link) {
+        link = document.createElement('link');
+        link.id = linkId;
+        link.rel = 'stylesheet';
+        document.head.appendChild(link);
+      }
+      link.href = `https://fonts.googleapis.com/css2?family=${settings.fontFamily.replace(/ /g, '+')}:wght@400;500;600;700&display=swap`;
+    }
+    root.style.setProperty('--font-family', `'${settings.fontFamily}', system-ui, sans-serif`);
+    document.body.style.fontFamily = 'var(--font-family)';
+  }
+}
+
+// Exposer pour usage dans SettingsPage (prévisualisation live)
+(window as unknown as Record<string, unknown>).applyTheme = applyTheme;
 
 // Auth
 const LoginPage = React.lazy(() => import('./modules/auth/LoginPage'));
@@ -60,6 +86,19 @@ function ProtectedLayout(): React.JSX.Element {
 }
 
 export default function App(): React.JSX.Element {
+  useEffect(() => {
+    // Applique le thème depuis les settings du tenant au démarrage
+    const apiBase = (import.meta as { env: Record<string, string> }).env.VITE_API_URL ?? '/api/v1';
+    fetch(`${apiBase}/settings`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { settings?: { primaryColor?: string | null; secondaryColor?: string | null; fontFamily?: string | null } } | null) => {
+        if (data?.settings) applyTheme(data.settings);
+      })
+      .catch(() => { /* silencieux si non connecté */ });
+  }, []);
+
   return (
     <BrowserRouter>
       <AuthProvider>

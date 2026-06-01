@@ -191,6 +191,12 @@ model Rental {
   kmDriven            Int?                // endMileage - startMileage (calculé)
   grossRevenue        Float?              // CA brut facturé locataire
   ownerPayout         Float?              // Virement propriétaire
+  // Décomposition CA depuis les charges Getaround
+  basePrice           Float?              // driver_rental_payment — prix de base location
+  extraDistanceFee    Float?              // extra_distance_payment — frais km supplémentaires
+  insuranceFee        Float?              // self_insurance_payment + additional_self_insurance_payment
+  assistanceFee       Float?              // assistance_fee — assistance routière
+  deliveryFee         Float?              // delivery_fee — frais livraison
   driverMessFee       Float?              // Frais messagerie → bloquer évaluation
   damageCompensation  Float?              // Compensation dommage → créer incident
   gasRefillFee        Float?              // Frais carburant → noter

@@ -59,13 +59,14 @@ function Row({ label, value }: { label: string; value: React.ReactNode }): React
   );
 }
 
-function FinancialRow({ label, value, highlight }: { label: string; value: number | null | undefined; highlight?: boolean }): React.JSX.Element {
+function FinancialRow({ label, value, highlight, negative }: { label: string; value: number | null | undefined; highlight?: boolean; negative?: boolean }): React.JSX.Element {
+  const displayValue = negative && value != null ? -value : value;
   return (
     <div className={`flex items-center justify-between border-b border-gray-100 py-2.5 last:border-0 ${highlight ? 'font-semibold' : ''}`}>
       <span className="text-sm text-gray-500">{label}</span>
-      <span className={`text-sm ${highlight ? 'text-gray-900' : 'text-gray-700'}`}>
-        {value != null
-          ? value.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
+      <span className={`text-sm ${highlight ? 'text-gray-900' : negative ? 'text-red-600' : 'text-gray-700'}`}>
+        {displayValue != null
+          ? displayValue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
           : '—'}
       </span>
     </div>
@@ -396,24 +397,52 @@ export default function RentalDetailPage(): React.JSX.Element {
           {/* Finances */}
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">Finances</h2>
-            <FinancialRow label="CA brut" value={rental.grossRevenue} highlight />
-            <FinancialRow label="Virement propriétaire" value={rental.ownerPayout} />
-            {hasExtraFees && (
-              <>
-                {(rental.driverMessFee ?? 0) > 0 && (
-                  <FinancialRow label="Frais messagerie" value={rental.driverMessFee} />
-                )}
-                {(rental.damageCompensation ?? 0) > 0 && (
-                  <FinancialRow label="Compensation dommage" value={rental.damageCompensation} />
-                )}
-                {(rental.gasRefillFee ?? 0) > 0 && (
-                  <FinancialRow label="Frais carburant" value={rental.gasRefillFee} />
-                )}
-                {(rental.lateReturnFee ?? 0) > 0 && (
-                  <FinancialRow label="Frais retard" value={rental.lateReturnFee} />
-                )}
-              </>
+
+            {/* Décomposition CA — une ligne par montant > 0 */}
+            {(rental.basePrice ?? 0) > 0 && (
+              <FinancialRow label="Location (prix de base)" value={rental.basePrice} />
             )}
+            {(rental.extraDistanceFee ?? 0) > 0 && (
+              <FinancialRow label="Frais km supplémentaires" value={rental.extraDistanceFee} />
+            )}
+            {(rental.insuranceFee ?? 0) > 0 && (
+              <FinancialRow label="Assurance" value={rental.insuranceFee} />
+            )}
+            {(rental.assistanceFee ?? 0) > 0 && (
+              <FinancialRow label="Assistance routière" value={rental.assistanceFee} />
+            )}
+            {(rental.deliveryFee ?? 0) > 0 && (
+              <FinancialRow label="Frais de livraison" value={rental.deliveryFee} />
+            )}
+            {(rental.lateReturnFee ?? 0) > 0 && (
+              <FinancialRow label="Frais retard" value={rental.lateReturnFee} />
+            )}
+            {(rental.gasRefillFee ?? 0) > 0 && (
+              <FinancialRow label="Frais carburant" value={rental.gasRefillFee} />
+            )}
+            {(rental.driverMessFee ?? 0) > 0 && (
+              <FinancialRow label="Frais désordre" value={rental.driverMessFee} />
+            )}
+            {(rental.damageCompensation ?? 0) > 0 && (
+              <FinancialRow label="Compensation dommage" value={rental.damageCompensation} />
+            )}
+
+            {/* Séparateur + Total brut */}
+            <div className="my-2 border-t border-gray-100" />
+            <FinancialRow label="CA brut total" value={rental.grossRevenue} highlight />
+
+            {/* Commission Getaround auto-calculée */}
+            {rental.grossRevenue != null && rental.ownerPayout != null && rental.grossRevenue > rental.ownerPayout && (
+              <FinancialRow
+                label="Commission Getaround"
+                value={rental.grossRevenue - rental.ownerPayout}
+                negative
+              />
+            )}
+
+            {/* Virement net */}
+            <div className="my-2 border-t border-gray-200" />
+            <FinancialRow label="Virement propriétaire" value={rental.ownerPayout} highlight />
           </div>
 
           {/* Évaluation */}

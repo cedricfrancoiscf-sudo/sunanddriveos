@@ -20,6 +20,11 @@ export interface Rental {
   fuelLevelCheckout: number | null;
   grossRevenue: number | null;
   ownerPayout: number | null;
+  basePrice: number | null;
+  extraDistanceFee: number | null;
+  insuranceFee: number | null;
+  assistanceFee: number | null;
+  deliveryFee: number | null;
   driverMessFee: number | null;
   damageCompensation: number | null;
   gasRefillFee: number | null;

@@ -50,6 +50,16 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const rental = await db.rental.findUnique({ where: { id: body.data.rentalId }, select: { vehicleId: true } });
     if (!rental) { res.status(404).json({ error: 'Location introuvable' }); return; }
 
+    // Vérifier compatibilité véhicule (si l'accessoire a des véhicules attribués)
+    const compatibleVehicles = await db.accessoryVehicle.findMany({
+      where: { accessoryId: body.data.accessoryId },
+      select: { vehicleId: true },
+    });
+    if (compatibleVehicles.length > 0 && !compatibleVehicles.some(cv => cv.vehicleId === rental.vehicleId)) {
+      res.status(400).json({ error: "Cet accessoire n'est pas compatible avec ce véhicule" });
+      return;
+    }
+
     const reservation = await db.accessoryReservation.create({
       data: {
         accessoryId: body.data.accessoryId,

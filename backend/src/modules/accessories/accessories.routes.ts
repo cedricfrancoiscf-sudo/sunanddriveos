@@ -74,6 +74,18 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
   } catch (err: unknown) { next(err); }
 });
 
+// GET /api/v1/accessories/:id/vehicles — liste des véhicules compatibles
+router.get('/:id/vehicles', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const rows = await db.accessoryVehicle.findMany({
+      where: { accessoryId: req.params['id'] as string },
+      include: { vehicle: { select: { id: true, make: true, model: true, licensePlate: true } } },
+    });
+    res.json({ vehicles: rows.map(r => r.vehicle) });
+  } catch (err: unknown) { next(err); }
+});
+
 // POST /api/v1/accessories/:id/assign — affecter à un véhicule
 router.post('/:id/assign', async (req: Request, res: Response, next: NextFunction) => {
   try {

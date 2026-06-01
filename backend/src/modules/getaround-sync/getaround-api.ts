@@ -79,7 +79,12 @@ export interface GetaroundCheckout {
   occurred_at: string;
 }
 
-// GET /invoices.json
+// GET /invoices.json (compte) ou /rentals/:id/invoices.json (par location)
+export interface GetaroundInvoiceCharge {
+  type: string;
+  amount: number; // centimes, peut être négatif pour les remises
+}
+
 export interface GetaroundInvoiceApi {
   id: number;
   rental_id?: number;
@@ -87,6 +92,62 @@ export interface GetaroundInvoiceApi {
   currency: string;
   pdf_url?: string;
   emitted_at?: string;
+  charges?: GetaroundInvoiceCharge[];
+}
+
+export interface ChargeBreakdown {
+  basePrice: number;
+  extraDistanceFee: number;
+  insuranceFee: number;
+  assistanceFee: number;
+  deliveryFee: number;
+  lateReturnFee: number;
+  gasRefillFee: number;
+  driverMessFee: number;
+  damageCompensation: number;
+  grossRevenue: number;
+  ownerPayout: number;
+}
+
+export function parseInvoiceCharges(invoices: GetaroundInvoiceApi[]): ChargeBreakdown {
+  const r: ChargeBreakdown = {
+    basePrice: 0, extraDistanceFee: 0, insuranceFee: 0,
+    assistanceFee: 0, deliveryFee: 0, lateReturnFee: 0,
+    gasRefillFee: 0, driverMessFee: 0, damageCompensation: 0,
+    grossRevenue: 0, ownerPayout: 0,
+  };
+
+  for (const inv of invoices) {
+    // total_price positif = virement propriétaire
+    if (inv.total_price && inv.total_price > 0) {
+      r.ownerPayout += inv.total_price / 100;
+    }
+    for (const charge of (inv.charges ?? [])) {
+      const amount = Math.abs((charge.amount ?? 0) / 100); // centimes → euros
+      switch (charge.type) {
+        case 'driver_rental_payment':
+          r.basePrice += amount; r.grossRevenue += amount; break;
+        case 'extra_distance_payment':
+          r.extraDistanceFee += amount; r.grossRevenue += amount; break;
+        case 'self_insurance_payment':
+        case 'additional_self_insurance_payment':
+          r.insuranceFee += amount; r.grossRevenue += amount; break;
+        case 'assistance_fee':
+          r.assistanceFee += amount; r.grossRevenue += amount; break;
+        case 'delivery_fee':
+          r.deliveryFee += amount; r.grossRevenue += amount; break;
+        case 'driver_late_return_fee':
+          r.lateReturnFee += amount; r.grossRevenue += amount; break;
+        case 'driver_gas_refill_fee':
+          r.gasRefillFee += amount; r.grossRevenue += amount; break;
+        case 'driver_mess_fee':
+          r.driverMessFee += amount; r.grossRevenue += amount; break;
+        case 'damage_compensation':
+          r.damageCompensation += amount; r.grossRevenue += amount; break;
+      }
+    }
+  }
+  return r;
 }
 
 // GET /payouts.json
@@ -286,6 +347,10 @@ export function createGetaroundClient(apiKey: string) {
       await withRetry(() => client.delete(`/cars/${carId}/unavailabilities.json`, {
         data: { starts_at: toGetaroundDate(startsAt), ends_at: toGetaroundDate(endsAt) },
       }));
+    },
+
+    async getRentalInvoices(rentalId: number): Promise<GetaroundInvoiceApi[]> {
+      return fetchAllPages<GetaroundInvoiceApi>(client, `/rentals/${rentalId}/invoices.json`, {});
     },
 
     async getInvoices(): Promise<GetaroundInvoiceApi[]> {

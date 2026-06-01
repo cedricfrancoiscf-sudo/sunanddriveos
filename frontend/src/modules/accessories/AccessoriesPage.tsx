@@ -334,7 +334,11 @@ function AccessoriesTab(): React.JSX.Element {
                       )}
                     </div>
                     {a.description && <p className="text-xs text-gray-400 truncate">{a.description}</p>}
-                    <p className="text-xs text-gray-400">{a.vehicles.length} véhicule{a.vehicles.length !== 1 ? 's' : ''}</p>
+                    {a.vehicles.length === 0 ? (
+                      <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-600">Compatible avec tous les véhicules</span>
+                    ) : (
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600">{a.vehicles.length} véhicule{a.vehicles.length !== 1 ? 's' : ''} compatible{a.vehicles.length !== 1 ? 's' : ''}</span>
+                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <button type="button" onClick={() => setExpandedId(isExpanded ? null : a.id)}

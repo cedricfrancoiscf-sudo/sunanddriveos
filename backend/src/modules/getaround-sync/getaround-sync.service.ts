@@ -1,6 +1,6 @@
 import type { PrismaClient } from '../../generated/tenant';
 import { decrypt, encrypt } from '../../utils/crypto';
-import { createGetaroundClient, type GetaroundRental } from './getaround-api';
+import { createGetaroundClient, type GetaroundRental, parseInvoiceCharges } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
 import { analyzeMessage } from '../ai/ai.service';
 import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
@@ -390,6 +390,31 @@ async function processRental(
       }
     } catch (err: unknown) { console.error(`[Sync][${tenantSlug}] Checkout ${r.id}:`, err); }
   }
+
+  // Décomposition CA depuis les factures de la location
+  try {
+    const invoices = await ga.getRentalInvoices(r.id);
+    await sleep(500);
+    if (invoices.length > 0) {
+      const bd = parseInvoiceCharges(invoices);
+      await db.rental.update({
+        where: { id: upserted.id },
+        data: {
+          ...(bd.basePrice        ? { basePrice: bd.basePrice }               : {}),
+          ...(bd.extraDistanceFee ? { extraDistanceFee: bd.extraDistanceFee } : {}),
+          ...(bd.insuranceFee     ? { insuranceFee: bd.insuranceFee }         : {}),
+          ...(bd.assistanceFee    ? { assistanceFee: bd.assistanceFee }       : {}),
+          ...(bd.deliveryFee      ? { deliveryFee: bd.deliveryFee }           : {}),
+          ...(bd.lateReturnFee    ? { lateReturnFee: bd.lateReturnFee }       : {}),
+          ...(bd.gasRefillFee     ? { gasRefillFee: bd.gasRefillFee }         : {}),
+          ...(bd.driverMessFee    ? { driverMessFee: bd.driverMessFee }       : {}),
+          ...(bd.damageCompensation ? { damageCompensation: bd.damageCompensation } : {}),
+          ...(bd.grossRevenue     ? { grossRevenue: bd.grossRevenue }         : {}),
+          ...(bd.ownerPayout      ? { ownerPayout: bd.ownerPayout }           : {}),
+        },
+      });
+    }
+  } catch { /* Invoices non disponibles pour cette location — skip silencieusement */ }
 }
 
 // Sync les messages des locations dont startAt est dans la fenêtre

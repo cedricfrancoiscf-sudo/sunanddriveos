@@ -1,7 +1,7 @@
 ﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
-import { requireAuth, requireRole } from '../../middleware/auth';
+import { requireAuth, requireRole, requireActiveUser } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
@@ -47,7 +47,7 @@ router.post('/accept-invitation', async (req: Request, res: Response, next: Next
 });
 
 // Routes admin uniquement
-router.use(requireAuth, resolveTenant, requireRole('admin'));
+router.use(requireAuth, resolveTenant, requireActiveUser, requireRole('admin'));
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -99,6 +99,42 @@ router.post('/invite', async (req: Request, res: Response, next: NextFunction) =
     void sendInvitationEmail(body.data.email, body.data.name, inviteUrl, company?.name ?? 'SunanddriveOS').catch(console.error);
 
     res.status(201).json({ user, inviteUrl });
+  } catch (err: unknown) { next(err); }
+});
+
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const targetId = req.params.id as string;
+
+    // Vérifier que ce n'est pas le dernier admin
+    const adminCount = await db.user.count({ where: { role: 'admin', isActive: true } });
+    const targetUser = await db.user.findUnique({ where: { id: targetId }, select: { role: true } });
+    if (targetUser?.role === 'admin' && adminCount <= 1) {
+      res.status(400).json({ error: 'Impossible de supprimer le dernier administrateur' });
+      return;
+    }
+
+    await db.user.delete({ where: { id: targetId } });
+    res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
+const MULTI_ROLES = ['admin', 'carkeeper', 'viewer'] as const;
+
+router.put('/:id/roles', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      roles: z.array(z.enum(MULTI_ROLES)).min(1, 'Au moins un rôle requis'),
+    }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const user = await db.user.update({
+      where: { id: req.params.id as string },
+      data: { roles: body.data.roles },
+      select: { id: true, name: true, email: true, role: true, roles: true, isActive: true },
+    });
+    res.json({ user });
   } catch (err: unknown) { next(err); }
 });
 

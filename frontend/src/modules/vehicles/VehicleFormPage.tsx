@@ -11,6 +11,7 @@ const EMPTY_FORM = {
   color: '',
   photoUrl: '',
   currentMileage: 0,
+  parkingZone: '',
 };
 
 export default function VehicleFormPage(): React.JSX.Element {
@@ -38,6 +39,7 @@ export default function VehicleFormPage(): React.JSX.Element {
         color: vehicle.color ?? '',
         photoUrl: vehicle.photoUrl ?? '',
         currentMileage: vehicle.currentMileage,
+        parkingZone: vehicle.parkingZone ?? '',
       });
       setHealthScore(vehicle.healthScore);
     }
@@ -50,6 +52,7 @@ export default function VehicleFormPage(): React.JSX.Element {
       currentMileage: Number(data.currentMileage),
       color: data.color || null,
       photoUrl: data.photoUrl || null,
+      parkingZone: data.parkingZone || null,
     }),
     onSuccess: (v) => {
       void qc.invalidateQueries({ queryKey: ['vehicles'] });
@@ -65,6 +68,7 @@ export default function VehicleFormPage(): React.JSX.Element {
         currentMileage: Number(data.currentMileage),
         color: data.color || null,
         photoUrl: data.photoUrl || null,
+        parkingZone: data.parkingZone || null,
         healthScore: Number(data.healthScore),
       }),
     onSuccess: () => {
@@ -152,6 +156,14 @@ export default function VehicleFormPage(): React.JSX.Element {
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
               </div>
             )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Zone de stationnement</label>
+            <input type="text" value={form.parkingZone} onChange={e => setForm(f => ({ ...f, parkingZone: e.target.value }))}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+              placeholder="ex: Paris 15e, Boulogne, Versailles..." />
+            <p className="mt-0.5 text-xs text-gray-400">Permet de regrouper vos véhicules par secteur géographique</p>
           </div>
 
           <div>

@@ -86,6 +86,7 @@ model User {
   passwordHash     String?
   name             String
   role             UserRole
+  roles            String[]            @default([]) // rôles multiples : ["admin", "carkeeper"]
   isActive         Boolean             @default(true)
   invitationToken  String?             @unique
   invitationExpiry DateTime?

@@ -10,6 +10,7 @@ export interface Vehicle {
   year: number;
   color: string | null;
   photoUrl: string | null;
+  parkingZone: string | null;
   currentMileage: number;
   healthScore: number;
   isActive: boolean;

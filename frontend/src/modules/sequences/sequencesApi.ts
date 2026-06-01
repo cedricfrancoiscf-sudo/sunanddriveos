@@ -1,6 +1,6 @@
 import { api } from '../../utils/api';
 
-export type TriggerEvent = 'rental.booked' | 'rental.car_checked_in' | 'rental.car_checked_out';
+export type TriggerEvent = 'rental.booked' | 'rental.car_checked_in' | 'rental.car_checked_out' | 'before_checkin' | 'before_checkout';
 
 export interface Sequence {
   id: string;
@@ -27,7 +27,12 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   'rental.booked': 'Réservation confirmée',
   'rental.car_checked_in': 'Prise en charge du véhicule',
   'rental.car_checked_out': 'Restitution du véhicule',
+  'before_checkin': 'Avant la prise en charge',
+  'before_checkout': 'Avant la restitution',
 };
+
+// Ces déclencheurs utilisent le délai comme "temps avant l'événement"
+export const BEFORE_TRIGGERS: TriggerEvent[] = ['before_checkin', 'before_checkout'];
 
 export const TEMPLATE_VARS = [
   { key: '{{driver_name}}', label: 'Prénom du locataire' },

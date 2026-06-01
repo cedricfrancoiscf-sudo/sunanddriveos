@@ -7,7 +7,7 @@ import { getaroundSyncApi, type GetaroundAccount } from '../vehicles/vehiclesApi
 function defaultStartDate(): string {
   const d = new Date();
   d.setFullYear(d.getFullYear() - 1);
-  return d.toISOString().split('T')[0];
+  return d.toISOString().split('T')[0] ?? '';
 }
 
 // ─── Section Feedback ─────────────────────────────────────────────────────────
@@ -448,7 +448,7 @@ function GetaroundSection(): React.JSX.Element {
                         setPendingStartDateAccountId(acc.id);
                         setPendingStartDate(
                           acc.accountStartDate
-                            ? acc.accountStartDate.split('T')[0]
+                            ? (acc.accountStartDate.split('T')[0] ?? defaultStartDate())
                             : defaultStartDate()
                         );
                       }}
@@ -601,6 +601,72 @@ function ModeSelector({ label, value, onChange }: { label: string; value: string
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
+function ICalSection(): React.JSX.Element {
+  const qc = useQueryClient();
+  const [copied, setCopied] = useState(false);
+  const { data } = useQuery({
+    queryKey: ['ical-info'],
+    queryFn: () => api.get<{ icalToken: string | null; icalUrl: string | null }>('/settings/ical-info').then(r => r.data),
+    staleTime: 10 * 60_000,
+  });
+  const regenerateMutation = useMutation({
+    mutationFn: () => api.post<{ icalUrl: string }>('/settings/ical-regenerate'),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['ical-info'] });
+    },
+  });
+  const icalUrl = data?.icalUrl;
+
+  function handleCopy(): void {
+    if (!icalUrl) return;
+    void navigator.clipboard.writeText(icalUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-gray-900">Intégrations</h2>
+        <span className="rounded-full bg-[#01696e]/10 px-2 py-0.5 text-[10px] font-semibold text-[#01696e]">Admin uniquement</span>
+      </div>
+      <div>
+        <p className="text-sm font-medium text-gray-900">Lien iCal</p>
+        <p className="text-xs text-gray-400 mt-0.5">Synchronisez votre planning avec Google Calendar, Apple Calendar ou tout autre agenda</p>
+      </div>
+      {icalUrl ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <code className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 break-all">{icalUrl}</code>
+            <button type="button" onClick={handleCopy}
+              className="shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition">
+              {copied ? '✓ Copié' : 'Copier'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-gray-400">Aucun lien iCal généré</p>
+          <button type="button" onClick={() => regenerateMutation.mutate()}
+            disabled={regenerateMutation.isPending}
+            className="rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+            style={{ backgroundColor: '#01696e' }}>
+            Générer un lien
+          </button>
+        </div>
+      )}
+      {icalUrl && (
+        <button type="button" onClick={() => regenerateMutation.mutate()}
+          disabled={regenerateMutation.isPending}
+          className="text-xs text-gray-400 hover:text-gray-600 underline">
+          Régénérer le lien (invalide l'ancien)
+        </button>
+      )}
+    </section>
+  );
+}
+
 export default function SettingsPage(): React.JSX.Element {
   const qc = useQueryClient();
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -747,7 +813,10 @@ export default function SettingsPage(): React.JSX.Element {
           <TelegramSection />
         </section>
 
-        {/* 5. Messagerie automatique */}
+        {/* 5. Intégrations */}
+        <ICalSection />
+
+        {/* 6. Messagerie automatique */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
             <div>

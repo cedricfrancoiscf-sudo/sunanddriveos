@@ -22,7 +22,7 @@ const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
 // GET /api/v1/settings
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     let settings = await db.companySettings.findFirst();
@@ -88,8 +88,8 @@ router.post('/logo', requireRole('admin'), (req: Request, res: Response, next: N
   });
 });
 
-// GET /api/v1/settings/ical-info — retourne le token et l'URL iCal
-router.get('/ical-info', async (req: Request, res: Response, next: NextFunction) => {
+// GET /api/v1/settings/ical-info — retourne le token et l'URL iCal (admin uniquement)
+router.get('/ical-info', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const master = getMasterClient();
     const tenantSlug = req.auth!.tenantSlug!;

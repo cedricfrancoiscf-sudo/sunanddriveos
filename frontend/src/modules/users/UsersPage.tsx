@@ -5,9 +5,15 @@ import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
 
 interface User {
-  id: string; name: string; email: string; role: string;
+  id: string; name: string; email: string; role: string; roles: string[];
   isActive: boolean; lastLoginAt: string | null; createdAt: string;
 }
+
+const MULTI_ROLE_OPTIONS = [
+  { key: 'admin', label: 'Administrateur' },
+  { key: 'carkeeper', label: 'Carkeeper' },
+  { key: 'viewer', label: 'Lecteur' },
+] as const;
 
 const ROLES: Record<string, string> = {
   admin: 'Admin', exploitation: 'Exploitation', comptable: 'Comptable',
@@ -47,10 +53,35 @@ export default function UsersPage(): React.JSX.Element {
     },
   });
 
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [rolesModal, setRolesModal] = useState<{ userId: string; name: string; roles: string[] } | null>(null);
+  const [pendingRoles, setPendingRoles] = useState<string[]>([]);
+
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }: { id: string; role?: string; isActive?: boolean }) =>
       api.put(`/users/${id}`, data),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['users'] }),
+  });
+
+  const rolesMutation = useMutation({
+    mutationFn: ({ id, roles }: { id: string; roles: string[] }) =>
+      api.put(`/users/${id}/roles`, { roles }),
+    onSuccess: () => {
+      setRolesModal(null);
+      void qc.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/users/${id}`),
+    onSuccess: () => {
+      setDeleteError(null);
+      void qc.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: string } } }).response?.data?.error;
+      setDeleteError(msg ?? 'Erreur lors de la suppression');
+    },
   });
 
   function handleInvite(e: React.FormEvent): void {
@@ -125,6 +156,50 @@ export default function UsersPage(): React.JSX.Element {
         </div>
       )}
 
+      {/* Modal rôles multiples */}
+      {rolesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-xs rounded-2xl border border-gray-200 bg-white p-6 shadow-xl space-y-4">
+            <h3 className="text-sm font-semibold text-gray-900">Rôles de {rolesModal.name}</h3>
+            <div className="space-y-2">
+              {MULTI_ROLE_OPTIONS.map(({ key, label }) => (
+                <label key={key} className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={pendingRoles.includes(key)}
+                    onChange={e => setPendingRoles(prev =>
+                      e.target.checked ? [...prev, key] : prev.filter(r => r !== key)
+                    )}
+                    className="h-4 w-4 rounded border-gray-300 text-[#01696e]" />
+                  <span className="text-sm text-gray-700">{label}</span>
+                </label>
+              ))}
+            </div>
+            {pendingRoles.length === 0 && (
+              <p className="text-xs text-red-500">Au moins un rôle requis</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button type="button"
+                disabled={pendingRoles.length === 0 || rolesMutation.isPending}
+                onClick={() => rolesMutation.mutate({ id: rolesModal.userId, roles: pendingRoles })}
+                className="flex-1 rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: '#01696e' }}>
+                {rolesMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+              <button type="button" onClick={() => setRolesModal(null)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {deleteError}
+          <button type="button" onClick={() => setDeleteError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
+
       {/* Liste */}
       {isLoading ? (
         <div className="flex justify-center py-16">
@@ -150,11 +225,23 @@ export default function UsersPage(): React.JSX.Element {
                     <p className="text-xs text-gray-400">{u.email}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <select value={u.role}
-                      onChange={e => updateMutation.mutate({ id: u.id, role: e.target.value })}
-                      className={`rounded-full px-2.5 py-1 text-xs font-medium border-0 outline-none cursor-pointer ${ROLE_COLORS[u.role] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {ROLE_KEYS.map(r => <option key={r} value={r}>{ROLES[r]}</option>)}
-                    </select>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <select value={u.role}
+                        onChange={e => updateMutation.mutate({ id: u.id, role: e.target.value })}
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium border-0 outline-none cursor-pointer ${ROLE_COLORS[u.role] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {ROLE_KEYS.map(r => <option key={r} value={r}>{ROLES[r]}</option>)}
+                      </select>
+                      {(u.roles ?? []).filter(r => r !== u.role).map(r => (
+                        <span key={r} className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">+{r}</span>
+                      ))}
+                      <button type="button" title="Modifier les rôles"
+                        onClick={() => { setRolesModal({ userId: u.id, name: u.name, roles: u.roles ?? [] }); setPendingRoles(u.roles ?? []); }}
+                        className="rounded p-0.5 text-gray-300 hover:text-[#01696e] transition-colors">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                    </div>
                   </td>
                   <td className="hidden px-4 py-3 text-xs text-gray-400 sm:table-cell">
                     {u.lastLoginAt ? format(new Date(u.lastLoginAt), 'dd/MM/yyyy HH:mm', { locale: fr }) : 'Jamais'}
@@ -168,9 +255,26 @@ export default function UsersPage(): React.JSX.Element {
                     </button>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className="text-xs text-gray-400">
-                      {format(new Date(u.createdAt), 'dd/MM/yy', { locale: fr })}
-                    </span>
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="text-xs text-gray-400">
+                        {format(new Date(u.createdAt), 'dd/MM/yy', { locale: fr })}
+                      </span>
+                      <button
+                        type="button"
+                        title="Supprimer"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Êtes-vous sûr de vouloir supprimer ${u.name} ?`)) {
+                            deleteMutation.mutate(u.id);
+                          }
+                        }}
+                        className="rounded p-1 text-gray-300 hover:text-red-500 disabled:opacity-40 transition-colors"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -47,10 +47,11 @@ const createSchema = z.object({
   make: z.string().min(1),
   model: z.string().min(1),
   year: z.number().int().min(1990).max(new Date().getFullYear() + 1),
-  color: z.string().optional(),
-  photoUrl: z.string().url().optional(),
+  color: z.string().nullable().optional(),
+  photoUrl: z.string().url().nullable().optional().or(z.literal('')),
   currentMileage: z.number().int().min(0).optional(),
-  thirdPartyOwnerId: z.string().optional(),
+  thirdPartyOwnerId: z.string().nullable().optional(),
+  parkingZone: z.string().nullable().optional(),
 });
 
 const updateSchema = createSchema.partial().extend({

@@ -157,6 +157,7 @@ export default function PlanningPage(): React.JSX.Element {
   const [periodStart, setPeriodStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const periodEnd = addDays(periodStart, viewMode - 1);
 
+  const [zoneFilter, setZoneFilter] = useState<string>(() => localStorage.getItem('planning_zone_filter') ?? '');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ vehicleId: '', type: 'maintenance', reason: '', startAt: '', endAt: '' });
 
@@ -218,6 +219,18 @@ export default function PlanningPage(): React.JSX.Element {
 
   const zones = useMemo(() => Object.keys(vehiclesByZone).sort(), [vehiclesByZone]);
 
+  const filteredVehiclesByZone = useMemo(() => {
+    if (!zoneFilter) return vehiclesByZone;
+    const filtered: Record<string, Vehicle[]> = {};
+    if (vehiclesByZone[zoneFilter]) filtered[zoneFilter] = vehiclesByZone[zoneFilter];
+    return filtered;
+  }, [vehiclesByZone, zoneFilter]);
+
+  function handleZoneFilter(zone: string): void {
+    setZoneFilter(zone);
+    localStorage.setItem('planning_zone_filter', zone);
+  }
+
   const VIEW_LABELS: Record<ViewMode, string> = { 7: 'Semaine', 14: '14 jours', 30: 'Mois' };
 
   // Colonne marquant le jour courant
@@ -258,6 +271,16 @@ export default function PlanningPage(): React.JSX.Element {
           <button type="button" onClick={() => setPeriodStart(d => addDays(d, viewMode))}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">→</button>
         </div>
+
+        {/* Filtre zone */}
+        <select
+          value={zoneFilter}
+          onChange={e => handleZoneFilter(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-[#01696e]"
+        >
+          <option value="">Toutes les zones</option>
+          {zones.map(z => <option key={z} value={z}>{z}</option>)}
+        </select>
 
         <button type="button" onClick={() => setShowForm(true)}
           className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
@@ -385,18 +408,18 @@ export default function PlanningPage(): React.JSX.Element {
           </div>
 
           {/* Zones + véhicules */}
-          {zones.map(zone => (
+          {Object.keys(filteredVehiclesByZone).sort().map(zone => (
             <React.Fragment key={zone}>
               {/* En-tête zone */}
               <div className="flex border-b border-gray-200 sticky top-[41px] z-10">
                 <div className="w-44 shrink-0 border-r border-gray-200" />
                 <div className="flex-1 min-w-[500px]">
-                  <ZoneHeader zone={zone} count={vehiclesByZone[zone]?.length ?? 0} />
+                  <ZoneHeader zone={zone} count={filteredVehiclesByZone[zone]?.length ?? 0} />
                 </div>
               </div>
 
               {/* Lignes véhicules */}
-              {(vehiclesByZone[zone] ?? []).map(v => {
+              {(filteredVehiclesByZone[zone] ?? []).map(v => {
                 const vRentals = rentals.filter(r => r.vehicleId === v.id);
                 const vBlockings = blockings.filter(b => b.vehicleId === v.id);
                 return (

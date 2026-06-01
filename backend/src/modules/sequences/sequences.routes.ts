@@ -17,7 +17,7 @@ router.use(requireAuth, resolveTenant);
 
 const sequenceSchema = z.object({
   name: z.string().min(1),
-  triggerEvent: z.enum(['rental.booked', 'rental.car_checked_in', 'rental.car_checked_out']),
+  triggerEvent: z.enum(['rental.booked', 'rental.car_checked_in', 'rental.car_checked_out', 'before_checkin', 'before_checkout']),
   delayMinutes: z.number().int().min(0),
   content: z.string().min(1),
   vehicleId: z.string().optional(),

@@ -1,6 +1,6 @@
 ﻿import type { PrismaClient } from '../../generated/tenant';
 
-const TRIGGER_EVENTS = ['rental.booked', 'rental.car_checked_in', 'rental.car_checked_out'] as const;
+const TRIGGER_EVENTS = ['rental.booked', 'rental.car_checked_in', 'rental.car_checked_out', 'before_checkin', 'before_checkout'] as const;
 export type TriggerEvent = typeof TRIGGER_EVENTS[number];
 
 export type SequenceCreateInput = {
@@ -77,6 +77,30 @@ export async function scheduleSequencesForRental(
         status: 'pending',
       },
     });
+  }
+
+  // Lors d'une réservation, planifier aussi les séquences "avant événement"
+  if (triggerEvent === 'rental.booked') {
+    const beforeCheckinSeqs = await db.messageSequence.findMany({
+      where: { triggerEvent: 'before_checkin', isActive: true, OR: [{ vehicleId: null }, { vehicleId: rental.vehicleId }] },
+    });
+    for (const seq of beforeCheckinSeqs) {
+      // delayMinutes = temps avant la prise en charge (ex: 120 = 2h avant)
+      const scheduledAt = new Date(rental.startAt.getTime() - seq.delayMinutes * 60_000);
+      if (scheduledAt > new Date()) {
+        await db.sequenceExecution.create({ data: { rentalId, sequenceId: seq.id, scheduledAt, status: 'pending' } });
+      }
+    }
+
+    const beforeCheckoutSeqs = await db.messageSequence.findMany({
+      where: { triggerEvent: 'before_checkout', isActive: true, OR: [{ vehicleId: null }, { vehicleId: rental.vehicleId }] },
+    });
+    for (const seq of beforeCheckoutSeqs) {
+      const scheduledAt = new Date(rental.endAt.getTime() - seq.delayMinutes * 60_000);
+      if (scheduledAt > new Date()) {
+        await db.sequenceExecution.create({ data: { rentalId, sequenceId: seq.id, scheduledAt, status: 'pending' } });
+      }
+    }
   }
 
   return sequences.length;

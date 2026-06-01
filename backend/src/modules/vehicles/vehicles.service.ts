@@ -5,10 +5,11 @@ export type VehicleCreateInput = {
   make: string;
   model: string;
   year: number;
-  color?: string;
-  photoUrl?: string;
+  color?: string | null;
+  photoUrl?: string | null;
   currentMileage?: number;
-  thirdPartyOwnerId?: string;
+  thirdPartyOwnerId?: string | null;
+  parkingZone?: string | null;
 };
 
 export type VehicleUpdateInput = Partial<VehicleCreateInput> & {

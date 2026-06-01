@@ -133,6 +133,8 @@ model Vehicle {
   photoUrl           String?
   fuelType           String?           // essence | diesel | electrique | hybride | gpl
   parkingZone        String?           // Zone de stationnement (ex: "Zone A - Parking Nord")
+  pickupInstructions String?           // Instructions de départ : adresse, code, boîte à clé...
+  returnInstructions String?           // Instructions de retour : où garer, clés, carburant...
   currentMileage     Int               @default(0)
   healthScore        Int               @default(100)
   isActive           Boolean           @default(true)

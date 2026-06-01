@@ -12,6 +12,8 @@ export interface Vehicle {
   photoUrl: string | null;
   fuelType: string | null;
   parkingZone: string | null;
+  pickupInstructions: string | null;
+  returnInstructions: string | null;
   currentMileage: number;
   healthScore: number;
   isActive: boolean;

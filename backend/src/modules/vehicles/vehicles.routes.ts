@@ -56,6 +56,8 @@ const createSchema = z.object({
   thirdPartyOwnerId: emptyToNull,
   fuelType: z.enum(['essence', 'diesel', 'electrique', 'hybride', 'gpl']).nullable().optional(),
   parkingZone: emptyToNull,
+  pickupInstructions: z.string().nullable().optional(),
+  returnInstructions: z.string().nullable().optional(),
 });
 
 const updateSchema = createSchema.partial().extend({

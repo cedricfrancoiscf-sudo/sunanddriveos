@@ -22,6 +22,8 @@ const EMPTY_FORM = {
   currentMileage: 0,
   fuelType: '',
   parkingZone: '',
+  pickupInstructions: '',
+  returnInstructions: '',
 };
 
 export default function VehicleFormPage(): React.JSX.Element {
@@ -51,6 +53,8 @@ export default function VehicleFormPage(): React.JSX.Element {
         currentMileage: vehicle.currentMileage,
         fuelType: (vehicle as { fuelType?: string | null }).fuelType ?? '',
         parkingZone: vehicle.parkingZone ?? '',
+        pickupInstructions: vehicle.pickupInstructions ?? '',
+        returnInstructions: vehicle.returnInstructions ?? '',
       });
       setHealthScore(vehicle.healthScore);
     }
@@ -65,6 +69,8 @@ export default function VehicleFormPage(): React.JSX.Element {
       photoUrl: data.photoUrl || null,
       fuelType: (data.fuelType as never) || null,
       parkingZone: data.parkingZone || null,
+      pickupInstructions: data.pickupInstructions || null,
+      returnInstructions: data.returnInstructions || null,
     }),
     onSuccess: (v) => {
       void qc.invalidateQueries({ queryKey: ['vehicles'] });
@@ -82,6 +88,8 @@ export default function VehicleFormPage(): React.JSX.Element {
         photoUrl: data.photoUrl || null,
         fuelType: (data.fuelType as never) || null,
         parkingZone: data.parkingZone || null,
+        pickupInstructions: data.pickupInstructions || null,
+        returnInstructions: data.returnInstructions || null,
         healthScore: Number(data.healthScore),
       }),
     onSuccess: () => {
@@ -184,6 +192,22 @@ export default function VehicleFormPage(): React.JSX.Element {
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
               placeholder="ex: Paris 15e, Boulogne, Versailles..." />
             <p className="mt-0.5 text-xs text-gray-400">Permet de regrouper vos véhicules par secteur géographique</p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Instructions de départ</label>
+            <textarea rows={5} value={form.pickupInstructions} onChange={e => setForm(f => ({ ...f, pickupInstructions: e.target.value }))}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] resize-y"
+              placeholder="Adresse exacte, code portail, localisation boîte à clé, consignes particulières..." />
+            <p className="mt-0.5 text-xs text-gray-400">Ces instructions sont transmises au locataire à la prise en charge du véhicule</p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Instructions de retour</label>
+            <textarea rows={5} value={form.returnInstructions} onChange={e => setForm(f => ({ ...f, returnInstructions: e.target.value }))}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] resize-y"
+              placeholder="Où se garer, où déposer les clés, niveau carburant à respecter, consignes de nettoyage..." />
+            <p className="mt-0.5 text-xs text-gray-400">Ces instructions sont transmises au locataire lors de la restitution du véhicule</p>
           </div>
 
           <div>

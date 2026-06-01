@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
@@ -12,7 +13,27 @@ interface Notification {
   isRead: boolean;
   relatedEntityType?: string;
   relatedEntityId?: string;
+  targetUrl?: string | null;
   createdAt: string;
+}
+
+// Calcule l'URL cible depuis le type + relatedEntityId (fallback si targetUrl absent)
+function resolveTargetUrl(n: Notification): string | null {
+  if (n.targetUrl) return n.targetUrl;
+  const id = n.relatedEntityId;
+  const map: Record<string, string> = {
+    car_seat_request:      `/rentals/${id}`,
+    blacklisted_renter:    `/rentals/${id}`,
+    fuel_insufficient:     `/rentals/${id}`,
+    unresponsive_renter:   `/rentals/${id}`,
+    evaluation_to_post:    `/rentals/${id}`,
+    evaluation_blocked:    `/rentals/${id}`,
+    maintenance_due:       `/maintenance/${id}`,
+    technical_control_due: `/technical-controls/${id}`,
+    sync_error:            '/settings#getaround',
+    rating_drop:           `/vehicles/${id}`,
+  };
+  return map[n.type] ?? null;
 }
 
 const TYPE_ICONS: Record<string, string> = {
@@ -29,6 +50,7 @@ export default function NotificationBell(): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: countData } = useQuery<{ count: number }>({
     queryKey: ['notifications-count'],
@@ -121,7 +143,14 @@ export default function NotificationBell(): React.JSX.Element {
                   className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 ${
                     !n.isRead ? 'bg-teal-50/40' : ''
                   }`}
-                  onClick={() => { if (!n.isRead) markRead.mutate(n.id); }}
+                  onClick={() => {
+                    if (!n.isRead) markRead.mutate(n.id);
+                    const url = resolveTargetUrl(n);
+                    if (url) {
+                      setOpen(false);
+                      navigate(url);
+                    }
+                  }}
                 >
                   <div className="flex items-start gap-3">
                     <span className="text-base mt-0.5 shrink-0">

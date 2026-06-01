@@ -1,9 +1,10 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { trackEvent } from '../../utils/tracking';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { api } from '../../utils/api';
 import { messagesApi, type Message } from './messagesApi';
 
 interface Conversation {
@@ -15,11 +16,30 @@ interface Conversation {
   hasPending: boolean;
 }
 
+const RENTAL_STATUS_OPTIONS = [
+  { value: '', label: 'Tous les statuts' },
+  { value: 'booked', label: 'Réservées' },
+  { value: 'active', label: 'Actives' },
+  { value: 'completed', label: 'Terminées' },
+  { value: 'cancelled', label: 'Annulées' },
+];
+
 export default function MessageListPage(): React.JSX.Element {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   useEffect(() => { void trackEvent('messages', 'view'); }, []);
   const rentalIdFilter = searchParams.get('rentalId') ?? '';
+
+  const [vehicleId, setVehicleId] = useState('');
+  const [rentalStatus, setRentalStatus] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const { data: vehiclesData } = useQuery({
+    queryKey: ['vehicles-list'],
+    queryFn: () => api.get<{ vehicles: Array<{ id: string; make: string; model: string; licensePlate: string }> }>('/vehicles').then(r => r.data.vehicles),
+    staleTime: 5 * 60_000,
+  });
 
   const { data: summary } = useQuery({
     queryKey: ['inbox-summary'],
@@ -29,13 +49,27 @@ export default function MessageListPage(): React.JSX.Element {
   });
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['messages', rentalIdFilter],
+    queryKey: ['messages', rentalIdFilter, vehicleId, rentalStatus, startDate, endDate],
     queryFn: () =>
       messagesApi.list({
         ...(rentalIdFilter ? { rentalId: rentalIdFilter } : {}),
+        ...(vehicleId ? { vehicleId } : {}),
+        ...(rentalStatus ? { rentalStatus } : {}),
+        ...(startDate ? { startDate } : {}),
+        ...(endDate ? { endDate } : {}),
+        limit: 200,
       }),
     staleTime: 30_000,
   });
+
+  function resetFilters(): void {
+    setVehicleId('');
+    setRentalStatus('');
+    setStartDate('');
+    setEndDate('');
+  }
+
+  const hasActiveFilters = Boolean(vehicleId || rentalStatus || startDate || endDate);
 
   const messages = data?.messages ?? [];
 
@@ -73,7 +107,7 @@ export default function MessageListPage(): React.JSX.Element {
   return (
     <div className="p-4 lg:p-6">
       {/* En-tête */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Messages</h1>
           {summary && (
@@ -94,6 +128,43 @@ export default function MessageListPage(): React.JSX.Element {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Barre de filtres */}
+      <div className="mb-4 flex flex-wrap items-end gap-2">
+        <select
+          value={vehicleId}
+          onChange={e => setVehicleId(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-[#01696e]"
+        >
+          <option value="">Tous les véhicules</option>
+          {(vehiclesData ?? []).map(v => (
+            <option key={v.id} value={v.id}>{v.make} {v.model} — {v.licensePlate}</option>
+          ))}
+        </select>
+
+        <select
+          value={rentalStatus}
+          onChange={e => setRentalStatus(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-[#01696e]"
+        >
+          {RENTAL_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+
+        <div className="flex items-center gap-1.5">
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700 outline-none focus:border-[#01696e]" />
+          <span className="text-xs text-gray-400">→</span>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700 outline-none focus:border-[#01696e]" />
+        </div>
+
+        {hasActiveFilters && (
+          <button type="button" onClick={resetFilters}
+            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 transition-colors">
+            Réinitialiser
+          </button>
+        )}
       </div>
 
       {/* Liste conversations */}

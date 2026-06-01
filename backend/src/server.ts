@@ -9,7 +9,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.DB_PASSWORD) throw new
 import cron from 'node-cron';
 import { createApp } from './app';
 import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client';
-import { executePendingSequences } from './modules/sequences/sequences.service';
+import { executePendingSequences, cleanupObsoleteSequences } from './modules/sequences/sequences.service';
 import { syncAllAccounts } from './modules/getaround-sync/getaround-sync.service';
 import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
@@ -34,6 +34,18 @@ const server = app.listen(PORT, () => {
   console.log(`[SunanddriveOS] Backend démarré — port ${PORT}`);
   console.log(`[SunanddriveOS] Environnement : ${process.env.NODE_ENV ?? 'development'}`);
   console.log(`[SunanddriveOS] Health : http://localhost:${PORT}/api/v1/health`);
+
+  // Nettoyage au démarrage : annuler les séquences dont la location est terminée
+  void (async () => {
+    try {
+      const master = getMasterClient();
+      const companies = await master.company.findMany({ where: { isActive: true }, select: { tenantDbUrl: true } });
+      for (const c of companies) {
+        const db = getTenantClient(c.tenantDbUrl);
+        await cleanupObsoleteSequences(db);
+      }
+    } catch (e) { console.error('[Séquences] Erreur cleanup démarrage:', e); }
+  })();
 });
 
 // Planificateur de séquences — s'exécute toutes les minutes pour tous les tenants actifs
@@ -99,6 +111,8 @@ async function runGetaroundSyncForAllTenants(): Promise<void> {
         const created = results.reduce((s, r) => s + r.vehicles.created + r.rentals.created, 0);
         const updated = results.reduce((s, r) => s + r.vehicles.updated + r.rentals.updated, 0);
         console.log(`[Sync] Tenant ${company.slug} : ${created} créé(s), ${updated} mis à jour`);
+        // Nettoyer les séquences obsolètes après chaque sync réussie
+        void cleanupObsoleteSequences(db).catch(e => console.error('[Séquences] Erreur cleanup post-sync:', e));
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[Sync] Tenant ${company.slug} : erreur — ${message}`);

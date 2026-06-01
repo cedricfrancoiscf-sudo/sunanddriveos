@@ -255,12 +255,13 @@ model SequenceExecution {
   rental       Rental          @relation(fields: [rentalId], references: [id])
   sequenceId   String
   sequence     MessageSequence @relation(fields: [sequenceId], references: [id])
-  scheduledAt  DateTime
-  executedAt   DateTime?
-  status       SequenceStatus  @default(pending)
-  messageId    String?
-  errorMessage String?
-  createdAt    DateTime        @default(now())
+  scheduledAt      DateTime
+  executedAt       DateTime?
+  status           SequenceStatus  @default(pending)
+  messageId        String?
+  errorMessage     String?
+  cancelledReason  String?
+  createdAt        DateTime        @default(now())
 
   @@map("sequence_executions")
 }
@@ -507,6 +508,7 @@ model Notification {
   isRead            Boolean  @default(false)
   relatedEntityType String?  // vehicle | rental | maintenance | technical_control
   relatedEntityId   String?
+  targetUrl         String?  // ex: "/rentals/abc123", "/settings#getaround"
   createdAt         DateTime @default(now())
 
   @@map("notifications")

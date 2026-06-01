@@ -58,6 +58,15 @@ export async function scheduleSequencesForRental(
   });
   if (!rental) return;
 
+  const now = new Date();
+  const twoHoursAgo = new Date(now.getTime() - 2 * 3_600_000);
+
+  // Ne jamais déclencher sur une location annulée
+  if (rental.status === 'cancelled') return;
+
+  // Ne jamais déclencher si la date de fin est dépassée depuis plus de 2h
+  if (rental.endAt < twoHoursAgo) return;
+
   const sequences = await db.messageSequence.findMany({
     where: {
       triggerEvent,
@@ -125,9 +134,40 @@ export async function executePendingSequences(
   });
 
   let executed = 0;
+  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
 
   for (const exec of pending) {
     try {
+      // Recharger la location pour avoir son statut à jour au moment de l'envoi
+      const freshRental = await db.rental.findUnique({
+        where: { id: exec.rentalId },
+        select: { id: true, status: true, endAt: true },
+      });
+
+      if (!freshRental) {
+        await db.sequenceExecution.update({
+          where: { id: exec.id },
+          data: { status: 'cancelled', cancelledReason: 'rental_deleted' },
+        });
+        continue;
+      }
+
+      if (freshRental.status === 'cancelled') {
+        await db.sequenceExecution.updateMany({
+          where: { rentalId: freshRental.id, status: 'pending' },
+          data: { status: 'cancelled', cancelledReason: 'rental_cancelled' },
+        });
+        continue;
+      }
+
+      if (freshRental.status === 'completed' && freshRental.endAt < twoHoursAgo) {
+        await db.sequenceExecution.updateMany({
+          where: { rentalId: freshRental.id, status: 'pending' },
+          data: { status: 'cancelled', cancelledReason: 'rental_completed' },
+        });
+        continue;
+      }
+
       const vars: Record<string, string> = {
         driver_name: exec.rental.driverName,
         vehicle: `${exec.rental.vehicle.make} ${exec.rental.vehicle.model}`,
@@ -181,4 +221,28 @@ export async function executePendingSequences(
   }
 
   return { executed, total: pending.length };
+}
+
+// Annule les séquences en attente dont la location est terminée ou annulée
+export async function cleanupObsoleteSequences(db: PrismaClient): Promise<{ cancelled: number }> {
+  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+
+  const result = await db.sequenceExecution.updateMany({
+    where: {
+      status: 'pending',
+      rental: {
+        OR: [
+          { status: 'cancelled' },
+          { status: 'completed', endAt: { lt: twoHoursAgo } },
+          { endAt: { lt: twoHoursAgo } },
+        ],
+      },
+    },
+    data: { status: 'cancelled', cancelledReason: 'rental_completed' },
+  });
+
+  if (result.count > 0) {
+    console.log(`[Séquences] ${result.count} séquence(s) obsolète(s) annulée(s)`);
+  }
+  return { cancelled: result.count };
 }

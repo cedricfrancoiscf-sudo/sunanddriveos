@@ -2,19 +2,29 @@ import type { PrismaClient } from '../../generated/tenant';
 
 export type MessageFilters = {
   rentalId?: string;
-  status?: string;
+  vehicleId?: string;
+  rentalStatus?: string;
+  startDate?: string;
+  endDate?: string;
   direction?: 'inbound' | 'outbound';
   page?: number;
   limit?: number;
 };
 
 export async function listMessages(db: PrismaClient, filters: MessageFilters = {}) {
-  const { rentalId, status, direction, page = 1, limit = 50 } = filters;
+  const { rentalId, vehicleId, rentalStatus, startDate, endDate, direction, page = 1, limit = 50 } = filters;
+
+  const rentalWhere: Record<string, unknown> = {
+    ...(vehicleId ? { vehicleId } : {}),
+    ...(rentalStatus ? { status: rentalStatus } : {}),
+    ...(startDate ? { startAt: { gte: new Date(startDate) } } : {}),
+    ...(endDate ? { endAt: { lte: new Date(endDate) } } : {}),
+  };
 
   const where = {
     ...(rentalId ? { rentalId } : {}),
-    ...(status ? { status } : {}),
     ...(direction ? { direction } : {}),
+    ...(Object.keys(rentalWhere).length > 0 ? { rental: { is: rentalWhere } } : {}),
   } as never;
 
   const [messages, total] = await Promise.all([
@@ -27,6 +37,7 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
             driverName: true,
             startAt: true,
             endAt: true,
+            status: true,
             vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
           },
         },

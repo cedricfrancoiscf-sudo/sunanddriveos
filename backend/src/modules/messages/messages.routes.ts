@@ -21,7 +21,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const q = z.object({
       rentalId: z.string().optional(),
-      status: z.string().optional(),
+      vehicleId: z.string().optional(),
+      rentalStatus: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
       direction: z.enum(['inbound', 'outbound']).optional(),
       page: z.coerce.number().int().min(1).optional(),
       limit: z.coerce.number().int().min(1).max(200).optional(),

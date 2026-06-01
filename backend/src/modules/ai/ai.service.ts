@@ -8,6 +8,9 @@ export interface MessageAnalysis {
   isIncidentReport: boolean;
   isDissatisfaction: boolean;
   isUrgent: boolean;
+  isAccessoryRequest: boolean;
+  needsHumanReply: boolean;
+  detectedAccessory: string | null;
   intent: string;        // résumé court de l'intention
   sentiment: 'positive' | 'neutral' | 'negative';
 }
@@ -44,6 +47,9 @@ export async function analyzeMessage(content: string): Promise<MessageAnalysis> 
 - isIncidentReport (boolean) : signalement de sinistre, accident, dommage, vol
 - isDissatisfaction (boolean) : insatisfaction, plainte, mécontentement
 - isUrgent (boolean) : situation urgente nécessitant réponse immédiate
+- isAccessoryRequest (boolean) : demande d'accessoire (GPS, câble, siège vélo, etc.)
+- needsHumanReply (boolean) : question complexe, litige, situation ambiguë nécessitant un humain
+- detectedAccessory (string | null) : nom de l'accessoire demandé, null si aucun
 - intent (string, max 80 chars) : résumé court de l'intention en français
 - sentiment ("positive" | "neutral" | "negative")
 
@@ -61,6 +67,9 @@ Message : "${content}"`,
       isIncidentReport: false,
       isDissatisfaction: false,
       isUrgent: false,
+      isAccessoryRequest: false,
+      needsHumanReply: false,
+      detectedAccessory: null,
       intent: 'Analyse indisponible',
       sentiment: 'neutral',
     };

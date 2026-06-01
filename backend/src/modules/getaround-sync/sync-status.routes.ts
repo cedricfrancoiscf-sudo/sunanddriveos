@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
-import { getSyncState, syncAllAccounts, recalculateHistoricalPayouts } from './getaround-sync.service';
+import { getSyncState, syncAllAccounts, recalculateHistoricalPayouts, analyzeExistingMessages } from './getaround-sync.service';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -40,6 +40,18 @@ router.post('/force-full', requireRole('admin'), async (req: Request, res: Respo
       .catch(e => console.error('[ForceFull] Erreur:', e));
 
     res.json({ message: 'Resync complète lancée' });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/sync/analyze-messages — analyse IA des messages sans aiAnalysis (fire-and-forget)
+router.get('/analyze-messages', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const tenantSlug = req.auth?.tenantSlug ?? 'default';
+    void analyzeExistingMessages(db, tenantSlug)
+      .then(() => console.log(`[IA][${tenantSlug}] analyzeExistingMessages terminé`))
+      .catch(e => console.error(`[IA][${tenantSlug}] analyzeExistingMessages erreur:`, e));
+    res.json({ message: 'Analyse lancée — résultats dans quelques minutes' });
   } catch (err: unknown) { next(err); }
 });
 

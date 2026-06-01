@@ -2,7 +2,7 @@ import type { PrismaClient } from '../../generated/tenant';
 import { decrypt, encrypt } from '../../utils/crypto';
 import { createGetaroundClient, type GetaroundRental, parseInvoiceCharges } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
-import { analyzeMessage } from '../ai/ai.service';
+import { analyzeMessage, suggestReply } from '../ai/ai.service';
 import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
 import { getMasterClient } from '../../prisma/client';
 
@@ -689,7 +689,178 @@ export async function syncAccountRentals(
   return result;
 }
 
-// ─── 3. Messages (endpoint manuel) ──────────────────────────────────────────
+// ─── 3. Réponse IA automatique ───────────────────────────────────────────────
+
+async function autoReplyToMessage(
+  db: PrismaClient,
+  ga: GetaroundClient,
+  messageContent: string,
+  rental: {
+    id: string;
+    getaroundId: string;
+    driverName: string;
+    startAt: Date;
+    endAt: Date;
+    vehicleId: string;
+    vehicle: {
+      make: string; model: string; licensePlate: string;
+      year: number | null; color: string | null; fuelType: string | null;
+      parkingZone: string | null;
+      pickupInstructions: string | null;
+      returnInstructions: string | null;
+    };
+    messages: Array<{ direction: string; content: string }>;
+  },
+  tenantSlug: string,
+): Promise<void> {
+  const settings = await db.companySettings.findFirst({
+    select: {
+      aiModeCarSeat: true, aiModeIncident: true, aiModeGeneral: true,
+      aiTone: true, aiName: true, senderName: true,
+    },
+  });
+  if (!settings) return;
+
+  const tone = (settings.aiTone as 'vouvoiement' | 'tutoiement') ?? 'vouvoiement';
+  const analysis = await analyzeMessage(messageContent);
+
+  const context = {
+    driverName: rental.driverName,
+    vehicleMake: rental.vehicle.make,
+    vehicleModel: rental.vehicle.model,
+    vehicleYear: rental.vehicle.year ?? undefined,
+    vehicleColor: rental.vehicle.color ?? undefined,
+    fuelType: rental.vehicle.fuelType ?? undefined,
+    licensePlate: rental.vehicle.licensePlate,
+    parkingZone: rental.vehicle.parkingZone ?? undefined,
+    pickupInstructions: rental.vehicle.pickupInstructions ?? undefined,
+    returnInstructions: rental.vehicle.returnInstructions ?? undefined,
+    startDate: new Date(rental.startAt).toLocaleDateString('fr-FR'),
+    endDate: new Date(rental.endAt).toLocaleDateString('fr-FR'),
+    companyName: settings.senderName ?? 'Sun and Drive',
+    aiName: settings.aiName ?? undefined,
+  };
+
+  const admins = await db.user.findMany({
+    where: { isActive: true, OR: [{ role: 'admin' }, { roles: { has: 'admin' } }] },
+    select: { id: true },
+  });
+
+  const mode = analysis.isIncidentReport || analysis.needsHumanReply
+    ? settings.aiModeIncident
+    : analysis.isCarSeatRequest || analysis.isAccessoryRequest
+    ? settings.aiModeCarSeat
+    : settings.aiModeGeneral;
+
+  if (mode === 'manual' || analysis.isUrgent || analysis.needsHumanReply) {
+    await db.notification.createMany({
+      data: admins.map(a => ({
+        userId: a.id,
+        type: analysis.isUrgent ? 'urgent_message' : 'human_reply_needed',
+        title: analysis.isUrgent ? '🚨 Message urgent' : '👤 Réponse humaine requise',
+        body: `${rental.driverName} : ${messageContent.slice(0, 100)}`,
+        relatedEntityId: rental.id,
+        targetUrl: `/rentals/${rental.id}`,
+      })),
+      skipDuplicates: true,
+    });
+    return;
+  }
+
+  if (analysis.isCarSeatRequest) {
+    const existing = await db.carSeatRequest.findFirst({
+      where: { rentalId: rental.id, status: 'pending' },
+    });
+    if (!existing) {
+      await db.carSeatRequest.create({
+        data: { rentalId: rental.id, vehicleId: rental.vehicleId, status: 'pending' },
+      });
+    }
+    await db.notification.createMany({
+      data: admins.map(a => ({
+        userId: a.id,
+        type: 'car_seat_request',
+        title: '🪑 Demande de siège auto',
+        body: `${rental.driverName} demande un siège auto`,
+        relatedEntityId: rental.id,
+        targetUrl: `/rentals/${rental.id}`,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  if (analysis.isAccessoryRequest && analysis.detectedAccessory) {
+    await db.notification.createMany({
+      data: admins.map(a => ({
+        userId: a.id,
+        type: 'accessory_request',
+        title: `🎒 Demande ${analysis.detectedAccessory}`,
+        body: `${rental.driverName} demande ${analysis.detectedAccessory}`,
+        relatedEntityId: rental.id,
+        targetUrl: `/rentals/${rental.id}`,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  const reply = await suggestReply(messageContent, context, tone, rental.messages);
+
+  if (reply.includes('Je transmets votre question')) {
+    await db.notification.createMany({
+      data: admins.map(a => ({
+        userId: a.id,
+        type: 'ai_transfer',
+        title: '❓ Question sans réponse IA',
+        body: `${rental.driverName} : ${messageContent.slice(0, 100)}`,
+        relatedEntityId: rental.id,
+        targetUrl: `/rentals/${rental.id}`,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  if (mode === 'auto') {
+    try {
+      await ga.sendMessage(parseInt(rental.getaroundId, 10), reply);
+      await db.message.create({
+        data: {
+          rentalId: rental.id,
+          direction: 'outbound',
+          content: reply,
+          sentAt: new Date(),
+          status: 'sent',
+        },
+      });
+      console.log(`[IA][${tenantSlug}] Réponse auto envoyée pour rental ${rental.id}`);
+    } catch (err) {
+      console.error(`[IA][${tenantSlug}] Erreur envoi:`, err instanceof Error ? err.message : err);
+    }
+  } else {
+    await db.message.create({
+      data: {
+        rentalId: rental.id,
+        direction: 'outbound',
+        content: reply,
+        status: 'pending_approval',
+        aiSuggestion: reply,
+      },
+    });
+    await db.notification.createMany({
+      data: admins.map(a => ({
+        userId: a.id,
+        type: 'ai_draft',
+        title: '✍️ Brouillon IA à approuver',
+        body: `Réponse générée pour ${rental.driverName} — à valider`,
+        relatedEntityId: rental.id,
+        targetUrl: `/rentals/${rental.id}`,
+      })),
+      skipDuplicates: true,
+    });
+    console.log(`[IA][${tenantSlug}] Brouillon créé pour rental ${rental.id}`);
+  }
+}
+
+// ─── 4. Messages (endpoint manuel) ──────────────────────────────────────────
 
 export interface MessageSyncResult {
   accountId: string;
@@ -760,52 +931,30 @@ export async function syncAccountMessages(
           if (isNew) result.created++;
           else result.skipped++;
 
-          // Détection siège auto sur messages entrants nouvellement créés
+          // Analyse IA + réponse automatique sur messages entrants nouveaux
           if (direction === 'inbound' && isNew) {
-            void (async () => {
-              try {
-                const analysis = await analyzeMessage(msg.content);
-                if (!analysis.isCarSeatRequest) return;
+            const fullRental = await db.rental.findUnique({
+              where: { id: rental.id },
+              include: {
+                vehicle: {
+                  select: {
+                    make: true, model: true, licensePlate: true,
+                    year: true, color: true, fuelType: true,
+                    parkingZone: true, pickupInstructions: true, returnInstructions: true,
+                  },
+                },
+                messages: {
+                  orderBy: { sentAt: 'asc' },
+                  select: { direction: true, content: true },
+                  take: 10,
+                },
+              },
+            });
 
-                const existing = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
-                if (existing) return;
-
-                await db.carSeatRequest.create({
-                  data: { vehicleId: rental.vehicleId, rentalId: rental.id },
-                });
-
-                const vehicleLabel = `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`;
-                const startLabel = rental.startAt.toLocaleDateString('fr-FR');
-
-                // Notifier admins + carkeepers du véhicule
-                const [admins, carkeepersAssigned] = await Promise.all([
-                  db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
-                  db.vehicleCarkeeper.findMany({ where: { vehicleId: rental.vehicleId }, select: { userId: true } }),
-                ]);
-                const recipientIds = [...new Set([...admins.map(a => a.id), ...carkeepersAssigned.map(c => c.userId)])];
-                await db.notification.createMany({
-                  data: recipientIds.map(userId => ({
-                    userId,
-                    type: 'car_seat_request',
-                    title: `🪑 Siège auto demandé par ${rental.driverName} pour ${vehicleLabel} le ${startLabel}`,
-                    body: `Message : ${msg.content.slice(0, 120)}`,
-                    relatedEntityType: 'rental',
-                    relatedEntityId: rental.id,
-                  })),
-                  skipDuplicates: true,
-                });
-                // Telegram siège auto
-                void (async () => {
-                  try {
-                    const chatId = await getTelegramChatId(db as never);
-                    if (!chatId) return;
-                    await sendTelegramMessage(chatId,
-                      `🪑 <b>Siège auto demandé</b>\n${rental.driverName} — ${vehicleLabel}\nDépart le ${startLabel}`,
-                    );
-                  } catch (e) { console.error('[Telegram] Siège auto:', e); }
-                })();
-              } catch (e) { console.error('[CarSeatDetect]', e); }
-            })();
+            if (fullRental) {
+              void autoReplyToMessage(db, ga, msg.content, fullRental, tenantSlug)
+                .catch(e => console.error('[IA] autoReply error:', e));
+            }
           }
 
           void upserted; // référence utilisée ci-dessus
@@ -877,71 +1026,50 @@ export async function syncAccountInvoicesPayouts(db: PrismaClient, accountId: st
 
 // ─── 5. Analyse one-shot des messages existants ─────────────────────────────
 
-export async function analyzeExistingMessages(db: PrismaClient): Promise<{ analyzed: number; detected: number }> {
+export async function analyzeExistingMessages(db: PrismaClient, tenantSlug = 'default'): Promise<void> {
   const messages = await db.message.findMany({
-    where: {
-      direction: 'inbound',
-      rental: { carSeatRequests: { none: {} } },
-    },
-    select: {
-      id: true,
-      content: true,
-      rentalId: true,
-      rental: {
-        select: {
-          vehicleId: true,
-          driverName: true,
-          startAt: true,
-          vehicle: { select: { make: true, model: true, licensePlate: true } },
-        },
-      },
-    },
+    where: { direction: 'inbound', aiAnalysis: null as never },
+    select: { id: true, content: true, rentalId: true },
+    take: 200,
+    orderBy: { createdAt: 'desc' },
   });
 
-  let analyzed = 0;
-  let detected = 0;
+  console.log(`[IA][${tenantSlug}] Analyse de ${messages.length} messages historiques`);
+  let carSeatFound = 0;
 
   for (const msg of messages) {
     try {
       const analysis = await analyzeMessage(msg.content);
-      analyzed++;
+      await db.message.update({
+        where: { id: msg.id },
+        data: { aiAnalysis: analysis as never },
+      });
 
       if (analysis.isCarSeatRequest) {
-        const existing = await db.carSeatRequest.findFirst({ where: { rentalId: msg.rentalId } });
+        const existing = await db.carSeatRequest.findFirst({
+          where: { rentalId: msg.rentalId, status: 'pending' },
+        });
         if (!existing) {
-          await db.carSeatRequest.create({
-            data: { vehicleId: msg.rental.vehicleId, rentalId: msg.rentalId },
+          const rental = await db.rental.findUnique({
+            where: { id: msg.rentalId },
+            select: { vehicleId: true },
           });
-          const vehicleLabel = `${msg.rental.vehicle.make} ${msg.rental.vehicle.model} (${msg.rental.vehicle.licensePlate})`;
-          const startLabel = msg.rental.startAt.toLocaleDateString('fr-FR');
-          const [admins, carkeepers] = await Promise.all([
-            db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
-            db.vehicleCarkeeper.findMany({ where: { vehicleId: msg.rental.vehicleId }, select: { userId: true } }),
-          ]);
-          const recipientIds = [...new Set([...admins.map(a => a.id), ...carkeepers.map(c => c.userId)])];
-          await db.notification.createMany({
-            data: recipientIds.map(userId => ({
-              userId,
-              type: 'car_seat_request',
-              title: `🪑 Siège auto demandé par ${msg.rental.driverName} pour ${vehicleLabel} le ${startLabel}`,
-              body: `Message : ${msg.content.slice(0, 120)}`,
-              relatedEntityType: 'rental',
-              relatedEntityId: msg.rentalId,
-            })),
-            skipDuplicates: true,
-          });
-          detected++;
+          if (rental) {
+            await db.carSeatRequest.create({
+              data: { rentalId: msg.rentalId, vehicleId: rental.vehicleId, status: 'pending' },
+            });
+            carSeatFound++;
+          }
         }
       }
 
-      await new Promise<void>(resolve => setTimeout(resolve, 500));
-    } catch (e) {
-      console.error(`[Analyse] Message ${msg.id}:`, e);
+      await sleep(500);
+    } catch (err) {
+      console.error(`[IA] Erreur analyse message ${msg.id}:`, err instanceof Error ? err.message : err);
     }
   }
 
-  console.log(`[Analyse] ${analyzed} messages analysés, ${detected} sièges détectés`);
-  return { analyzed, detected };
+  console.log(`[IA][${tenantSlug}] Terminé — ${carSeatFound} siège(s) auto détecté(s)`);
 }
 
 // ─── 6. Correction historique kilométrage ────────────────────────────────────

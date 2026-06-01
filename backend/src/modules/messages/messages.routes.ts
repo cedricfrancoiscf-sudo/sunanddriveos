@@ -26,6 +26,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       startDate: z.string().optional(),
       endDate: z.string().optional(),
       direction: z.enum(['inbound', 'outbound']).optional(),
+      sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
       page: z.coerce.number().int().min(1).optional(),
       limit: z.coerce.number().int().min(1).max(200).optional(),
     }).safeParse(req.query);

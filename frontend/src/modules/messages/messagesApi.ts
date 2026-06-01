@@ -49,7 +49,7 @@ export interface InboxSummary {
 }
 
 export const messagesApi = {
-  list: (params: { rentalId?: string; vehicleId?: string; rentalStatus?: string; startDate?: string; endDate?: string; direction?: string; page?: number; limit?: number } = {}) =>
+  list: (params: { rentalId?: string; vehicleId?: string; rentalStatus?: string; startDate?: string; endDate?: string; direction?: string; sortOrder?: 'asc' | 'desc'; page?: number; limit?: number } = {}) =>
     api.get<{ messages: Message[]; total: number }>('/messages', { params }).then((r) => r.data),
 
   get: (id: string) =>

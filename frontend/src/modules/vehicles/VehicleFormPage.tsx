@@ -3,6 +3,15 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { vehiclesApi } from './vehiclesApi';
 
+const FUEL_TYPES = [
+  { value: '', label: 'Non renseigné' },
+  { value: 'essence', label: 'Essence' },
+  { value: 'diesel', label: 'Diesel' },
+  { value: 'electrique', label: 'Électrique' },
+  { value: 'hybride', label: 'Hybride' },
+  { value: 'gpl', label: 'GPL' },
+] as const;
+
 const EMPTY_FORM = {
   licensePlate: '',
   make: '',
@@ -11,6 +20,7 @@ const EMPTY_FORM = {
   color: '',
   photoUrl: '',
   currentMileage: 0,
+  fuelType: '',
   parkingZone: '',
 };
 
@@ -39,6 +49,7 @@ export default function VehicleFormPage(): React.JSX.Element {
         color: vehicle.color ?? '',
         photoUrl: vehicle.photoUrl ?? '',
         currentMileage: vehicle.currentMileage,
+        fuelType: (vehicle as { fuelType?: string | null }).fuelType ?? '',
         parkingZone: vehicle.parkingZone ?? '',
       });
       setHealthScore(vehicle.healthScore);
@@ -52,6 +63,7 @@ export default function VehicleFormPage(): React.JSX.Element {
       currentMileage: Number(data.currentMileage),
       color: data.color || null,
       photoUrl: data.photoUrl || null,
+      fuelType: (data.fuelType as never) || null,
       parkingZone: data.parkingZone || null,
     }),
     onSuccess: (v) => {
@@ -68,6 +80,7 @@ export default function VehicleFormPage(): React.JSX.Element {
         currentMileage: Number(data.currentMileage),
         color: data.color || null,
         photoUrl: data.photoUrl || null,
+        fuelType: (data.fuelType as never) || null,
         parkingZone: data.parkingZone || null,
         healthScore: Number(data.healthScore),
       }),
@@ -141,6 +154,13 @@ export default function VehicleFormPage(): React.JSX.Element {
               <label className="mb-1 block text-xs font-medium text-gray-600">Couleur</label>
               <input type="text" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" placeholder="Blanc" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Carburant</label>
+              <select value={form.fuelType} onChange={e => setForm(f => ({ ...f, fuelType: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]">
+                {FUEL_TYPES.map(ft => <option key={ft.value} value={ft.value}>{ft.label}</option>)}
+              </select>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Kilométrage actuel</label>

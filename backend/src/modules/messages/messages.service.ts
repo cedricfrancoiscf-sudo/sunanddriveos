@@ -7,12 +7,13 @@ export type MessageFilters = {
   startDate?: string;
   endDate?: string;
   direction?: 'inbound' | 'outbound';
+  sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
 };
 
 export async function listMessages(db: PrismaClient, filters: MessageFilters = {}) {
-  const { rentalId, vehicleId, rentalStatus, startDate, endDate, direction, page = 1, limit = 50 } = filters;
+  const { rentalId, vehicleId, rentalStatus, startDate, endDate, direction, sortOrder = 'desc', page = 1, limit = 50 } = filters;
 
   // Étape 1 : si filtres sur la location, résoudre les rentalIds éligibles
   let eligibleRentalIds: string[] | null = null;
@@ -39,9 +40,9 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
   // Étape 2 : groupBy rentalId → conversations distinctes triées par dernier message
   const rentalGroups = await db.message.groupBy({
     by: ['rentalId'],
-    _max: { createdAt: true },
+    _max: { sentAt: true },
     where: msgWhere,
-    orderBy: { _max: { createdAt: 'desc' } },
+    orderBy: { _max: { sentAt: sortOrder } },
     skip: (page - 1) * limit,
     take: limit,
   });

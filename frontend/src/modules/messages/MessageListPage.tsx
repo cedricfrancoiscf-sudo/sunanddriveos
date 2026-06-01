@@ -34,6 +34,7 @@ export default function MessageListPage(): React.JSX.Element {
   const [rentalStatus, setRentalStatus] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const { data: vehiclesData } = useQuery({
     queryKey: ['vehicles-list'],
@@ -49,7 +50,7 @@ export default function MessageListPage(): React.JSX.Element {
   });
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['messages', rentalIdFilter, vehicleId, rentalStatus, startDate, endDate],
+    queryKey: ['messages', rentalIdFilter, vehicleId, rentalStatus, startDate, endDate, sortOrder],
     queryFn: () =>
       messagesApi.list({
         ...(rentalIdFilter ? { rentalId: rentalIdFilter } : {}),
@@ -57,6 +58,7 @@ export default function MessageListPage(): React.JSX.Element {
         ...(rentalStatus ? { rentalStatus } : {}),
         ...(startDate ? { startDate } : {}),
         ...(endDate ? { endDate } : {}),
+        sortOrder,
         limit: 200,
       }),
     staleTime: 30_000,
@@ -157,6 +159,15 @@ export default function MessageListPage(): React.JSX.Element {
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
             className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700 outline-none focus:border-[#01696e]" />
         </div>
+
+        <button
+          type="button"
+          onClick={() => setSortOrder(o => o === 'desc' ? 'asc' : 'desc')}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          title={sortOrder === 'desc' ? 'Tri : plus récent en premier' : 'Tri : plus ancien en premier'}
+        >
+          {sortOrder === 'desc' ? '↓ Plus récent' : '↑ Plus ancien'}
+        </button>
 
         {hasActiveFilters && (
           <button type="button" onClick={resetFilters}

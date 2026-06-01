@@ -131,6 +131,7 @@ model Vehicle {
   year               Int
   color              String?
   photoUrl           String?
+  fuelType           String?           // essence | diesel | electrique | hybride | gpl
   parkingZone        String?           // Zone de stationnement (ex: "Zone A - Parking Nord")
   currentMileage     Int               @default(0)
   healthScore        Int               @default(100)

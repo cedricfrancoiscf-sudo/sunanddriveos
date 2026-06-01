@@ -103,8 +103,11 @@ export default function RentalListPage(): React.JSX.Element {
   const monthEnd = endOfMonth(currentMonth);
   const fromIso = monthStart.toISOString();
   const toIso = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), monthEnd.getDate(), 23, 59, 59).toISOString();
-  const isCurrentMonth = currentMonth.getFullYear() === new Date().getFullYear() &&
-    currentMonth.getMonth() === new Date().getMonth();
+  const maxDate = new Date();
+  maxDate.setMonth(maxDate.getMonth() + 3);
+  const isMaxMonth = currentMonth.getFullYear() === maxDate.getFullYear() &&
+    currentMonth.getMonth() === maxDate.getMonth();
+  const isMinMonth = currentMonth.getFullYear() === 2024 && currentMonth.getMonth() === 6; // juillet 2024
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['rentals', fromIso, toIso],
@@ -175,7 +178,8 @@ export default function RentalListPage(): React.JSX.Element {
           <button
             type="button"
             onClick={() => setCurrentMonth(m => subMonths(m, 1))}
-            className="rounded p-1 text-gray-400 hover:text-gray-700"
+            disabled={isMinMonth}
+            className="rounded p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -187,7 +191,7 @@ export default function RentalListPage(): React.JSX.Element {
           <button
             type="button"
             onClick={() => setCurrentMonth(m => addMonths(m, 1))}
-            disabled={isCurrentMonth}
+            disabled={isMaxMonth}
             className="rounded p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

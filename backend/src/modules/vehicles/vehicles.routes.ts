@@ -54,6 +54,7 @@ const createSchema = z.object({
   photoUrl: emptyToNull,
   currentMileage: z.number().int().min(0).optional(),
   thirdPartyOwnerId: emptyToNull,
+  fuelType: z.enum(['essence', 'diesel', 'electrique', 'hybride', 'gpl']).nullable().optional(),
   parkingZone: emptyToNull,
 });
 

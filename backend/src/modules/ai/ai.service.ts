@@ -16,9 +16,15 @@ export interface RentalContext {
   driverName: string;
   vehicleMake: string;
   vehicleModel: string;
+  vehicleYear?: number;
+  vehicleColor?: string;
+  fuelType?: string;
   licensePlate: string;
+  parkingZone?: string;
   startDate: string;
   endDate: string;
+  companyName?: string;
+  aiName?: string;
 }
 
 export async function analyzeMessage(content: string): Promise<MessageAnalysis> {
@@ -390,10 +396,12 @@ Réponds directement avec le texte du message, sans introduction ni explication.
 
 Contexte de la location :
 - Locataire : ${context.driverName}
-- Véhicule : ${context.vehicleMake} ${context.vehicleModel} (${context.licensePlate})
+- Véhicule : ${context.vehicleMake} ${context.vehicleModel}${context.vehicleYear ? ` ${context.vehicleYear}` : ''}${context.vehicleColor ? ` (${context.vehicleColor})` : ''} — ${context.licensePlate}
+${context.fuelType ? `- Carburant : ${context.fuelType}` : ''}${context.parkingZone ? `\n- Zone : ${context.parkingZone}` : ''}
 - Du ${context.startDate} au ${context.endDate}
 ${historyBlock}
 
+Réponds en te présentant comme ${context.aiName ?? "l'équipe"} de ${context.companyName ?? 'Sun and Drive'}.
 Message du locataire : "${incomingMessage}"
 
 Réponse (directement le texte, sans formule d'appel) :`,

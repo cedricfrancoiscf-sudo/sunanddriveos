@@ -65,7 +65,7 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
     const rental = await db.rental.findUnique({
       where: { id: body.data.rentalId },
       include: {
-        vehicle: { select: { make: true, model: true, licensePlate: true } },
+        vehicle: { select: { make: true, model: true, licensePlate: true, year: true, color: true, fuelType: true, parkingZone: true } },
         messages: {
           orderBy: { createdAt: 'asc' },
           select: { direction: true, content: true },
@@ -94,9 +94,15 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
       driverName: rental.driverName,
       vehicleMake: rental.vehicle.make,
       vehicleModel: rental.vehicle.model,
+      vehicleYear: rental.vehicle.year ?? undefined,
+      vehicleColor: rental.vehicle.color ?? undefined,
+      fuelType: rental.vehicle.fuelType ?? undefined,
       licensePlate: rental.vehicle.licensePlate,
+      parkingZone: rental.vehicle.parkingZone ?? undefined,
       startDate: new Date(rental.startAt).toLocaleDateString('fr-FR'),
       endDate: new Date(rental.endAt).toLocaleDateString('fr-FR'),
+      companyName: 'Sun and Drive',
+      aiName: aiName,
     };
 
     const suggestion = await suggestReply(

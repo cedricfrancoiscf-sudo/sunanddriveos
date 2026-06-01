@@ -20,8 +20,6 @@ interface CarSeat {
   id: string; name: string; minWeightKg: number; maxWeightKg: number;
   totalStock: number; availableStock: number; outOfService: number; isActive: boolean;
 }
-interface IcalInfo { icalToken: string | null; icalUrl: string | null; }
-
 type Tab = 'accessories' | 'car-seats';
 
 // ── Utilitaires ───────────────────────────────────────────────────────────
@@ -40,115 +38,6 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
   const s = STATUS_LABEL[status] ?? { label: status, cls: 'bg-gray-100 text-gray-500' };
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>;
-}
-
-// ── iCal Section ──────────────────────────────────────────────────────────
-
-function IcalSection(): React.JSX.Element {
-  const qc = useQueryClient();
-  const [copied, setCopied] = useState(false);
-
-  const { data, isLoading } = useQuery<IcalInfo>({
-    queryKey: ['ical-info'],
-    queryFn: () => api.get<IcalInfo>('/settings/ical-info').then(r => r.data),
-  });
-
-  const regenerateMutation = useMutation({
-    mutationFn: () => api.post<IcalInfo>('/settings/ical-regenerate', {}),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['ical-info'] }),
-  });
-
-  function copyUrl(): void {
-    if (!data?.icalUrl) return;
-    void navigator.clipboard.writeText(data.icalUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
-
-  const url = data?.icalUrl;
-
-  return (
-    <div className="mb-5 rounded-2xl border border-[#01696e]/20 bg-[#01696e]/5 p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <svg className="h-4 w-4 text-[#01696e]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-        <span className="text-sm font-semibold text-gray-800">Lien iCal permanent</span>
-        <span className="rounded-full bg-[#01696e]/10 px-2 py-0.5 text-[10px] font-medium text-[#01696e]">
-          Google · Apple · Outlook
-        </span>
-      </div>
-
-      {isLoading ? (
-        <div className="h-4 w-48 animate-pulse rounded bg-gray-200" />
-      ) : !url ? (
-        <div className="flex items-center gap-3">
-          <p className="text-sm text-gray-500">Aucun lien généré.</p>
-          <button type="button" onClick={() => regenerateMutation.mutate()}
-            disabled={regenerateMutation.isPending}
-            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
-            style={{ backgroundColor: '#01696e' }}>
-            {regenerateMutation.isPending ? 'Génération...' : 'Générer le lien'}
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {/* URL + bouton copier */}
-          <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600">
-              {url}
-            </code>
-            <button type="button" onClick={copyUrl}
-              className="shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">
-              {copied ? '✓ Copié' : 'Copier'}
-            </button>
-          </div>
-          {/* Raccourcis calendriers */}
-          <div className="flex flex-wrap gap-2">
-            <CalendarLink
-              label="Google Agenda"
-              href={`https://calendar.google.com/calendar/r/settings/addbyurl?url=${encodeURIComponent(url)}`}
-              icon="google"
-            />
-            <CalendarLink
-              label="Apple Calendar"
-              href={url}
-              icon="apple"
-            />
-            <CalendarLink
-              label="Outlook"
-              href={`https://outlook.live.com/calendar/0/addcalendar?url=${encodeURIComponent(url)}`}
-              icon="outlook"
-            />
-          </div>
-          {/* Régénérer */}
-          <button type="button" onClick={() => { if (confirm('Révoquer et régénérer le lien iCal ? L\'ancien lien ne fonctionnera plus.')) regenerateMutation.mutate(); }}
-            disabled={regenerateMutation.isPending}
-            className="text-xs text-gray-400 underline hover:text-gray-600">
-            Régénérer le lien
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CalendarLink({ label, href, icon }: { label: string; href: string; icon: 'google' | 'apple' | 'outlook' }): React.JSX.Element {
-  const icons = {
-    google:  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" />,
-    apple:   <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />,
-    outlook: <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z" />,
-  };
-
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer"
-      className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
-      <svg className="h-3.5 w-3.5 fill-gray-500" viewBox="0 0 24 24">{icons[icon]}</svg>
-      {label}
-    </a>
-  );
 }
 
 // ── Accessories tab ────────────────────────────────────────────────────────
@@ -707,8 +596,6 @@ export default function AccessoriesPage(): React.JSX.Element {
   return (
     <div className="p-4 lg:p-6">
       <h1 className="mb-5 text-xl font-bold text-gray-900">Accessoires &amp; Sièges auto</h1>
-
-      <IcalSection />
 
       <div className="mb-5 flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 w-fit">
         <TabBtn label="Accessoires" active={activeTab === 'accessories'} onClick={() => setActiveTab('accessories')} />

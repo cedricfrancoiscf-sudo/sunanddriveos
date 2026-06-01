@@ -9,24 +9,18 @@ interface User {
   isActive: boolean; lastLoginAt: string | null; createdAt: string;
 }
 
-const MULTI_ROLE_OPTIONS = [
-  { key: 'admin', label: 'Administrateur' },
-  { key: 'carkeeper', label: 'Carkeeper' },
-  { key: 'viewer', label: 'Lecteur' },
-] as const;
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Administrateur',
+  carkeeper: 'Car Keeper',
+  exploitation: 'Exploitation',
+  comptable: 'Comptable',
+};
 
 const ROLES: Record<string, string> = {
   admin: 'Admin', exploitation: 'Exploitation', comptable: 'Comptable',
   carkeeper: 'Car Keeper', third_party_owner: 'Propriétaire tiers',
 };
 
-const ROLE_COLORS: Record<string, string> = {
-  admin: 'bg-[#01696e]/10 text-[#01696e]',
-  exploitation: 'bg-blue-50 text-blue-700',
-  comptable: 'bg-purple-50 text-purple-700',
-  carkeeper: 'bg-orange-50 text-orange-700',
-  third_party_owner: 'bg-gray-100 text-gray-600',
-};
 
 const ROLE_KEYS = ['admin', 'exploitation', 'comptable', 'carkeeper', 'third_party_owner'] as const;
 
@@ -54,8 +48,7 @@ export default function UsersPage(): React.JSX.Element {
   });
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [rolesModal, setRolesModal] = useState<{ userId: string; name: string; roles: string[] } | null>(null);
-  const [pendingRoles, setPendingRoles] = useState<string[]>([]);
+  const [roleError, setRoleError] = useState<string | null>(null);
 
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }: { id: string; role?: string; isActive?: boolean }) =>
@@ -66,11 +59,33 @@ export default function UsersPage(): React.JSX.Element {
   const rolesMutation = useMutation({
     mutationFn: ({ id, roles }: { id: string; roles: string[] }) =>
       api.put(`/users/${id}/roles`, { roles }),
-    onSuccess: () => {
-      setRolesModal(null);
-      void qc.invalidateQueries({ queryKey: ['users'] });
-    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['users'] }),
   });
+
+  function handleRoleToggle(userId: string, role: string, currentRoles: string[]): void {
+    const isChecked = currentRoles.includes(role);
+    setRoleError(null);
+
+    if (isChecked) {
+      if (role === 'admin') {
+        const otherAdmins = users.filter(u =>
+          u.id !== userId && (u.roles?.includes('admin') || u.role === 'admin')
+        );
+        if (otherAdmins.length === 0) {
+          setRoleError('Impossible de retirer Admin — dernier administrateur');
+          return;
+        }
+      }
+      const newRoles = currentRoles.filter(r => r !== role);
+      if (newRoles.length === 0) {
+        setRoleError('Un utilisateur doit avoir au moins un rôle');
+        return;
+      }
+      rolesMutation.mutate({ id: userId, roles: newRoles });
+    } else {
+      rolesMutation.mutate({ id: userId, roles: [...new Set([...currentRoles, role])] });
+    }
+  }
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/users/${id}`),
@@ -156,40 +171,10 @@ export default function UsersPage(): React.JSX.Element {
         </div>
       )}
 
-      {/* Modal rôles multiples */}
-      {rolesModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-xs rounded-2xl border border-gray-200 bg-white p-6 shadow-xl space-y-4">
-            <h3 className="text-sm font-semibold text-gray-900">Rôles de {rolesModal.name}</h3>
-            <div className="space-y-2">
-              {MULTI_ROLE_OPTIONS.map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={pendingRoles.includes(key)}
-                    onChange={e => setPendingRoles(prev =>
-                      e.target.checked ? [...prev, key] : prev.filter(r => r !== key)
-                    )}
-                    className="h-4 w-4 rounded border-gray-300 text-[#01696e]" />
-                  <span className="text-sm text-gray-700">{label}</span>
-                </label>
-              ))}
-            </div>
-            {pendingRoles.length === 0 && (
-              <p className="text-xs text-red-500">Au moins un rôle requis</p>
-            )}
-            <div className="flex gap-2 pt-1">
-              <button type="button"
-                disabled={pendingRoles.length === 0 || rolesMutation.isPending}
-                onClick={() => rolesMutation.mutate({ id: rolesModal.userId, roles: pendingRoles })}
-                className="flex-1 rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-60"
-                style={{ backgroundColor: '#01696e' }}>
-                {rolesMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
-              </button>
-              <button type="button" onClick={() => setRolesModal(null)}
-                className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
-                Annuler
-              </button>
-            </div>
-          </div>
+      {roleError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {roleError}
+          <button type="button" onClick={() => setRoleError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
         </div>
       )}
 
@@ -225,22 +210,18 @@ export default function UsersPage(): React.JSX.Element {
                     <p className="text-xs text-gray-400">{u.email}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <select value={u.role}
-                        onChange={e => updateMutation.mutate({ id: u.id, role: e.target.value })}
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium border-0 outline-none cursor-pointer ${ROLE_COLORS[u.role] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {ROLE_KEYS.map(r => <option key={r} value={r}>{ROLES[r]}</option>)}
-                      </select>
-                      {(u.roles ?? []).filter(r => r !== u.role).map(r => (
-                        <span key={r} className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">+{r}</span>
+                    <div className="flex flex-col gap-1">
+                      {['admin', 'carkeeper', 'exploitation', 'comptable'].map(role => (
+                        <label key={role} className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={u.roles?.includes(role) || u.role === role}
+                            onChange={() => handleRoleToggle(u.id, role, u.roles?.length ? u.roles : [u.role])}
+                            className="h-3.5 w-3.5 rounded border-gray-300 accent-[#01696e]"
+                          />
+                          <span className="text-xs text-gray-700">{ROLE_LABELS[role]}</span>
+                        </label>
                       ))}
-                      <button type="button" title="Modifier les rôles"
-                        onClick={() => { setRolesModal({ userId: u.id, name: u.name, roles: u.roles ?? [] }); setPendingRoles(u.roles ?? []); }}
-                        className="rounded p-0.5 text-gray-300 hover:text-[#01696e] transition-colors">
-                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      </button>
                     </div>
                   </td>
                   <td className="hidden px-4 py-3 text-xs text-gray-400 sm:table-cell">

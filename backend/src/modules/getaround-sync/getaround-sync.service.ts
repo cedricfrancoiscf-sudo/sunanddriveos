@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../../generated/tenant';
+import { Prisma } from '../../generated/tenant';
 import { decrypt, encrypt } from '../../utils/crypto';
 import { createGetaroundClient, type GetaroundRental, parseInvoiceCharges } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
@@ -1028,7 +1029,13 @@ export async function syncAccountInvoicesPayouts(db: PrismaClient, accountId: st
 
 export async function analyzeExistingMessages(db: PrismaClient, tenantSlug = 'default'): Promise<void> {
   const messages = await db.message.findMany({
-    where: { direction: 'inbound', aiAnalysis: null as never },
+    where: {
+      direction: 'inbound',
+      OR: [
+        { aiAnalysis: { equals: Prisma.JsonNull } },
+        { aiAnalysis: { equals: Prisma.DbNull } },
+      ],
+    },
     select: { id: true, content: true, rentalId: true },
     take: 200,
     orderBy: { createdAt: 'desc' },

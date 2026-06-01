@@ -48,6 +48,45 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
+function LockedItem({ label, icon, requiredPlan }: {
+  label: string;
+  icon: React.ReactNode;
+  requiredPlan: 'pro' | 'enterprise';
+}): React.JSX.Element {
+  const [showModal, setShowModal] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setShowModal(true)}
+        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 hover:bg-gray-50 transition-colors">
+        {icon}
+        <span className="flex-1 text-left">{label}</span>
+        <span className="text-xs">🔒</span>
+      </button>
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowModal(false)}>
+          <div className="rounded-2xl bg-white p-6 shadow-xl max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-900">
+              Disponible dans le plan {requiredPlan === 'pro' ? 'Pro' : 'Enterprise'}
+            </h3>
+            <p className="mt-2 text-sm text-gray-500">
+              Passez au plan {requiredPlan === 'pro' ? 'Pro (59€/mois)' : 'Enterprise'} pour accéder à cette fonctionnalité.
+            </p>
+            <button type="button" onClick={() => { window.location.href = '/upgrade'; }}
+              className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white"
+              style={{ backgroundColor: PRIMARY }}>
+              Voir les plans →
+            </button>
+            <button type="button" onClick={() => setShowModal(false)}
+              className="mt-2 w-full text-sm text-gray-400 hover:text-gray-600">
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -81,11 +120,19 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
   const isStarterPlan = !syncData || syncData.plan === 'starter';
 
   const isCarkeeper = user?.role === 'carkeeper';
+  const isPro = user?.plan === 'pro' || user?.plan === 'enterprise' || user?.isSuperAdmin;
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && user?.role !== 'admin' && !user?.isSuperAdmin) return false;
     if (item.carekeeperHidden && isCarkeeper) return false;
     return true;
   });
+
+  // Items Pro gated (remplacés par LockedItem si starter)
+  const PRO_LOCKED_ITEMS: Array<{ to: string; label: string; icon: React.ReactNode }> = [
+    { to: '/sequences', label: 'Séquences', icon: <Icon d="M4 6h16M4 10h16M4 14h16M4 18h16" /> },
+    { to: '/scoring', label: 'Scoring', icon: <Icon d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
+    { to: '/export', label: 'Exports', icon: <Icon d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /> },
+  ];
 
   function handleLogout(): void {
     logout();
@@ -127,7 +174,9 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
-          {visibleItems.map((item) => (
+          {visibleItems
+            .filter(item => !PRO_LOCKED_ITEMS.some(p => p.to === item.to)) // exclure les items Pro gérés séparément
+            .map((item) => (
             <li key={item.to}>
               <NavLink
                 to={item.to}
@@ -140,6 +189,24 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
               </NavLink>
             </li>
           ))}
+
+          {/* Items Pro — cadenas si plan starter */}
+          {PRO_LOCKED_ITEMS
+            .filter(item => {
+              if (item.to === '/export' && isCarkeeper) return false; // carekeeperHidden
+              return true;
+            })
+            .map(item => (
+              <li key={item.to}>
+                {isPro
+                  ? <NavLink to={item.to} onClick={onClose} className={navLinkClass} style={navLinkStyle}>
+                      {item.icon}{item.label}
+                    </NavLink>
+                  : <LockedItem label={item.label} icon={item.icon} requiredPlan="pro" />
+                }
+              </li>
+            ))
+          }
 
           {/* Section "Vie du véhicule" collapsible */}
           <li>

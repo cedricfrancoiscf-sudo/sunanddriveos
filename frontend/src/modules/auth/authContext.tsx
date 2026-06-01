@@ -7,6 +7,9 @@ export interface AuthUser {
   email: string;
   role?: string;
   isSuperAdmin?: boolean;
+  plan?: string;
+  trialEndsAt?: string | null;
+  hasActiveSubscription?: boolean;
 }
 
 interface AuthState {

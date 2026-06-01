@@ -65,6 +65,7 @@ const PerformancePage = React.lazy(() => import('./modules/intelligence/Performa
 const RentabilityPage = React.lazy(() => import('./modules/intelligence/RentabilityPage'));
 const ForecastPage = React.lazy(() => import('./modules/intelligence/ForecastPage'));
 const AiSuggestionsPage = React.lazy(() => import('./modules/intelligence/AiSuggestionsPage'));
+const TrialExpiredPage = React.lazy(() => import('./modules/billing/TrialExpiredPage'));
 
 function LoadingFallback(): React.JSX.Element {
   return (
@@ -108,6 +109,7 @@ export default function App(): React.JSX.Element {
             {/* Routes publiques */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
+            <Route path="/upgrade" element={<TrialExpiredPage />} />
 
             {/* TV dashboard — protégé mais sans sidebar */}
             <Route path="/tv" element={<ProtectedRoute><TvDashboardPage /></ProtectedRoute>} />

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import type { PrismaClient } from '../generated/tenant';
-import { getTenantClient } from '../prisma/client';
+import { getTenantClient, getMasterClient } from '../prisma/client';
 
 export interface AuthPayload {
   userId?: string;
@@ -10,6 +10,9 @@ export interface AuthPayload {
   role?: string;
   roles?: string[];
   isSuperAdmin?: boolean;
+  plan?: string;
+  trialEndsAt?: string | null;
+  hasActiveSubscription?: boolean;
 }
 
 declare global {
@@ -73,6 +76,61 @@ export async function requireActiveUser(req: Request, res: Response, next: NextF
   } catch {
     res.status(401).json({ error: 'Session invalide' });
   }
+}
+
+export async function requireActiveSubscription(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (req.auth?.isSuperAdmin) { next(); return; }
+  if (!req.auth?.tenantSlug) { res.status(401).json({ error: 'Non authentifié' }); return; }
+
+  try {
+    const master = getMasterClient();
+    const company = await master.company.findFirst({
+      where: { slug: req.auth.tenantSlug },
+      select: { plan: true, trialEndsAt: true, stripeSubscriptionId: true, isActive: true },
+    });
+
+    if (!company || !company.isActive) {
+      res.status(403).json({ error: 'Compte inactif' }); return;
+    }
+    if (company.trialEndsAt && company.trialEndsAt > new Date()) { next(); return; }
+    if (company.stripeSubscriptionId) { next(); return; }
+
+    res.status(402).json({
+      error: 'Abonnement requis',
+      trialExpired: true,
+      upgradeUrl: `${process.env.FRONTEND_URL ?? ''}/upgrade`,
+    });
+  } catch {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+}
+
+const PLAN_HIERARCHY: Record<string, number> = { starter: 0, pro: 1, enterprise: 2 };
+
+export function requirePlan(minPlan: 'starter' | 'pro' | 'enterprise') {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (req.auth?.isSuperAdmin) { next(); return; }
+    try {
+      const master = getMasterClient();
+      const company = await master.company.findFirst({
+        where: { slug: req.auth?.tenantSlug },
+        select: { plan: true },
+      });
+      const current = PLAN_HIERARCHY[company?.plan ?? 'starter'] ?? 0;
+      const required = PLAN_HIERARCHY[minPlan] ?? 0;
+      if (current < required) {
+        res.status(403).json({
+          error: `Cette fonctionnalité nécessite le plan ${minPlan}`,
+          requiredPlan: minPlan,
+          currentPlan: company?.plan ?? 'starter',
+        });
+        return;
+      }
+      next();
+    } catch {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  };
 }
 
 export async function getCarekeeperVehicleIds(db: PrismaClient, userId: string): Promise<string[]> {

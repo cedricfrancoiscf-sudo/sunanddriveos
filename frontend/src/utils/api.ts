@@ -16,14 +16,18 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Redirige vers /login si le token est expiré
+// Redirige vers /login si le token est expiré, /upgrade si trial expiré
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
+  (error: unknown) => {
+    const status = (error as { response?: { status?: number } }).response?.status;
+    if (status === 401) {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
       window.location.href = '/login';
+    }
+    if (status === 402) {
+      window.location.href = '/upgrade';
     }
     return Promise.reject(error);
   },

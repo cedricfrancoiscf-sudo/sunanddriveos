@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import type { PrismaClient as TenantClient } from '../../generated/tenant';
 import type { PrismaClient as MasterClient } from '../../generated/master';
+import { getMasterClient } from '../../prisma/client';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN ?? '7d';
@@ -14,6 +15,9 @@ export interface LoginResult {
     email: string;
     role?: string;
     isSuperAdmin?: boolean;
+    plan?: string;
+    trialEndsAt?: string | null;
+    hasActiveSubscription?: boolean;
   };
 }
 
@@ -41,15 +45,26 @@ export async function loginUser(
     data: { lastLoginAt: new Date() },
   });
 
+  // Récupère plan + trial depuis la DB master
+  const master = getMasterClient();
+  const company = await master.company.findFirst({
+    where: { slug: tenantSlug },
+    select: { plan: true, trialEndsAt: true, stripeSubscriptionId: true },
+  });
+
+  const plan = company?.plan ?? 'starter';
+  const trialEndsAt = company?.trialEndsAt?.toISOString() ?? null;
+  const hasActiveSubscription = !!company?.stripeSubscriptionId;
+
   const token = jwt.sign(
-    { userId: user.id, tenantSlug, role: user.role },
+    { userId: user.id, tenantSlug, role: user.role, plan, trialEndsAt, hasActiveSubscription },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN as never },
   );
 
   return {
     token,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    user: { id: user.id, name: user.name, email: user.email, role: user.role, plan, trialEndsAt, hasActiveSubscription },
   };
 }
 

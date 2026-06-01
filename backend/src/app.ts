@@ -9,6 +9,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
+import { requireActiveSubscription, requirePlan } from './middleware/auth';
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -112,6 +113,20 @@ export function createApp(): Express {
   app.use('/api/v1/auth/login', loginLimiter);
   app.use('/api/v1/users/accept-invitation', inviteLimiter);
   app.use('/ical', icalLimiter);
+
+  // Trial enforcement — toutes les routes sauf auth, billing webhook, health, iCal
+  const EXEMPTED_PATHS = ['/auth/', '/billing/webhook', '/health', '/superadmin'];
+  app.use('/api/v1', (req: Request, res: Response, next: NextFunction) => {
+    if (EXEMPTED_PATHS.some(p => req.path.startsWith(p))) { next(); return; }
+    void requireActiveSubscription(req, res, next);
+  });
+
+  // Plan gating — fonctionnalités Pro uniquement
+  app.use('/api/v1/sequences', requirePlan('pro'));
+  app.use('/api/v1/scoring', requirePlan('pro'));
+  app.use('/api/v1/ai', requirePlan('pro'));
+  app.use('/api/v1/exports', requirePlan('pro'));
+  app.use('/api/v1/vehicle-checks', requirePlan('pro'));
 
   // Routes auth — login, me, superadmin
   app.use('/api/v1/auth', authRoutes);

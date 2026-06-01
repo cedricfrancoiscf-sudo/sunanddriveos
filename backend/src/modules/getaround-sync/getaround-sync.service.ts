@@ -50,6 +50,24 @@ export interface SyncResult {
   errors: string[];
 }
 
+// ─── Limite d'historique par plan ────────────────────────────────────────────
+
+function getMaxHistoryStart(plan: string, accountStartDate: Date | null): Date {
+  const now = Date.now();
+  const limits: Record<string, number> = {
+    starter: 180 * 86_400_000,    // 6 mois
+    pro: 730 * 86_400_000,         // 2 ans
+    enterprise: 1825 * 86_400_000, // 5 ans
+  };
+  const limitMs = limits[plan] ?? limits['starter'];
+  const planLimit = new Date(now - limitMs);
+
+  if (accountStartDate) {
+    return new Date(Math.max(planLimit.getTime(), accountStartDate.getTime()));
+  }
+  return planLimit;
+}
+
 // L'API Getaround ne retourne pas l'état des locations —
 // on l'infère depuis les dates de début/fin
 function inferStatus(r: GetaroundRental): 'booked' | 'active' | 'completed' {
@@ -64,6 +82,7 @@ function inferStatus(r: GetaroundRental): 'booked' | 'active' | 'completed' {
 export async function syncAccountVehicles(
   db: PrismaClient,
   accountId: string,
+  tenantSlug = 'default',
 ): Promise<SyncResult> {
   const account = await db.getaroundAccount.findUnique({ where: { id: accountId } });
   if (!account) throw Object.assign(new Error('Compte Getaround introuvable'), { status: 404 });
@@ -135,6 +154,7 @@ export async function syncAccountVehicles(
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Erreur inconnue';
+    console.error(`[Sync][${tenantSlug}] Erreur sync véhicules compte ${accountId} : ${msg}`);
     await db.getaroundAccount.update({
       where: { id: accountId },
       data: { syncStatus: 'error', syncError: msg },
@@ -150,32 +170,47 @@ export async function syncAllAccounts(
   tenantSlug = 'default',
 ): Promise<Array<{ vehicles: SyncResult; rentals: RentalSyncResult; messages: MessageSyncResult }>> {
   updateSyncState(tenantSlug, { isRunning: true, progress: 5, currentStep: 'Synchronisation des véhicules...', error: null });
-  const accounts = await db.getaroundAccount.findMany({
-    where: { isActive: true },
-    select: { id: true },
-  });
-  const results = [];
+
+  let accounts: Array<{ id: string }>;
   try {
-    for (const a of accounts) {
-      const vehicles = await syncAccountVehicles(db, a.id);
-      const rentals = await syncAccountRentals(db, a.id, undefined, undefined, tenantSlug);
-      updateSyncState(tenantSlug, { progress: 80, currentStep: 'Synchronisation des messages...' });
-      const messages = await syncAccountMessages(db, a.id);
-      updateSyncState(tenantSlug, { progress: 90, currentStep: 'Synchronisation des factures...' });
-      void syncAccountInvoicesPayouts(db, a.id).catch(e => console.error('[Sync] Erreur invoices/payouts:', e));
-      results.push({ vehicles, rentals, messages });
-    }
-    const totalCreated = results.reduce((s, r) => s + r.vehicles.created + r.rentals.created, 0);
-    const totalUpdated = results.reduce((s, r) => s + r.vehicles.updated + r.rentals.updated, 0);
-    updateSyncState(tenantSlug, {
-      isRunning: false, progress: 100, currentStep: 'Terminé',
-      lastSyncAt: new Date(), lastSyncResult: { created: totalCreated, updated: totalUpdated },
+    accounts = await db.getaroundAccount.findMany({
+      where: { isActive: true },
+      select: { id: true },
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Erreur inconnue';
     updateSyncState(tenantSlug, { isRunning: false, error: msg, progress: 0 });
     throw err;
   }
+
+  const results: Array<{ vehicles: SyncResult; rentals: RentalSyncResult; messages: MessageSyncResult }> = [];
+
+  for (const account of accounts) {
+    try {
+      const vehicles = await syncAccountVehicles(db, account.id, tenantSlug);
+      const rentals = await syncAccountRentals(db, account.id, undefined, undefined, tenantSlug);
+      updateSyncState(tenantSlug, { progress: 80, currentStep: 'Synchronisation des messages...' });
+      const messages = await syncAccountMessages(db, account.id, tenantSlug);
+      updateSyncState(tenantSlug, { progress: 90, currentStep: 'Synchronisation des factures...' });
+      void syncAccountInvoicesPayouts(db, account.id).catch(e =>
+        console.error(`[Sync][${tenantSlug}] Erreur invoices/payouts:`, e)
+      );
+      results.push({ vehicles, rentals, messages });
+      console.log(`[Sync][${tenantSlug}] Compte ${account.id} : succès`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[Sync][${tenantSlug}] Compte ${account.id} : erreur — ${message}`);
+      // Continuer avec le compte suivant
+    }
+  }
+
+  const totalCreated = results.reduce((s, r) => s + r.vehicles.created + r.rentals.created, 0);
+  const totalUpdated = results.reduce((s, r) => s + r.vehicles.updated + r.rentals.updated, 0);
+  updateSyncState(tenantSlug, {
+    isRunning: false, progress: 100, currentStep: 'Terminé',
+    lastSyncAt: new Date(), lastSyncResult: { created: totalCreated, updated: totalUpdated },
+  });
+
   return results;
 }
 
@@ -209,31 +244,43 @@ export async function syncAccountRentals(
     where: { id: accountId },
     select: { lastSyncAt: true },
   });
-  console.log('[Sync] lastSyncAt frais depuis DB :', freshAccount?.lastSyncAt);
+  console.log(`[Sync][${tenantSlug}] lastSyncAt frais depuis DB :`, freshAccount?.lastSyncAt);
 
-  let startDate = from ?? (
-    freshAccount?.lastSyncAt != null
-      ? new Date(freshAccount.lastSyncAt.getTime() - 2 * 60 * 60 * 1000)
-      : new Date(Date.now() - 2 * 365 * 86_400_000)
-  );
-  console.log('[Sync] Date de début calculée :', startDate.toISOString());
-
-  // end_date ne doit jamais être dans le futur — l'API Getaround retourne 422 sinon
-  const endDate = to ?? new Date();
-
-  // Mode trial : limiter la sync aux 90 derniers jours
+  // Récupérer le plan tenant + statut trial depuis la DB master
+  let tenantPlan = 'starter';
+  let trialActive = false;
   if (tenantSlug !== 'default') {
     try {
       const masterDb = getMasterClient();
       const company = await masterDb.company.findFirst({ where: { slug: tenantSlug } });
-      const trialActive = company?.trialEndsAt != null && company.trialEndsAt > new Date() && !company.stripeSubscriptionId;
-      if (trialActive) {
-        startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-        console.log('[Sync] Mode trial — sync limitée aux 90 derniers jours');
-        updateSyncState(tenantSlug, { isTrialLimited: true });
-      }
-    } catch (e) { console.error('[Sync] Erreur vérification trial:', e); }
+      tenantPlan = company?.plan ?? 'starter';
+      trialActive = company?.trialEndsAt != null && company.trialEndsAt > new Date() && !company.stripeSubscriptionId;
+    } catch (e) { console.error(`[Sync][${tenantSlug}] Erreur vérification plan/trial:`, e); }
   }
+
+  const absoluteStart = getMaxHistoryStart(tenantPlan, account.accountStartDate ?? null);
+
+  const rawLastSync = freshAccount?.lastSyncAt ?? null;
+  let startDate: Date = from ?? (
+    rawLastSync === null
+      ? absoluteStart
+      : new Date(Math.max(
+          rawLastSync.getTime() - 2 * 60 * 60 * 1000,
+          absoluteStart.getTime()
+        ))
+  );
+
+  if (trialActive) {
+    const trialLimit = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    startDate = new Date(Math.max(startDate.getTime(), trialLimit.getTime()));
+    console.log(`[Sync][${tenantSlug}] Mode trial — sync limitée aux 90 derniers jours`);
+    updateSyncState(tenantSlug, { isTrialLimited: true });
+  }
+
+  console.log(`[Sync][${tenantSlug}] Date de début calculée :`, startDate.toISOString());
+
+  // end_date ne doit jamais être dans le futur — l'API Getaround retourne 422 sinon
+  const endDate = to ?? new Date();
 
   updateSyncState(tenantSlug, { progress: 15, currentStep: 'Récupération des locations...' });
 
@@ -242,10 +289,34 @@ export async function syncAccountRentals(
   try {
     rentals = await ga.getRentals(startDate, endDate);
     rentalsApiSucceeded = true;
-    console.log('[Sync] getRentals OK —', rentals.length, 'location(s) collectée(s)');
+    console.log(`[Sync][${tenantSlug}] getRentals OK — ${rentals.length} location(s) collectée(s)`);
   } catch (err: unknown) {
     const httpStatus = (err as { response?: { status?: number } }).response?.status;
-    console.error(`[Sync] getRentals échoué (HTTP ${httpStatus ?? 'inconnu'}) — lastSyncAt ne sera PAS mis à jour`);
+    const errMsg = err instanceof Error ? err.message : `HTTP ${httpStatus ?? 'inconnu'}`;
+    console.error(`[Sync][${tenantSlug}] getRentals échoué (HTTP ${httpStatus ?? 'inconnu'}) — lastSyncAt ne sera PAS mis à jour`);
+    // Mettre à jour syncStatus + notifier les admins du tenant
+    try {
+      await db.getaroundAccount.update({
+        where: { id: accountId },
+        data: { syncStatus: 'error', syncError: errMsg },
+      });
+      const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
+      if (admins.length > 0) {
+        await db.notification.createMany({
+          data: admins.map(a => ({
+            userId: a.id,
+            type: 'sync_error',
+            title: '⚠️ Erreur de synchronisation Getaround',
+            body: `${errMsg}. Vérifiez votre clé API.`,
+            relatedEntityType: 'getaround_account',
+            relatedEntityId: accountId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    } catch (notifyErr) {
+      console.error(`[Sync][${tenantSlug}] Erreur notification sync_error:`, notifyErr);
+    }
   }
   updateSyncState(tenantSlug, { totalItems: rentals.length, processedItems: 0 });
 
@@ -318,7 +389,7 @@ export async function syncAccountRentals(
         select: { id: true },
       });
 
-      console.log('[Sync] Location sauvegardée:', r.id);
+      console.log(`[Sync][${tenantSlug}] Location sauvegardée:`, r.id);
       if (!existingRental) {
         result.created++;
         if (status === 'booked') {
@@ -433,7 +504,7 @@ export async function syncAccountRentals(
     }
     processedItems++;
     if (processedItems % 50 === 0 && rentals.length > 0) {
-      console.log(`[Sync] ${processedItems}/${rentals.length} locations (${Math.round(processedItems / rentals.length * 100)}%)`);
+      console.log(`[Sync][${tenantSlug}] ${processedItems}/${rentals.length} locations (${Math.round(processedItems / rentals.length * 100)}%)`);
     }
     updateSyncState(tenantSlug, {
       processedItems,
@@ -449,10 +520,10 @@ export async function syncAccountRentals(
       where: { id: accountId },
       data: { lastSyncAt: new Date() },
     });
-    console.log('[Sync] lastSyncAt mis à jour — API OK, créées:', result.created, ', mises à jour:', result.updated);
+    console.log(`[Sync][${tenantSlug}] lastSyncAt mis à jour — API OK, créées: ${result.created}, mises à jour: ${result.updated}`);
   } else {
-    console.warn('[Sync] lastSyncAt NON mis à jour —',
-      !rentalsApiSucceeded ? 'échec getRentals (422 ?)' : !syncCompleted ? 'rate limit 429 non récupéré' : '0 résultat');
+    console.warn(`[Sync][${tenantSlug}] lastSyncAt NON mis à jour —`,
+      !rentalsApiSucceeded ? 'échec getRentals' : !syncCompleted ? 'rate limit 429 non récupéré' : '0 résultat');
   }
 
   return result;
@@ -470,6 +541,7 @@ export interface MessageSyncResult {
 export async function syncAccountMessages(
   db: PrismaClient,
   accountId: string,
+  tenantSlug = 'default',
 ): Promise<MessageSyncResult> {
   const account = await db.getaroundAccount.findUnique({ where: { id: accountId } });
   if (!account) throw Object.assign(new Error('Compte Getaround introuvable'), { status: 404 });
@@ -493,7 +565,7 @@ export async function syncAccountMessages(
   });
 
   const totalRentals = await db.rental.count({ where: { vehicle: { getaroundAccountId: accountId } } });
-  console.log(`[Sync] Messages : ${rentals.length} locations actives à traiter (${totalRentals - rentals.length} locations terminées ignorées)`);
+  console.log(`[Sync][${tenantSlug}] Messages : ${rentals.length} locations actives à traiter (${totalRentals - rentals.length} locations terminées ignorées)`);
 
   for (const rental of rentals) {
     if (!rental.getaroundId) continue;

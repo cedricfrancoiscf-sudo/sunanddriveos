@@ -213,7 +213,7 @@ router.get('/analytics', async (_req: Request, res: Response, next: NextFunction
         tenantEvents: {
           orderBy: { occurredAt: 'desc' },
           take: 200,
-          select: { module: true, occurredAt: true },
+          select: { module: true, action: true, occurredAt: true },
         },
       },
     });
@@ -248,6 +248,12 @@ router.get('/analytics', async (_req: Request, res: Response, next: NextFunction
         ? Math.ceil((new Date(c.trialEndsAt).getTime() - now.getTime()) / 86_400_000)
         : null;
 
+      // Détection erreur sync répétée : TenantEvent sync_error_repeated dans les 4 dernières heures
+      const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+      const alertSyncError = c.tenantEvents.some(
+        ev => ev.module === 'sync' && ev.action === 'sync_error_repeated' && new Date(ev.occurredAt) >= fourHoursAgo
+      );
+
       return {
         id: c.id, name: c.name, slug: c.slug, plan: c.plan,
         vehicleCount, rentalCount, messageCount,
@@ -260,6 +266,7 @@ router.get('/analytics', async (_req: Request, res: Response, next: NextFunction
         trialDaysLeft,
         alertInactive: inactiveDays !== null && inactiveDays > 7,
         alertTrial: trialDaysLeft !== null && trialDaysLeft >= 0 && trialDaysLeft < 3,
+        alertSyncError,
       };
     }));
 

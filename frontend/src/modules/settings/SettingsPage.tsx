@@ -4,6 +4,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../utils/api';
 import { getaroundSyncApi, type GetaroundAccount } from '../vehicles/vehiclesApi';
 
+function defaultStartDate(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 1);
+  return d.toISOString().split('T')[0];
+}
+
 // ─── Section Feedback ─────────────────────────────────────────────────────────
 
 interface TenantFeedback {
@@ -182,6 +188,8 @@ function GetaroundSection(): React.JSX.Element {
   const [editKeyId, setEditKeyId] = useState<string | null>(null);
   const [newKey, setNewKey] = useState('');
   const [syncMsg, setSyncMsg] = useState<Record<string, string>>({});
+  const [pendingStartDateAccountId, setPendingStartDateAccountId] = useState<string | null>(null);
+  const [pendingStartDate, setPendingStartDate] = useState(defaultStartDate());
 
   const { data: syncStatus } = useQuery<SyncStateData>({
     queryKey: ['sync-status'],
@@ -195,13 +203,25 @@ function GetaroundSection(): React.JSX.Element {
     queryFn: getaroundSyncApi.listAccounts,
   });
 
+  const saveStartDateMutation = useMutation({
+    mutationFn: ({ id, date }: { id: string; date: string }) =>
+      getaroundSyncApi.updateAccountStartDate(id, date ? new Date(date).toISOString() : null),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['getaround-accounts'] });
+      void qc.invalidateQueries({ queryKey: ['onboarding-progress'] });
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: () => getaroundSyncApi.createAccount(form.name, form.apiKey),
-    onSuccess: () => {
+    onSuccess: (newAccount) => {
       void qc.invalidateQueries({ queryKey: ['getaround-accounts'] });
       void qc.invalidateQueries({ queryKey: ['onboarding-progress'] });
       setShowForm(false);
       setForm(EMPTY_ACCOUNT);
+      // Demander la date de début après la création du compte
+      setPendingStartDateAccountId(newAccount.id);
+      setPendingStartDate(defaultStartDate());
     },
   });
 
@@ -348,6 +368,50 @@ function GetaroundSection(): React.JSX.Element {
         </form>
       )}
 
+      {/* Modal date de début — affiché après création d'un nouveau compte */}
+      {pendingStartDateAccountId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-6 shadow-xl space-y-4">
+            <h3 className="text-sm font-semibold text-gray-900">Date de début de votre compte Getaround</h3>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Indiquez à partir de quelle date ce compte est actif sur Getaround.
+              Cela évite de chercher un historique inexistant et accélère la première synchronisation.
+            </p>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Date de début *</label>
+              <input
+                type="date"
+                value={pendingStartDate}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={e => setPendingStartDate(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={!pendingStartDate || saveStartDateMutation.isPending}
+                onClick={() => {
+                  saveStartDateMutation.mutate(
+                    { id: pendingStartDateAccountId, date: pendingStartDate },
+                    { onSettled: () => setPendingStartDateAccountId(null) },
+                  );
+                }}
+                className="flex-1 rounded-xl px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: '#01696e' }}>
+                {saveStartDateMutation.isPending ? 'Enregistrement...' : 'Confirmer'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingStartDateAccountId(null)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50">
+                Ignorer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex justify-center py-6">
           <div className="h-6 w-6 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} />
@@ -372,6 +436,26 @@ function GetaroundSection(): React.JSX.Element {
                     )}
                   </div>
                   <p className="mt-0.5 text-xs text-gray-400">Dernière sync : {fmtRelative(acc.lastSyncAt)}</p>
+                  <p className="mt-0.5 text-xs text-gray-400">
+                    Début compte :{' '}
+                    {acc.accountStartDate
+                      ? new Date(acc.accountStartDate).toLocaleDateString('fr-FR')
+                      : <span className="text-amber-500">non défini</span>}
+                    <button
+                      type="button"
+                      title="Modifier la date de début"
+                      onClick={() => {
+                        setPendingStartDateAccountId(acc.id);
+                        setPendingStartDate(
+                          acc.accountStartDate
+                            ? acc.accountStartDate.split('T')[0]
+                            : defaultStartDate()
+                        );
+                      }}
+                      className="ml-1.5 text-gray-400 hover:text-[#01696e]">
+                      ✎
+                    </button>
+                  </p>
                   {acc.syncError && <p className="mt-0.5 text-xs text-red-500">{acc.syncError}</p>}
                   {syncMsg[`v-${acc.id}`] && <p className="mt-0.5 text-xs text-green-600">{syncMsg[`v-${acc.id}`]}</p>}
                   {syncMsg[`r-${acc.id}`] && <p className="mt-0.5 text-xs text-green-600">{syncMsg[`r-${acc.id}`]}</p>}

@@ -15,7 +15,7 @@ interface AnalyticsEntry {
   lastActivityAt: string | null; inactiveDays: number | null;
   moduleUsage: Array<{ module: string; count: number }>;
   trialEndsAt: string | null; trialDaysLeft: number | null;
-  alertInactive: boolean; alertTrial: boolean;
+  alertInactive: boolean; alertTrial: boolean; alertSyncError: boolean;
 }
 
 interface TenantFeedback {
@@ -458,6 +458,11 @@ function DashboardContent(): React.JSX.Element {
                             {entry.alertTrial && (
                               <span className="rounded-full bg-orange-900/40 px-2 py-0.5 text-[10px] font-medium text-orange-400">
                                 Essai J-{entry.trialDaysLeft}
+                              </span>
+                            )}
+                            {entry.alertSyncError && (
+                              <span className="rounded-full bg-red-900/60 px-2 py-0.5 text-[10px] font-medium text-red-300">
+                                ⚠️ Sync en erreur
                               </span>
                             )}
                           </div>

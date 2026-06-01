@@ -55,6 +55,24 @@ router.put('/accounts/:id/key', adminOnly, async (req: Request, res: Response, n
   } catch (err: unknown) { next(err); }
 });
 
+// PATCH /api/v1/getaround-sync/accounts/:id — mise à jour partielle (ex: accountStartDate)
+router.patch('/accounts/:id', adminOnly, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      accountStartDate: z.string().datetime().optional().nullable(),
+    }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const data: Record<string, unknown> = {};
+    if (body.data.accountStartDate !== undefined) {
+      data.accountStartDate = body.data.accountStartDate ? new Date(body.data.accountStartDate) : null;
+    }
+    if (Object.keys(data).length === 0) { res.json({ success: true }); return; }
+    await db.getaroundAccount.update({ where: { id: req.params.id as string }, data });
+    res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
 // DELETE /api/v1/getaround-sync/accounts/:id
 router.delete('/accounts/:id', adminOnly, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -72,9 +90,9 @@ router.post('/sync/:accountId', adminOnly, async (req: Request, res: Response, n
     const db = getTenantClient(req.tenantDbUrl!);
     const accountId = req.params.accountId as string;
     const tenantSlug = req.auth?.tenantSlug ?? 'default';
-    const vehicles = await syncAccountVehicles(db, accountId);
+    const vehicles = await syncAccountVehicles(db, accountId, tenantSlug);
     const rentals  = await syncAccountRentals(db, accountId, undefined, undefined, tenantSlug);
-    const messages = await syncAccountMessages(db, accountId);
+    const messages = await syncAccountMessages(db, accountId, tenantSlug);
     res.json({ vehicles, rentals, messages });
   } catch (err: unknown) { next(err); }
 });
@@ -107,7 +125,7 @@ router.post('/sync-rentals/:accountId', adminOnly, async (req: Request, res: Res
       tenantSlug,
     );
     // Sync messages automatiquement après les locations
-    const messages = await syncAccountMessages(db, (req.params.accountId as string));
+    const messages = await syncAccountMessages(db, (req.params.accountId as string), tenantSlug);
     res.json({ rentals, messages });
   } catch (err: unknown) { next(err); }
 });

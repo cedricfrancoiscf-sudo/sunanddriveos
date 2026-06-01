@@ -33,6 +33,7 @@ export interface GetaroundAccount {
   lastSyncAt: string | null;
   syncStatus: string | null;
   syncError: string | null;
+  accountStartDate: string | null;
   _count: { vehicles: number };
 }
 
@@ -169,4 +170,7 @@ export const getaroundSyncApi = {
 
   syncAll: () =>
     api.post<{ results: Array<{ accountName: string; created: number; updated: number }> }>('/getaround-sync/sync-all').then((r) => r.data.results),
+
+  updateAccountStartDate: (accountId: string, accountStartDate: string | null) =>
+    api.patch(`/getaround-sync/accounts/${accountId}`, { accountStartDate }),
 };

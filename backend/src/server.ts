@@ -74,6 +74,8 @@ async function runSequenceScheduler(): Promise<void> {
   }
 }
 
+const TENANT_SYNC_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+
 // Synchronisation Getaround — s'exécute toutes les heures pour tous les tenants actifs
 async function runGetaroundSyncForAllTenants(): Promise<void> {
   if (isSyncRunning) { console.log('[GetaroundSync] Déjà en cours, skip'); return; }
@@ -82,17 +84,51 @@ async function runGetaroundSyncForAllTenants(): Promise<void> {
     const master = getMasterClient();
     const companies = await master.company.findMany({
       where: { isActive: true },
-      select: { tenantDbUrl: true, slug: true },
+      select: { id: true, tenantDbUrl: true, slug: true },
     });
     for (const company of companies) {
+      console.log(`[Sync] Tenant ${company.slug} : début`);
+      const db = getTenantClient(company.tenantDbUrl);
       try {
-        const db = getTenantClient(company.tenantDbUrl);
-        const results = await syncAllAccounts(db);
+        const results = await Promise.race([
+          syncAllAccounts(db, company.slug),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout sync tenant')), TENANT_SYNC_TIMEOUT)
+          ),
+        ]);
         const created = results.reduce((s, r) => s + r.vehicles.created + r.rentals.created, 0);
         const updated = results.reduce((s, r) => s + r.vehicles.updated + r.rentals.updated, 0);
-        console.log(`[GetaroundSync] ${company.slug} : ${created} créé(s), ${updated} mis à jour`);
+        console.log(`[Sync] Tenant ${company.slug} : ${created} créé(s), ${updated} mis à jour`);
       } catch (err: unknown) {
-        console.error(`[GetaroundSync] Erreur tenant ${company.slug} :`, err);
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[Sync] Tenant ${company.slug} : erreur — ${message}`);
+        // Continuer avec le tenant suivant
+      }
+
+      // Section 7 — détection erreurs répétées (syncStatus='error' sur un compte depuis > 2h)
+      try {
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+        const errorAccounts = await db.getaroundAccount.findMany({
+          where: { syncStatus: 'error', isActive: true, updatedAt: { lt: twoHoursAgo } },
+          select: { id: true },
+        });
+        if (errorAccounts.length > 0) {
+          const existing = await master.tenantEvent.findFirst({
+            where: {
+              companyId: company.id,
+              action: 'sync_error_repeated',
+              occurredAt: { gte: twoHoursAgo },
+            },
+          });
+          if (!existing) {
+            await master.tenantEvent.create({
+              data: { companyId: company.id, module: 'sync', action: 'sync_error_repeated' },
+            });
+            console.error(`[SuperAdmin] Tenant ${company.slug} en erreur depuis > 2h — intervention recommandée`);
+          }
+        }
+      } catch (e) {
+        console.error(`[SuperAdmin] Erreur vérification erreurs répétées ${company.slug}:`, e);
       }
     }
   } catch (err: unknown) {

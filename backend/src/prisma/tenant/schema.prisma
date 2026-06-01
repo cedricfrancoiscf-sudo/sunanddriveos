@@ -104,16 +104,17 @@ model User {
 }
 
 model GetaroundAccount {
-  id         String    @id @default(cuid())
-  name       String    // Libellé du compte (ex: "Compte principal", "Compte Lyon")
-  apiKeyHash String    // Clé API chiffrée AES-256
-  isActive   Boolean   @default(true)
-  lastSyncAt DateTime?
-  syncStatus String?   // success | error | syncing
-  syncError  String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  vehicles   Vehicle[]
+  id               String    @id @default(cuid())
+  name             String    // Libellé du compte (ex: "Compte principal", "Compte Lyon")
+  apiKeyHash       String    // Clé API chiffrée AES-256
+  isActive         Boolean   @default(true)
+  lastSyncAt       DateTime?
+  syncStatus       String?   // success | error | syncing
+  syncError        String?
+  accountStartDate DateTime? // Date de création du compte Getaround du propriétaire
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  vehicles         Vehicle[]
 
   @@map("getaround_accounts")
 }

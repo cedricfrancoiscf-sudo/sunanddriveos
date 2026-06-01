@@ -112,14 +112,17 @@ function toGetaroundDate(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-// Découpe une plage en tranches ≤ 30 jours (limite API Getaround)
+// Découpe une plage en tranches ≤ 30 jours, du plus récent au plus ancien
 function splitInto30DayWindows(start: Date, end: Date): Array<{ start: Date; end: Date }> {
   const windows: Array<{ start: Date; end: Date }> = [];
-  let cursor = new Date(start);
-  while (cursor < end) {
-    const windowEnd = new Date(Math.min(cursor.getTime() + 30 * 86_400_000, end.getTime()));
-    windows.push({ start: new Date(cursor), end: windowEnd });
-    cursor = windowEnd;
+  let cursor = new Date(end);
+  while (cursor > start) {
+    const windowStart = new Date(Math.max(
+      cursor.getTime() - 30 * 86_400_000,
+      start.getTime()
+    ));
+    windows.push({ start: new Date(windowStart), end: new Date(cursor) });
+    cursor = windowStart;
   }
   return windows;
 }
@@ -185,6 +188,7 @@ export function createGetaroundClient(apiKey: string) {
 
     // /rentals.json retourne uniquement [{id}] — il faut appeler /rentals/{id}.json pour chaque
     // start_date et end_date sont OBLIGATOIRES, plage max 30 jours → découpage automatique
+    // Les fenêtres sont traitées du plus récent au plus ancien ; un 422 stoppe la recherche historique
     async getRentals(startDate: Date, endDate: Date): Promise<GetaroundRental[]> {
       const windows = splitInto30DayWindows(startDate, endDate);
 
@@ -192,11 +196,20 @@ export function createGetaroundClient(apiKey: string) {
       const seenIds = new Set<number>();
       for (const w of windows) {
         console.log(`[Sync] Fenêtre : ${toGetaroundDate(w.start)} → ${toGetaroundDate(w.end)}`);
-        const chunk = await fetchAllPages<{ id: number }>(client, '/rentals.json', {
-          start_date: toGetaroundDate(w.start),
-          end_date: toGetaroundDate(w.end),
-        });
-        for (const { id } of chunk) seenIds.add(id);
+        try {
+          const chunk = await fetchAllPages<{ id: number }>(client, '/rentals.json', {
+            start_date: toGetaroundDate(w.start),
+            end_date: toGetaroundDate(w.end),
+          });
+          for (const { id } of chunk) seenIds.add(id);
+        } catch (err: unknown) {
+          const status = (err as { response?: { status?: number } }).response?.status;
+          if (status === 422) {
+            console.log(`[Sync] Fenêtre ${toGetaroundDate(w.start)} → ${toGetaroundDate(w.end)} : 422 reçu — arrêt de la recherche historique, ${seenIds.size} location(s) déjà collectée(s)`);
+            break;
+          }
+          throw err;
+        }
       }
 
       // Récupérer le détail de chaque location

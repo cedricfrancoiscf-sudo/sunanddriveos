@@ -28,6 +28,33 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   });
 }
 
+// Envoie une alerte à tous les emails configurés pour ce tenant
+export async function sendAlertEmail(opts: {
+  alertEmails: string[];
+  subject: string;
+  html: string;
+  senderName?: string;
+  replyToEmail?: string;
+}): Promise<void> {
+  if (!opts.alertEmails.length) {
+    console.warn('[Mailer] sendAlertEmail — aucun destinataire configuré');
+    return;
+  }
+  if (!process.env.SMTP_HOST && !process.env.SMTP_USER) {
+    console.warn('[Mailer] SMTP non configuré — alerte non envoyée :', opts.subject);
+    return;
+  }
+  const fromName = opts.senderName ?? 'SunanddriveOS';
+  const fromAddr = process.env.SMTP_USER ?? process.env.SMTP_FROM ?? 'noreply@sunanddrive.fr';
+  await transporter.sendMail({
+    from: `"${fromName}" <${fromAddr}>`,
+    to: opts.alertEmails.join(', '),
+    replyTo: opts.replyToEmail,
+    subject: opts.subject,
+    html: opts.html,
+  });
+}
+
 export async function sendInvitationEmail(
   to: string,
   name: string,

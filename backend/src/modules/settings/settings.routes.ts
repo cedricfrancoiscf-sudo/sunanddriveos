@@ -7,6 +7,7 @@ import multer from 'multer';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
+import { sendAlertEmail } from '../../utils/mailer';
 
 const LOGO_DIR = process.env.UPLOAD_PATH ? path.join(process.env.UPLOAD_PATH, 'logos') : path.join(process.cwd(), 'uploads', 'logos');
 const logoUpload = multer({
@@ -46,6 +47,9 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       aiModeGeneral: z.enum(['auto', 'approval', 'manual']).optional(),
       aiTone: z.enum(['vouvoiement', 'tutoiement']).optional(),
       aiName: z.string().min(2).max(20).regex(/^[a-zA-ZÀ-ÿ]+$/, 'Lettres uniquement').optional(),
+      alertEmails: z.array(z.string().email()).max(10).optional(),
+      replyToEmail: z.string().email().nullable().optional(),
+      senderName: z.string().min(2).max(50).nullable().optional(),
       maintenancePolicies: z.record(z.unknown()).optional(),
       notificationSettings: z.record(z.unknown()).optional(),
     }).safeParse(req.body);
@@ -86,6 +90,27 @@ router.post('/logo', requireRole('admin'), (req: Request, res: Response, next: N
       res.json({ logoUrl });
     } catch (uploadErr) { next(uploadErr); }
   });
+});
+
+// POST /api/v1/settings/test-email — envoie un email de test aux alertEmails configurés
+router.post('/test-email', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const settings = await db.companySettings.findFirst();
+    const alertEmails = settings?.alertEmails ?? [];
+    if (alertEmails.length === 0) {
+      res.status(400).json({ error: 'Aucun destinataire configuré' });
+      return;
+    }
+    await sendAlertEmail({
+      alertEmails,
+      subject: 'Email de test — SunanddriveOS',
+      html: '<p>Ceci est un email de test envoyé depuis vos paramètres SunanddriveOS.</p><p>Si vous recevez cet email, vos alertes sont correctement configurées ✅</p>',
+      senderName: settings?.senderName ?? undefined,
+      replyToEmail: settings?.replyToEmail ?? undefined,
+    });
+    res.json({ success: true, sentTo: alertEmails });
+  } catch (err: unknown) { next(err); }
 });
 
 // GET /api/v1/settings/ical-info — retourne le token et l'URL iCal (admin uniquement)

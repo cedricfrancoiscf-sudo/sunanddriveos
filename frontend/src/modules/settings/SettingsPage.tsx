@@ -127,6 +127,9 @@ interface CompanySettings {
   aiModeGeneral: string;
   aiTone: string;
   aiName: string;
+  alertEmails: string[];
+  replyToEmail: string | null;
+  senderName: string | null;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -601,6 +604,143 @@ function ModeSelector({ label, value, onChange }: { label: string; value: string
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
+// ─── Destinataires alertes email ─────────────────────────────────────────────
+
+function AlertEmailsSection(): React.JSX.Element {
+  const qc = useQueryClient();
+  const [emailInput, setEmailInput] = useState('');
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<{ settings: CompanySettings }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
+  });
+
+  const [senderName, setSenderName] = useState('');
+  const [replyToEmail, setReplyToEmail] = useState('');
+
+  useEffect(() => {
+    if (settings) {
+      setSenderName(settings.senderName ?? '');
+      setReplyToEmail(settings.replyToEmail ?? '');
+    }
+  }, [settings]);
+
+  const alertEmails = settings?.alertEmails ?? [];
+
+  const saveMutation = useMutation({
+    mutationFn: (data: { alertEmails?: string[]; senderName?: string | null; replyToEmail?: string | null }) =>
+      api.put('/settings', data),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['settings'] }),
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () => api.post<{ success: boolean; sentTo: string[] }>('/settings/test-email'),
+    onSuccess: (res) => {
+      setTestResult({ ok: true, msg: `Email envoyé à ${res.data.sentTo.join(', ')}` });
+      setTimeout(() => setTestResult(null), 5000);
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: string } } }).response?.data?.error ?? 'Erreur';
+      setTestResult({ ok: false, msg });
+      setTimeout(() => setTestResult(null), 5000);
+    },
+  });
+
+  function addEmail(): void {
+    const e = emailInput.trim().toLowerCase();
+    if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return;
+    if (alertEmails.includes(e) || alertEmails.length >= 10) return;
+    saveMutation.mutate({ alertEmails: [...alertEmails, e] });
+    setEmailInput('');
+  }
+
+  function removeEmail(email: string): void {
+    saveMutation.mutate({ alertEmails: alertEmails.filter(a => a !== email) });
+  }
+
+  function saveEmailSettings(): void {
+    saveMutation.mutate({
+      senderName: senderName || null,
+      replyToEmail: replyToEmail || null,
+    });
+  }
+
+  return (
+    <div className="space-y-4 border-t border-gray-100 pt-4">
+      <div>
+        <p className="text-xs font-semibold text-gray-700">Emails sortants</p>
+      </div>
+
+      {/* Nom expéditeur */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Nom de l'expéditeur</label>
+          <input type="text" value={senderName} onChange={e => setSenderName(e.target.value)}
+            onBlur={saveEmailSettings}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+            placeholder="Sun and Drive Paris" />
+          <p className="mt-0.5 text-[11px] text-gray-400">Affiché dans le champ "De" des emails</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Email de réponse</label>
+          <input type="email" value={replyToEmail} onChange={e => setReplyToEmail(e.target.value)}
+            onBlur={saveEmailSettings}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+            placeholder="contact@monentreprise.fr" />
+          <p className="mt-0.5 text-[11px] text-gray-400">Les réponses à vos emails arriveront ici</p>
+        </div>
+      </div>
+
+      {/* Destinataires alertes */}
+      <div>
+        <p className="mb-1 text-xs font-semibold text-gray-700">Destinataires des alertes</p>
+        <p className="mb-2 text-[11px] text-gray-400">
+          Reçoivent toutes les alertes : CT, révisions, carburant, résumé matinal… ({alertEmails.length}/10)
+        </p>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {alertEmails.map(email => (
+            <span key={email} className="flex items-center gap-1 rounded-full bg-[#01696e]/10 px-2.5 py-0.5 text-xs text-[#01696e]">
+              {email}
+              <button type="button" onClick={() => removeEmail(email)}
+                className="ml-0.5 text-[#01696e]/60 hover:text-red-500 leading-none">×</button>
+            </span>
+          ))}
+        </div>
+        {alertEmails.length < 10 && (
+          <div className="flex gap-2">
+            <input type="email" value={emailInput} onChange={e => setEmailInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addEmail(); } }}
+              className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-[#01696e]"
+              placeholder="email@exemple.com" />
+            <button type="button" onClick={addEmail}
+              disabled={saveMutation.isPending}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+              style={{ backgroundColor: '#01696e' }}>
+              Ajouter
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Test email */}
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={() => testMutation.mutate()}
+          disabled={testMutation.isPending || alertEmails.length === 0}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors">
+          {testMutation.isPending ? 'Envoi...' : '📧 Envoyer un email de test'}
+        </button>
+        {testResult && (
+          <p className={`text-xs ${testResult.ok ? 'text-green-600' : 'text-red-600'}`}>
+            {testResult.ok ? '✓' : '✗'} {testResult.msg}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ICalSection(): React.JSX.Element {
   const qc = useQueryClient();
   const [copied, setCopied] = useState(false);
@@ -811,6 +951,9 @@ export default function SettingsPage(): React.JSX.Element {
 
           {/* Telegram */}
           <TelegramSection />
+
+          {/* Alertes email */}
+          <AlertEmailsSection />
         </section>
 
         {/* 5. Intégrations */}

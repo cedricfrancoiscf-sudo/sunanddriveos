@@ -229,7 +229,7 @@ export interface RentalSyncResult {
   errors: string[];
 }
 
-type GetaroundClient = ReturnType<typeof createGetaroundClient>;
+export type GetaroundClient = ReturnType<typeof createGetaroundClient>;
 
 // Traite une location : checkin + checkout + user + upsert + notifications
 async function processRental(
@@ -1329,6 +1329,98 @@ export async function calculateHealthScore(
   if (ct?.expiryAt && ct.expiryAt < now) maintenanceScore = Math.max(0, maintenanceScore - 10);
 
   return Math.max(0, Math.min(100, kmScore + ageScore + incidentScore + maintenanceScore));
+}
+
+// ─── Sync d'une seule location (webhook temps réel) ─────────────────────────
+
+export async function syncSingleRental(
+  db: PrismaClient,
+  ga: GetaroundClient,
+  rentalId: number,
+  tenantSlug: string,
+): Promise<void> {
+  console.log(`[SyncSingle][${tenantSlug}] Rental ${rentalId} — début`);
+
+  const gaRental = await ga.getRental(rentalId);
+
+  const vehicle = await db.vehicle.findUnique({
+    where: { getaroundId: String(gaRental.car_id) },
+    select: { id: true, currentMileage: true },
+  });
+  if (!vehicle) {
+    console.warn(`[SyncSingle][${tenantSlug}] Véhicule ${gaRental.car_id} introuvable — sync ignorée`);
+    return;
+  }
+
+  const status = inferStatus(gaRental);
+  const existing = await db.rental.findUnique({
+    where: { getaroundId: String(gaRental.id) },
+    select: { id: true, status: true },
+  });
+  const newStatus = existing?.status === 'cancelled' ? 'cancelled' : status;
+
+  const upserted = await db.rental.upsert({
+    where: { getaroundId: String(gaRental.id) },
+    create: {
+      getaroundId: String(gaRental.id),
+      vehicleId: vehicle.id,
+      driverName: `Conducteur ${gaRental.user_id}`,
+      driverGetaroundId: String(gaRental.user_id),
+      startAt: new Date(gaRental.starts_at),
+      endAt: new Date(gaRental.ends_at),
+      grossRevenue: gaRental.price / 100,
+      status,
+    },
+    update: {
+      startAt: new Date(gaRental.starts_at),
+      endAt: new Date(gaRental.ends_at),
+      grossRevenue: gaRental.price / 100,
+      status: newStatus,
+    },
+    select: { id: true },
+  });
+
+  // Sync messages
+  try {
+    const messages = await ga.getMessages(rentalId);
+    for (const msg of messages) {
+      await db.message.upsert({
+        where: { getaroundId: String(msg.id) },
+        create: {
+          getaroundId: String(msg.id),
+          rentalId: upserted.id,
+          direction: 'inbound',
+          content: msg.content,
+          sentAt: new Date(msg.sent_at),
+          status: 'sent',
+        },
+        update: { content: msg.content },
+        select: { id: true },
+      });
+    }
+  } catch (err) {
+    console.error(`[SyncSingle][${tenantSlug}] Erreur messages:`, err instanceof Error ? err.message : err);
+  }
+
+  // Sync invoice (décomposition CA)
+  try {
+    const invoices = await ga.getRentalInvoices(rentalId);
+    if (invoices.length > 0) {
+      const bd = parseInvoiceCharges(invoices);
+      await db.rental.update({
+        where: { id: upserted.id },
+        data: {
+          ...(bd.basePrice        ? { basePrice: bd.basePrice }               : {}),
+          ...(bd.extraDistanceFee ? { extraDistanceFee: bd.extraDistanceFee } : {}),
+          ...(bd.insuranceFee     ? { insuranceFee: bd.insuranceFee }         : {}),
+          ...(bd.ownerPayout      ? { ownerPayout: bd.ownerPayout }           : {}),
+          ...(bd.grossRevenue     ? { grossRevenue: bd.grossRevenue }         : {}),
+        },
+      });
+    }
+  } catch { /* factures pas encore disponibles */ }
+
+  console.log(`[SyncSingle][${tenantSlug}] Rental ${rentalId} — OK (status: ${newStatus})`);
 }
 
 // ─── Gestion des comptes Getaround ──────────────────────────────────────────

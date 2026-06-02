@@ -1238,20 +1238,33 @@ export async function syncPayoutsForWindow(
             Math.abs(invoice.total_price) / 100 * 100,
           ) / 100;
 
+          const existing = await db.rental.findUnique({
+            where: { id: rental.id },
+            select: {
+              ownerPayout: true, grossRevenue: true, basePrice: true,
+              insuranceFee: true, extraDistanceFee: true, driverMessFee: true,
+              damageCompensation: true, lateReturnFee: true, gasRefillFee: true,
+              deliveryFee: true, assistanceFee: true,
+            },
+          });
+
+          const add = (prev: number | null | undefined, delta: number) =>
+            Math.round(((prev ?? 0) + delta) * 100) / 100;
+
           await db.rental.update({
             where: { id: rental.id },
             data: {
-              basePrice:          basePrice          || undefined,
-              insuranceFee:       insuranceFee       || undefined,
-              extraDistanceFee:   extraDistanceFee   || undefined,
-              driverMessFee:      driverMessFee      || undefined,
-              damageCompensation: damageCompensation || undefined,
-              lateReturnFee:      lateReturnFee      || undefined,
-              gasRefillFee:       gasRefillFee       || undefined,
-              deliveryFee:        deliveryFee        || undefined,
-              assistanceFee:      assistanceFee      || undefined,
-              grossRevenue:       grossRevenue       || undefined,
-              ownerPayout:        ownerPayout        || undefined,
+              ownerPayout:        add(existing?.ownerPayout, ownerPayout),
+              grossRevenue:       add(existing?.grossRevenue, grossRevenue),
+              basePrice:          basePrice          ? add(existing?.basePrice, basePrice)                   : undefined,
+              insuranceFee:       insuranceFee       ? add(existing?.insuranceFee, insuranceFee)             : undefined,
+              extraDistanceFee:   extraDistanceFee   ? add(existing?.extraDistanceFee, extraDistanceFee)     : undefined,
+              driverMessFee:      driverMessFee      ? add(existing?.driverMessFee, driverMessFee)           : undefined,
+              damageCompensation: damageCompensation ? add(existing?.damageCompensation, damageCompensation) : undefined,
+              lateReturnFee:      lateReturnFee      ? add(existing?.lateReturnFee, lateReturnFee)           : undefined,
+              gasRefillFee:       gasRefillFee       ? add(existing?.gasRefillFee, gasRefillFee)             : undefined,
+              deliveryFee:        deliveryFee        ? add(existing?.deliveryFee, deliveryFee)               : undefined,
+              assistanceFee:      assistanceFee      ? add(existing?.assistanceFee, assistanceFee)           : undefined,
             },
           });
           result.updated++;
@@ -1296,6 +1309,17 @@ export async function recalculateHistoricalPayouts(db: PrismaClient, tenantSlug 
   }
 
   console.log(`[Payouts] Démarrage recalcul — ${windows.length} mois`);
+
+  // Remise à zéro des champs financiers pour éviter les doubles comptes
+  await db.rental.updateMany({
+    data: {
+      ownerPayout: null, grossRevenue: null, basePrice: null,
+      insuranceFee: null, extraDistanceFee: null, driverMessFee: null,
+      damageCompensation: null, lateReturnFee: null, gasRefillFee: null,
+      deliveryFee: null, assistanceFee: null,
+    },
+  });
+  console.log('[Payouts] Champs financiers remis à zéro avant recalcul');
 
   for (const account of accounts) {
     const apiKey = decrypt(account.apiKeyHash);

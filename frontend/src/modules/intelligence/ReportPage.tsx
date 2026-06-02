@@ -199,7 +199,7 @@ export default function ReportPage(): React.JSX.Element {
               style={{ backgroundColor: theme.primaryColor }}>
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-widest opacity-70">{internal.societe} · {internal.periode ?? '12 derniers mois'}</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest opacity-70">{internal.societe} · 12 derniers mois</p>
                   <h2 className="mt-1 text-2xl font-bold">Résumé exécutif</h2>
                 </div>
                 {theme.logoUrl && (

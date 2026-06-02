@@ -41,6 +41,23 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   } catch (err: unknown) { next(err); }
 });
 
+// PUT /api/v1/vehicles/:vehicleId/costs/:costId
+router.put('/:costId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      label: z.string().min(1).optional(),
+      amount: z.number().positive().optional(),
+    }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const cost = await db.vehicleCost.update({
+      where: { id: req.params.costId as string },
+      data: body.data,
+    });
+    res.json({ cost });
+  } catch (err: unknown) { next(err); }
+});
+
 // DELETE /api/v1/vehicles/:vehicleId/costs/:costId
 router.delete('/:costId', async (req: Request, res: Response, next: NextFunction) => {
   try {

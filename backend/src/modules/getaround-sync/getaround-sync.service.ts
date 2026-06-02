@@ -146,6 +146,15 @@ export async function syncAccountVehicles(
         const healthScore = await calculateHealthScore(db, upserted.id);
         await db.vehicle.update({ where: { id: upserted.id }, data: { healthScore } });
 
+        const existingBoitier = await db.vehicleCost.findFirst({
+          where: { vehicleId: upserted.id, label: 'Boîtier Connect' },
+        });
+        if (!existingBoitier) {
+          await db.vehicleCost.create({
+            data: { vehicleId: upserted.id, label: 'Boîtier Connect', amount: 25, type: 'fixed' },
+          });
+        }
+
         if (existingVehicle) result.updated++;
         else result.created++;
       } catch (err: unknown) {

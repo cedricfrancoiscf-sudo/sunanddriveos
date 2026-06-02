@@ -94,6 +94,16 @@ export default function VehicleDetailPage(): React.JSX.Element {
     onSuccess: () => { void refetchCosts(); },
   });
 
+  const [editingCostId, setEditingCostId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+
+  const updateCost = useMutation({
+    mutationFn: ({ costId, label, amount }: { costId: string; label: string; amount: number }) =>
+      api.put(`/vehicles/${id}/costs/${costId}`, { label, amount }),
+    onSuccess: () => { void refetchCosts(); setEditingCostId(null); },
+  });
+
   const totalMonthlyCosts = costs.reduce((s, c) => s + c.amount, 0);
 
   const [blockingModal, setBlockingModal] = useState(false);
@@ -390,23 +400,46 @@ export default function VehicleDetailPage(): React.JSX.Element {
             ) : (
               <div className="divide-y divide-gray-100">
                 {costs.map((cost) => (
-                  <div key={cost.id} className="flex items-center justify-between py-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{cost.label}</p>
-                      <p className="text-xs text-gray-400 capitalize">{cost.type}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-semibold text-gray-700">{cost.amount.toFixed(2)} €</span>
-                      <button
-                        type="button"
-                        onClick={() => { if (confirm(`Supprimer "${cost.label}" ?`)) deleteCost.mutate(cost.id); }}
-                        className="rounded p-1 text-gray-400 hover:text-red-500"
-                      >
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
+                  <div key={cost.id} className="py-3">
+                    {editingCostId === cost.id ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input type="text" value={editLabel} onChange={e => setEditLabel(e.target.value)}
+                          className="flex-1 min-w-32 rounded-lg border border-[#01696e] px-3 py-1.5 text-sm focus:outline-none" />
+                        <input type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)}
+                          min="0" step="0.01"
+                          className="w-28 rounded-lg border border-[#01696e] px-3 py-1.5 text-sm focus:outline-none" />
+                        <button type="button" disabled={updateCost.isPending}
+                          onClick={() => updateCost.mutate({ costId: cost.id, label: editLabel, amount: parseFloat(editAmount) })}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                          style={{ backgroundColor: '#01696e' }}>OK</button>
+                        <button type="button" onClick={() => setEditingCostId(null)}
+                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50">Annuler</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{cost.label}</p>
+                          <p className="text-xs text-gray-400 capitalize">{cost.type}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-gray-700">{cost.amount.toFixed(2)} €</span>
+                          <button type="button" title="Modifier"
+                            onClick={() => { setEditingCostId(cost.id); setEditLabel(cost.label); setEditAmount(String(cost.amount)); }}
+                            className="rounded p-1 text-gray-400 hover:text-[#01696e]">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button type="button" title="Supprimer"
+                            onClick={() => { if (confirm(`Supprimer "${cost.label}" ?`)) deleteCost.mutate(cost.id); }}
+                            className="rounded p-1 text-gray-400 hover:text-red-500">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

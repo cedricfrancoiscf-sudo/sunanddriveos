@@ -505,11 +505,13 @@ async function syncMessagesForWindow(
                 });
                 const vehicleLabel = `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`;
                 const startLabel = rental.startAt.toLocaleDateString('fr-FR');
-                const [admins, carkeepersAssigned] = await Promise.all([
+                const [admins, carkeepersAssigned, seatCarkeepers] = await Promise.all([
                   db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
                   db.vehicleCarkeeper.findMany({ where: { vehicleId: rental.vehicleId }, select: { userId: true } }),
+                  db.carSeat.findMany({ where: { isActive: true, carkeeperId: { not: null } }, select: { carkeeperId: true } }),
                 ]);
-                const recipientIds = [...new Set([...admins.map(a => a.id), ...carkeepersAssigned.map(c => c.userId)])];
+                const seatCarkeeperIds = seatCarkeepers.map(s => s.carkeeperId).filter((id): id is string => id !== null);
+                const recipientIds = [...new Set([...admins.map(a => a.id), ...carkeepersAssigned.map(c => c.userId), ...seatCarkeeperIds])];
                 await db.notification.createMany({
                   data: recipientIds.map(userId => ({
                     userId,
@@ -800,9 +802,15 @@ async function autoReplyToMessage(
         data: { rentalId: rental.id, vehicleId: rental.vehicleId, status: 'pending' },
       });
     }
+    const seatCarkeepers = await db.carSeat.findMany({
+      where: { isActive: true, carkeeperId: { not: null } },
+      select: { carkeeperId: true },
+    });
+    const seatCarkeeperIds = seatCarkeepers.map(s => s.carkeeperId).filter((id): id is string => id !== null);
+    const carSeatRecipientIds = [...new Set([...admins.map(a => a.id), ...seatCarkeeperIds])];
     await db.notification.createMany({
-      data: admins.map(a => ({
-        userId: a.id,
+      data: carSeatRecipientIds.map(userId => ({
+        userId,
         type: 'car_seat_request',
         title: '🪑 Demande de siège auto',
         body: `${rental.driverName} demande un siège auto`,
@@ -814,9 +822,15 @@ async function autoReplyToMessage(
   }
 
   if (analysis.isAccessoryRequest && analysis.detectedAccessory) {
+    const accCarkeepers = await db.accessory.findMany({
+      where: { carkeeperId: { not: null } },
+      select: { carkeeperId: true },
+    });
+    const accCarkeeperIds = accCarkeepers.map(a => a.carkeeperId).filter((id): id is string => id !== null);
+    const accRecipientIds = [...new Set([...admins.map(a => a.id), ...accCarkeeperIds])];
     await db.notification.createMany({
-      data: admins.map(a => ({
-        userId: a.id,
+      data: accRecipientIds.map(userId => ({
+        userId,
         type: 'accessory_request',
         title: `🎒 Demande ${analysis.detectedAccessory}`,
         body: `${rental.driverName} demande ${analysis.detectedAccessory}`,

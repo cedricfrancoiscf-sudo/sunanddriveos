@@ -9,6 +9,7 @@ interface Rental { id: string; driverName: string; startAt: string; endAt: strin
 interface AccessoryVehicleRow { vehicleId: string; accessoryId: string; vehicle: Vehicle; }
 interface Accessory {
   id: string; name: string; description: string | null; quantity: number;
+  carkeeperId: string | null;
   vehicles: AccessoryVehicleRow[];
 }
 interface AccReservation {
@@ -19,7 +20,9 @@ interface AccReservation {
 interface CarSeat {
   id: string; name: string; minWeightKg: number; maxWeightKg: number;
   totalStock: number; availableStock: number; outOfService: number; isActive: boolean;
+  carkeeperId: string | null;
 }
+interface CarkeeperUser { id: string; name: string; role: string; roles: string[]; }
 type Tab = 'accessories' | 'car-seats';
 
 // ── Utilitaires ───────────────────────────────────────────────────────────
@@ -64,6 +67,13 @@ function AccessoriesTab(): React.JSX.Element {
     queryFn: () => api.get<{ vehicles: Vehicle[] }>('/vehicles').then(r => r.data.vehicles),
     staleTime: 5 * 60_000,
   });
+
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get<{ users: CarkeeperUser[] }>('/users').then(r => r.data.users),
+    staleTime: 5 * 60_000,
+  });
+  const carkeepers = allUsers.filter(u => u.roles?.includes('carkeeper') || u.role === 'carkeeper');
 
   const { data: rentalsData = [] } = useQuery({
     queryKey: ['rentals-active'],
@@ -127,6 +137,12 @@ function AccessoriesTab(): React.JSX.Element {
   const cancelResMutation = useMutation({
     mutationFn: (id: string) => api.put(`/accessory-reservations/${id}/cancel`, {}),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['acc-reservations'] }),
+  });
+
+  const setCarekeeperMutation = useMutation({
+    mutationFn: ({ id, carkeeperId }: { id: string; carkeeperId: string | null }) =>
+      api.put(`/accessories/${id}`, { carkeeperId }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['accessories'] }),
   });
 
   function handleSubmit(e: React.FormEvent): void {
@@ -247,6 +263,20 @@ function AccessoriesTab(): React.JSX.Element {
                 {isExpanded && (
                   <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-4">
 
+                    {/* Carkeeper responsable */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Carkeeper responsable</p>
+                      <select
+                        value={a.carkeeperId ?? ''}
+                        onChange={e => setCarekeeperMutation.mutate({ id: a.id, carkeeperId: e.target.value || null })}
+                        disabled={setCarekeeperMutation.isPending}
+                        className="w-full max-w-xs rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#01696e] disabled:opacity-50"
+                      >
+                        <option value="">Aucun</option>
+                        {carkeepers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                    </div>
+
                     {/* Véhicules assignés */}
                     <div className="space-y-2">
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Véhicules assignés</p>
@@ -364,7 +394,7 @@ function AccessoriesTab(): React.JSX.Element {
 
 // ── Car Seats tab ──────────────────────────────────────────────────────────
 
-const EMPTY_SEAT = { name: '', minWeightKg: '', maxWeightKg: '', totalStock: '1' };
+const EMPTY_SEAT = { name: '', minWeightKg: '', maxWeightKg: '', totalStock: '1', carkeeperId: '' };
 
 function CarSeatsTab(): React.JSX.Element {
   const qc = useQueryClient();
@@ -376,6 +406,13 @@ function CarSeatsTab(): React.JSX.Element {
     queryKey: ['car-seats'],
     queryFn: () => api.get<{ seats: CarSeat[] }>('/car-seats').then(r => r.data.seats),
   });
+
+  const { data: seatUsers = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get<{ users: CarkeeperUser[] }>('/users').then(r => r.data.users),
+    staleTime: 5 * 60_000,
+  });
+  const seatCarkeepers = seatUsers.filter(u => u.roles?.includes('carkeeper') || u.role === 'carkeeper');
 
   const outOfStockCount = seats.filter(s => s.availableStock === 0).length;
 
@@ -394,6 +431,7 @@ function CarSeatsTab(): React.JSX.Element {
       name: data.name,
       minWeightKg: Number(data.minWeightKg),
       maxWeightKg: Number(data.maxWeightKg),
+      carkeeperId: data.carkeeperId || null,
     }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['car-seats'] }); setEditId(null); setForm(EMPTY_SEAT); setShowForm(false); },
   });
@@ -426,7 +464,7 @@ function CarSeatsTab(): React.JSX.Element {
 
   function startEdit(s: CarSeat): void {
     setEditId(s.id);
-    setForm({ name: s.name, minWeightKg: String(s.minWeightKg), maxWeightKg: String(s.maxWeightKg), totalStock: String(s.totalStock) });
+    setForm({ name: s.name, minWeightKg: String(s.minWeightKg), maxWeightKg: String(s.maxWeightKg), totalStock: String(s.totalStock), carkeeperId: s.carkeeperId ?? '' });
     setShowForm(true);
   }
 
@@ -481,6 +519,14 @@ function CarSeatsTab(): React.JSX.Element {
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
               </div>
             )}
+            <div className="sm:col-span-4">
+              <label className="mb-1 block text-xs font-medium text-gray-600">Carkeeper responsable</label>
+              <select value={form.carkeeperId} onChange={e => setForm(f => ({ ...f, carkeeperId: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#01696e]">
+                <option value="">Aucun</option>
+                {seatCarkeepers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
           </div>
           <div className="flex gap-2">
             <button type="submit" disabled={isPending}
@@ -530,6 +576,10 @@ function CarSeatsTab(): React.JSX.Element {
                         {s.outOfService > 0 && <span className="ml-1 text-orange-500">· {s.outOfService} HS</span>}
                       </span>
                     </div>
+                    {s.carkeeperId && (() => {
+                      const ck = seatCarkeepers.find(u => u.id === s.carkeeperId);
+                      return ck ? <p className="mt-0.5 text-xs text-blue-600">Carkeeper : {ck.name}</p> : null;
+                    })()}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <button type="button" title="+1 stock" onClick={() => addStockMutation.mutate(s.id)}

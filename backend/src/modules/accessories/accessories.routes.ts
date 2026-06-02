@@ -56,6 +56,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       description: z.string().optional(),
       quantity: z.number().int().min(1).optional(),
       carekeeperUserId: z.string().nullable().optional(),
+      carkeeperId: z.string().nullable().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
     const db = getTenantClient(req.tenantDbUrl!);

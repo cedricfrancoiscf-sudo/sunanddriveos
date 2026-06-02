@@ -107,17 +107,51 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const db = getTenantClient(req.tenantDbUrl!);
     const targetId = req.params.id as string;
 
-    // Vérifier que ce n'est pas le dernier admin
+    console.log(`[Users] DELETE /users/${targetId} — début`);
+
     const adminCount = await db.user.count({ where: { role: 'admin', isActive: true } });
-    const targetUser = await db.user.findUnique({ where: { id: targetId }, select: { role: true } });
-    if (targetUser?.role === 'admin' && adminCount <= 1) {
+    const targetUser = await db.user.findUnique({
+      where: { id: targetId },
+      select: { role: true, email: true },
+    });
+
+    console.log(`[Users] Cible: ${targetUser?.email ?? 'introuvable'} (${targetUser?.role}), admins actifs: ${adminCount}`);
+
+    if (!targetUser) {
+      res.status(404).json({ error: 'Utilisateur introuvable' });
+      return;
+    }
+
+    if (targetUser.role === 'admin' && adminCount <= 1) {
       res.status(400).json({ error: 'Impossible de supprimer le dernier administrateur' });
       return;
     }
 
+    // Vérifier les relations bloquantes
+    const [notifCount, checksCount, messagesCount] = await Promise.all([
+      db.notification.count({ where: { userId: targetId } }),
+      db.vehicleCheck.count({ where: { checkedById: targetId } }),
+      db.message.count({ where: { approvedById: targetId } }),
+    ]);
+
+    console.log(`[Users] Relations: notifications=${notifCount}, vehicleChecks=${checksCount}, approvedMessages=${messagesCount}`);
+
+    if (notifCount > 0 || checksCount > 0 || messagesCount > 0) {
+      // Soft delete : désactiver plutôt que supprimer pour préserver l'intégrité
+      await db.user.update({ where: { id: targetId }, data: { isActive: false } });
+      console.log(`[Users] Soft-delete (isActive=false) appliqué pour ${targetId}`);
+      res.json({ success: true, softDeleted: true });
+      return;
+    }
+
     await db.user.delete({ where: { id: targetId } });
-    res.json({ success: true });
-  } catch (err: unknown) { next(err); }
+    console.log(`[Users] Hard-delete appliqué pour ${targetId}`);
+    res.json({ success: true, softDeleted: false });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[Users] Erreur DELETE /users/${req.params.id}:`, message);
+    next(err);
+  }
 });
 
 const MULTI_ROLES = ['admin', 'carkeeper', 'viewer'] as const;

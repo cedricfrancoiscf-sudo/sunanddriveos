@@ -55,7 +55,8 @@
       "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $p = Get-Content package.json | ConvertFrom-Json; $all = @{}; $p.dependencies.PSObject.Properties | ForEach-Object { $all[$_.Name] = $_.Value }; $p.devDependencies.PSObject.Properties | ForEach-Object { $all[$_.Name] = $_.Value }; $all.Keys | Where-Object { $_ -match 'rate|limit|zod' } | Sort-Object)",
       "PowerShell(git push *)",
       "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $env:DATABASE_TENANT_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\"; npx prisma generate --schema src/prisma/tenant/schema.prisma 2>&1 | Select-Object -Last 10)",
-      "Bash(npx prisma *)"
+      "Bash(npx prisma *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\frontend\\\\src\\\\modules\" -Recurse -Filter \"*.tsx\")"
     ]
   }
 }

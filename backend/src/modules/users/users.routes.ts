@@ -122,31 +122,19 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
       return;
     }
 
+    if (req.auth?.userId === targetId) {
+      res.status(400).json({ error: 'Impossible de se supprimer soi-même' });
+      return;
+    }
+
     if (targetUser.role === 'admin' && adminCount <= 1) {
       res.status(400).json({ error: 'Impossible de supprimer le dernier administrateur' });
       return;
     }
 
-    // Vérifier les relations bloquantes
-    const [notifCount, checksCount, messagesCount] = await Promise.all([
-      db.notification.count({ where: { userId: targetId } }),
-      db.vehicleCheck.count({ where: { checkedById: targetId } }),
-      db.message.count({ where: { approvedById: targetId } }),
-    ]);
-
-    console.log(`[Users] Relations: notifications=${notifCount}, vehicleChecks=${checksCount}, approvedMessages=${messagesCount}`);
-
-    if (notifCount > 0 || checksCount > 0 || messagesCount > 0) {
-      // Soft delete : désactiver plutôt que supprimer pour préserver l'intégrité
-      await db.user.update({ where: { id: targetId }, data: { isActive: false } });
-      console.log(`[Users] Soft-delete (isActive=false) appliqué pour ${targetId}`);
-      res.json({ success: true, softDeleted: true });
-      return;
-    }
-
-    await db.user.delete({ where: { id: targetId } });
-    console.log(`[Users] Hard-delete appliqué pour ${targetId}`);
-    res.json({ success: true, softDeleted: false });
+    await db.user.update({ where: { id: targetId }, data: { isActive: false } });
+    console.log(`[Users] Soft-delete (isActive=false) appliqué pour ${targetId}`);
+    res.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[Users] Erreur DELETE /users/${req.params.id}:`, message);

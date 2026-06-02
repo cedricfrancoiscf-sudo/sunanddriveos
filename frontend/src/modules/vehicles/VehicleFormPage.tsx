@@ -22,6 +22,8 @@ const EMPTY_FORM = {
   currentMileage: 0,
   fuelType: '',
   parkingZone: '',
+  deliveryPointName: '',
+  deliveryPostalCode: '',
   pickupInstructions: '',
   returnInstructions: '',
 };
@@ -53,6 +55,8 @@ export default function VehicleFormPage(): React.JSX.Element {
         currentMileage: vehicle.currentMileage,
         fuelType: (vehicle as { fuelType?: string | null }).fuelType ?? '',
         parkingZone: vehicle.parkingZone ?? '',
+        deliveryPointName: (vehicle as { deliveryPointName?: string | null }).deliveryPointName ?? '',
+        deliveryPostalCode: (vehicle as { deliveryPostalCode?: string | null }).deliveryPostalCode ?? '',
         pickupInstructions: vehicle.pickupInstructions ?? '',
         returnInstructions: vehicle.returnInstructions ?? '',
       });
@@ -69,6 +73,8 @@ export default function VehicleFormPage(): React.JSX.Element {
       photoUrl: data.photoUrl || null,
       fuelType: (data.fuelType as never) || null,
       parkingZone: data.parkingZone || null,
+      deliveryPointName: data.deliveryPointName || null,
+      deliveryPostalCode: data.deliveryPostalCode || null,
       pickupInstructions: data.pickupInstructions || null,
       returnInstructions: data.returnInstructions || null,
     }),
@@ -88,6 +94,8 @@ export default function VehicleFormPage(): React.JSX.Element {
         photoUrl: data.photoUrl || null,
         fuelType: (data.fuelType as never) || null,
         parkingZone: data.parkingZone || null,
+        deliveryPointName: data.deliveryPointName || null,
+        deliveryPostalCode: data.deliveryPostalCode || null,
         pickupInstructions: data.pickupInstructions || null,
         returnInstructions: data.returnInstructions || null,
         healthScore: Number(data.healthScore),
@@ -192,6 +200,21 @@ export default function VehicleFormPage(): React.JSX.Element {
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
               placeholder="ex: Paris 15e, Boulogne, Versailles..." />
             <p className="mt-0.5 text-xs text-gray-400">Permet de regrouper vos véhicules par secteur géographique</p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Nom du point de livraison</label>
+              <input type="text" value={form.deliveryPointName} onChange={e => setForm(f => ({ ...f, deliveryPointName: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+                placeholder="ex: Parking Mignet" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Code postal</label>
+              <input type="text" value={form.deliveryPostalCode} onChange={e => setForm(f => ({ ...f, deliveryPostalCode: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+                placeholder="ex: 75015" maxLength={10} />
+            </div>
           </div>
 
           <div>

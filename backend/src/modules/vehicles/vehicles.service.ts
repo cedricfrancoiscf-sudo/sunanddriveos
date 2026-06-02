@@ -9,7 +9,12 @@ export type VehicleCreateInput = {
   photoUrl?: string | null;
   currentMileage?: number;
   thirdPartyOwnerId?: string | null;
+  fuelType?: string | null;
   parkingZone?: string | null;
+  deliveryPointName?: string | null;
+  deliveryPostalCode?: string | null;
+  pickupInstructions?: string | null;
+  returnInstructions?: string | null;
 };
 
 export type VehicleUpdateInput = Partial<VehicleCreateInput> & {

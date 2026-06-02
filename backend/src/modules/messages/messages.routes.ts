@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
+import { createGetaroundClient } from '../getaround-sync/getaround-api';
+import { decrypt } from '../../utils/crypto';
 import {
   listMessages,
   getMessage,
@@ -80,8 +82,50 @@ router.post('/:id/approve', async (req: Request, res: Response, next: NextFuncti
     if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
 
     const db = getTenantClient(req.tenantDbUrl!);
-    const message = await approveMessage(db, (req.params.id as string), req.auth!.userId!, body.data.content);
-    res.json({ message });
+
+    const msg = await db.message.findUnique({
+      where: { id: req.params.id as string },
+      select: {
+        id: true,
+        content: true,
+        rental: {
+          select: {
+            getaroundId: true,
+            vehicle: {
+              select: {
+                getaroundAccount: { select: { apiKeyHash: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!msg) { res.status(404).json({ error: 'Message introuvable' }); return; }
+
+    const content = body.data.content ?? msg.content;
+
+    // 1. Approuver en base
+    await approveMessage(db, req.params.id as string, req.auth!.userId!, content);
+
+    // 2. Envoyer via API Getaround
+    try {
+      const apiKeyHash = msg.rental.vehicle.getaroundAccount?.apiKeyHash;
+      const gaRentalId = msg.rental.getaroundId ? parseInt(msg.rental.getaroundId, 10) : null;
+
+      if (!apiKeyHash || !gaRentalId) throw new Error('Compte Getaround ou rentalId manquant');
+
+      const ga = createGetaroundClient(decrypt(apiKeyHash));
+      const sent = await ga.sendMessage(gaRentalId, content);
+
+      // 3. Marquer comme envoyé avec l'ID Getaround
+      await markAsSent(db, req.params.id as string, String(sent.id));
+
+      console.log(`[Messages] Message ${req.params.id as string} approuvé et envoyé (rental ${gaRentalId})`);
+      res.json({ success: true, status: 'sent' });
+    } catch (sendErr) {
+      console.error('[Messages] Erreur envoi Getaround:', sendErr instanceof Error ? sendErr.message : sendErr);
+      res.json({ success: true, status: 'approved', warning: 'Approuvé mais erreur envoi Getaround' });
+    }
   } catch (err: unknown) { next(err); }
 });
 

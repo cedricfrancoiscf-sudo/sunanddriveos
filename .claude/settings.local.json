@@ -56,7 +56,9 @@
       "PowerShell(git push *)",
       "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $env:DATABASE_TENANT_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\"; npx prisma generate --schema src/prisma/tenant/schema.prisma 2>&1 | Select-Object -Last 10)",
       "Bash(npx prisma *)",
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\frontend\\\\src\\\\modules\" -Recurse -Filter \"*.tsx\")"
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\frontend\\\\src\\\\modules\" -Recurse -Filter \"*.tsx\")",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $env:DATABASE_TENANT_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\"; npx prisma migrate dev --schema src/prisma/tenant/schema.prisma --name add_delivery_point_fields --create-only 2>&1 | Select-Object -Last 20)",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $env:DATABASE_TENANT_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\"; npx prisma generate --schema src/prisma/tenant/schema.prisma 2>&1 | Select-Object -Last 5)"
     ]
   }
 }

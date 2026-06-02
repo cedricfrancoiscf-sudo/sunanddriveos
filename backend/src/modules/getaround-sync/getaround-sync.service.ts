@@ -568,7 +568,7 @@ export async function syncAccountRentals(
       const masterDb = getMasterClient();
       const company = await masterDb.company.findFirst({ where: { slug: tenantSlug } });
       tenantPlan = company?.plan ?? 'starter';
-      trialActive = company?.trialEndsAt != null && company.trialEndsAt > new Date() && !company.stripeSubscriptionId;
+      trialActive = company?.trialEndsAt != null && company.trialEndsAt > new Date() && !company.stripeSubscriptionId && tenantPlan === 'starter';
     } catch (e) { console.error(`[Sync][${tenantSlug}] Erreur plan/trial:`, e); }
   }
 

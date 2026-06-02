@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -117,6 +117,12 @@ export default function LoginPage(): React.JSX.Element {
               {isLoading ? 'Connexion...' : 'Se connecter'}
             </button>
           </form>
+
+          <div className="mt-4 text-center">
+            <Link to="/forgot-password" className="text-sm text-[#01696e] hover:underline">
+              Mot de passe oublié ?
+            </Link>
+          </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-gray-400">

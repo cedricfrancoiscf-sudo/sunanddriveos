@@ -1,12 +1,10 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT ?? '587', 10),
-  auth: process.env.SMTP_USER
-    ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-    : undefined,
-});
+function getResend(): Resend {
+  return new Resend(process.env.RESEND_API_KEY);
+}
+
+const FROM_DEFAULT = process.env.RESEND_FROM ?? 'SunanddriveOS <noreply@sunanddrive.fr>';
 
 export interface SendEmailOptions {
   to: string;
@@ -16,19 +14,18 @@ export interface SendEmailOptions {
 }
 
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
-  if (!process.env.SMTP_USER) {
-    console.warn('[Mailer] SMTP_USER non défini — email non envoyé :', opts.subject);
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Mailer] RESEND_API_KEY non défini — email non envoyé :', opts.subject);
     return;
   }
-  await transporter.sendMail({
-    from: opts.from ?? `"SunanddriveOS" <${process.env.SMTP_USER}>`,
+  await getResend().emails.send({
+    from: opts.from ?? FROM_DEFAULT,
     to: opts.to,
     subject: opts.subject,
     html: opts.html,
   });
 }
 
-// Envoie une alerte à tous les emails configurés pour ce tenant
 export async function sendAlertEmail(opts: {
   alertEmails: string[];
   subject: string;
@@ -40,16 +37,16 @@ export async function sendAlertEmail(opts: {
     console.warn('[Mailer] sendAlertEmail — aucun destinataire configuré');
     return;
   }
-  if (!process.env.SMTP_HOST && !process.env.SMTP_USER) {
-    console.warn('[Mailer] SMTP non configuré — alerte non envoyée :', opts.subject);
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Mailer] RESEND_API_KEY non défini — alerte non envoyée :', opts.subject);
     return;
   }
   const fromName = opts.senderName ?? 'SunanddriveOS';
-  const fromAddr = process.env.SMTP_USER ?? process.env.SMTP_FROM ?? 'noreply@sunanddrive.fr';
-  await transporter.sendMail({
-    from: `"${fromName}" <${fromAddr}>`,
-    to: opts.alertEmails.join(', '),
-    replyTo: opts.replyToEmail,
+  const fromAddr = process.env.RESEND_FROM ?? 'noreply@sunanddrive.fr';
+  await getResend().emails.send({
+    from: `${fromName} <${fromAddr}>`,
+    to: opts.alertEmails,
+    replyTo: opts.replyToEmail ?? undefined,
     subject: opts.subject,
     html: opts.html,
   });
@@ -61,13 +58,12 @@ export async function sendInvitationEmail(
   inviteUrl: string,
   companyName: string,
 ): Promise<void> {
-  if (!process.env.SMTP_USER) {
-    console.warn('[Mailer] SMTP_USER non défini — email d\'invitation non envoyé');
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Mailer] RESEND_API_KEY non défini — email d\'invitation non envoyé');
     return;
   }
-
-  await transporter.sendMail({
-    from: `"${companyName}" <${process.env.SMTP_USER}>`,
+  await getResend().emails.send({
+    from: `${companyName} <${process.env.RESEND_FROM ?? 'noreply@sunanddrive.fr'}>`,
     to,
     subject: `Invitation à rejoindre ${companyName}`,
     html: `

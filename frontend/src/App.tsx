@@ -34,6 +34,8 @@ function applyTheme(settings: { primaryColor?: string | null; secondaryColor?: s
 // Auth
 const LoginPage = React.lazy(() => import('./modules/auth/LoginPage'));
 const AcceptInvitationPage = React.lazy(() => import('./modules/auth/AcceptInvitationPage'));
+const ForgotPasswordPage = React.lazy(() => import('./modules/auth/ForgotPasswordPage'));
+const ResetPasswordPage = React.lazy(() => import('./modules/auth/ResetPasswordPage'));
 
 // App pages
 const DashboardPage = React.lazy(() => import('./modules/dashboard/DashboardPage'));
@@ -109,6 +111,8 @@ export default function App(): React.JSX.Element {
             {/* Routes publiques */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/upgrade" element={<TrialExpiredPage />} />
 
             {/* TV dashboard — protégé mais sans sidebar */}

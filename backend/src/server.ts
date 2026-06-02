@@ -113,6 +113,17 @@ async function runGetaroundSyncForAllTenants(): Promise<void> {
         console.log(`[Sync] Tenant ${company.slug} : ${created} créé(s), ${updated} mis à jour`);
         // Nettoyer les séquences obsolètes après chaque sync réussie
         void cleanupObsoleteSequences(db).catch(e => console.error('[Séquences] Erreur cleanup post-sync:', e));
+
+        // Rattrapage : locations dont endAt est passé mais status toujours 'active'
+        try {
+          const expired = await db.rental.updateMany({
+            where: { status: 'active', endAt: { lt: new Date() } },
+            data: { status: 'completed' },
+          });
+          if (expired.count > 0) {
+            console.log(`[Cron] ${company.slug} : ${expired.count} location(s) expirée(s) passées en completed`);
+          }
+        } catch (e) { console.error(`[Cron] Erreur rattrapage locations expirées ${company.slug}:`, e); }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[Sync] Tenant ${company.slug} : erreur — ${message}`);

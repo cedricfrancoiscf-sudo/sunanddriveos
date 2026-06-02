@@ -167,10 +167,10 @@ export interface GetaroundMessage {
   content: string;
 }
 
-// L'API Getaround attend un format ISO8601 date-time (RFC3339)
-// ex: 2026-05-02T00:00:00.000Z — PAS un format date seul YYYY-MM-DD
+// L'API Getaround attend un format ISO8601 date-time (RFC3339) sans millisecondes
+// ex: 2026-05-02T00:00:00Z — PAS .000Z, PAS un format date seul YYYY-MM-DD
 function toGetaroundDate(d: Date): string {
-  return d.toISOString();
+  return d.toISOString().replace('.000Z', 'Z');
 }
 
 // Découpe une plage en tranches ≤ 30 jours, du plus récent au plus ancien

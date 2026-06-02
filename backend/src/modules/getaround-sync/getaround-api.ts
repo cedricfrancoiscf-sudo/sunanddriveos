@@ -365,7 +365,7 @@ export function createGetaroundClient(apiKey: string) {
     },
 
     async getPayouts(startDate: Date, endDate: Date): Promise<Array<{ id: number }>> {
-      const qs = `start_date=${toGetaroundDate(startDate)}&end_date=${toGetaroundDate(endDate)}&per_page=100&page=1`;
+      const qs = `start_date=${toGetaroundDate(startDate)}&end_date=${toGetaroundDate(endDate)}`;
       console.log('[Payouts API] URL:', `/payouts.json?${qs}`);
       const res = await withRetry(() => client.get<Array<{ id: number }>>(`/payouts.json?${qs}`));
       return res.data ?? [];

@@ -46,21 +46,25 @@ const PRIMARY = '#01696e';
 
 interface SidebarProps {
   onClose?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-function LockedItem({ label, icon, requiredPlan }: {
+function LockedItem({ label, icon, requiredPlan, collapsed }: {
   label: string;
   icon: React.ReactNode;
   requiredPlan: 'pro' | 'enterprise';
+  collapsed?: boolean;
 }): React.JSX.Element {
   const [showModal, setShowModal] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setShowModal(true)}
-        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 hover:bg-gray-50 transition-colors">
+      <button type="button" onClick={() => setShowModal(true)} title={collapsed ? label : undefined}
+        className={`flex w-full items-center rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-50 transition-colors ${
+          collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'
+        }`}>
         {icon}
-        <span className="flex-1 text-left">{label}</span>
-        <span className="text-xs">🔒</span>
+        {!collapsed && <><span className="flex-1 text-left">{label}</span><span className="text-xs">🔒</span></>}
       </button>
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowModal(false)}>
@@ -87,7 +91,7 @@ function LockedItem({ label, icon, requiredPlan }: {
   );
 }
 
-export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
+export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }: SidebarProps): React.JSX.Element {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -140,9 +144,9 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
   }
 
   const navLinkClass = ({ isActive }: { isActive: boolean }): string =>
-    `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-      isActive ? 'text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-    }`;
+    `flex items-center rounded-lg text-sm font-medium transition-colors ${
+      collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'
+    } ${isActive ? 'text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`;
 
   const navLinkStyle = ({ isActive }: { isActive: boolean }): React.CSSProperties | undefined =>
     isActive ? { backgroundColor: PRIMARY } : undefined;
@@ -150,14 +154,27 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
   return (
     <div className="flex h-full flex-col bg-white">
       {/* Logo */}
-      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-gray-100 px-4">
+      <div className={`flex h-16 shrink-0 items-center border-b border-gray-100 ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`}>
         <div
-          className="flex h-8 w-8 items-center justify-center rounded-lg"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
           style={{ backgroundColor: PRIMARY }}
         >
           <span className="text-sm font-bold text-white">S</span>
         </div>
-        <span className="font-semibold text-gray-900">SunanddriveOS</span>
+        {!collapsed && <span className="font-semibold text-gray-900 truncate flex-1">SunanddriveOS</span>}
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            title={collapsed ? 'Agrandir la sidebar' : 'Réduire la sidebar'}
+            className={`rounded-md p-1 text-gray-400 hover:text-gray-600 hidden lg:block ${collapsed ? '' : 'ml-auto'}`}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d={collapsed ? 'M9 5l7 7-7 7' : 'M15 19l-7-7 7-7'} />
+            </svg>
+          </button>
+        )}
         {onClose && (
           <button
             type="button"
@@ -175,7 +192,7 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         <ul className="space-y-0.5">
           {visibleItems
-            .filter(item => !PRO_LOCKED_ITEMS.some(p => p.to === item.to)) // exclure les items Pro gérés séparément
+            .filter(item => !PRO_LOCKED_ITEMS.some(p => p.to === item.to))
             .map((item) => (
             <li key={item.to}>
               <NavLink
@@ -183,9 +200,10 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
                 onClick={onClose}
                 className={navLinkClass}
                 style={navLinkStyle}
+                title={collapsed ? item.label : undefined}
               >
                 {item.icon}
-                {item.label}
+                {!collapsed && item.label}
               </NavLink>
             </li>
           ))}
@@ -199,10 +217,10 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
             .map(item => (
               <li key={item.to}>
                 {isPro
-                  ? <NavLink to={item.to} onClick={onClose} className={navLinkClass} style={navLinkStyle}>
-                      {item.icon}{item.label}
+                  ? <NavLink to={item.to} onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? item.label : undefined}>
+                      {item.icon}{!collapsed && item.label}
                     </NavLink>
-                  : <LockedItem label={item.label} icon={item.icon} requiredPlan="pro" />
+                  : <LockedItem label={item.label} icon={item.icon} requiredPlan="pro" collapsed={collapsed} />
                 }
               </li>
             ))
@@ -212,31 +230,31 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
           <li>
             <button
               type="button"
-              onClick={toggleVieVehicule}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+              onClick={collapsed ? undefined : toggleVieVehicule}
+              title={collapsed ? 'Vie du véhicule' : undefined}
+              className={`flex w-full items-center rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors ${
+                collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'
+              }`}
             >
               <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
               </svg>
-              <span className="flex-1 text-left">Vie du véhicule</span>
-              <svg
-                className={`h-4 w-4 shrink-0 transition-transform ${vieVehiculeOpen ? 'rotate-180' : ''}`}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
+              {!collapsed && (
+                <>
+                  <span className="flex-1 text-left">Vie du véhicule</span>
+                  <svg className={`h-4 w-4 shrink-0 transition-transform ${vieVehiculeOpen ? 'rotate-180' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </>
+              )}
             </button>
 
-            {vieVehiculeOpen && (
+            {vieVehiculeOpen && !collapsed && (
               <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-gray-100 pl-3">
                 {VIE_VEHICULE_ITEMS.map((item) => (
                   <li key={item.to}>
-                    <NavLink
-                      to={item.to}
-                      onClick={onClose}
-                      className={navLinkClass}
-                      style={navLinkStyle}
-                    >
+                    <NavLink to={item.to} onClick={onClose} className={navLinkClass} style={navLinkStyle}>
                       {item.icon}
                       {item.label}
                     </NavLink>
@@ -247,43 +265,45 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
           </li>
           {/* Section "INTELLIGENCE ✨" */}
           <li className="pt-3">
-            <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-              Intelligence ✨
-            </p>
+            {!collapsed && (
+              <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Intelligence ✨
+              </p>
+            )}
             <ul className="space-y-0.5">
               <li>
                 {isStarterPlan ? (
-                  <div className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-300 cursor-not-allowed select-none">
+                  <div title={collapsed ? 'Vue unifiée' : undefined}
+                    className={`flex items-center rounded-lg text-sm font-medium text-gray-300 cursor-not-allowed select-none ${collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'}`}>
                     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    <span className="flex-1">Vue unifiée</span>
-                    <svg className="h-3.5 w-3.5 shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    {!collapsed && <><span className="flex-1">Vue unifiée</span><svg className="h-3.5 w-3.5 shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg></>}
                   </div>
                 ) : (
-                  <NavLink to="/intelligence" onClick={onClose} className={navLinkClass} style={navLinkStyle}>
+                  <NavLink to="/intelligence" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Vue unifiée' : undefined}>
                     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    Vue unifiée
+                    {!collapsed && 'Vue unifiée'}
                   </NavLink>
                 )}
               </li>
               <li>
                 {isStarterPlan ? (
-                  <div className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-300 cursor-not-allowed select-none">
+                  <div title={collapsed ? 'Rapport CEO' : undefined}
+                    className={`flex items-center rounded-lg text-sm font-medium text-gray-300 cursor-not-allowed select-none ${collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'}`}>
                     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <span className="flex-1">Rapport CEO</span>
-                    <svg className="h-3.5 w-3.5 shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    {!collapsed && <><span className="flex-1">Rapport CEO</span><svg className="h-3.5 w-3.5 shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg></>}
                   </div>
                 ) : (
-                  <NavLink to="/intelligence/report" onClick={onClose} className={navLinkClass} style={navLinkStyle}>
+                  <NavLink to="/intelligence/report" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Rapport CEO' : undefined}>
                     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    Rapport CEO
+                    {!collapsed && 'Rapport CEO'}
                   </NavLink>
                 )}
               </li>
@@ -329,18 +349,21 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
 
       {/* User footer */}
       <div className="shrink-0 border-t border-gray-100 p-3">
-        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+        <div className={`flex items-center rounded-lg px-2 py-2 ${collapsed ? 'justify-center' : 'gap-3'}`}>
           <div
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
             style={{ backgroundColor: PRIMARY }}
+            title={collapsed ? (user?.name ?? undefined) : undefined}
           >
             {user?.name?.charAt(0).toUpperCase() ?? '?'}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-gray-900">{user?.name}</p>
-            <p className="truncate text-xs text-gray-400 capitalize">{user?.role ?? 'admin'}</p>
-          </div>
-          <button
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-gray-900">{user?.name}</p>
+              <p className="truncate text-xs text-gray-400 capitalize">{user?.role ?? 'admin'}</p>
+            </div>
+          )}
+          {!collapsed && <button
             type="button"
             onClick={handleLogout}
             title="Déconnexion"
@@ -349,7 +372,7 @@ export default function Sidebar({ onClose }: SidebarProps): React.JSX.Element {
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-          </button>
+          </button>}
         </div>
       </div>
     </div>

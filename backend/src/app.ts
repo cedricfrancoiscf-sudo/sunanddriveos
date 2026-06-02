@@ -70,6 +70,7 @@ import syncStatusRoutes from './modules/getaround-sync/sync-status.routes';
 import tenantEventsRoutes from './modules/tenant-events/tenant-events.routes';
 import feedbackRoutes from './modules/feedback/feedback.routes';
 import scanRoutes from './modules/ai/scan.routes';
+import billingRoutes from './modules/billing/billing.routes';
 import intelligenceRoutes from './modules/intelligence/intelligence.routes';
 import reportRoutes from './modules/intelligence/report.routes';
 
@@ -93,6 +94,9 @@ export function createApp(): Express {
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID'],
     }),
   );
+
+  // Webhook Stripe — raw body AVANT express.json()
+  app.use('/api/v1/billing/webhook', express.raw({ type: 'application/json' }));
 
   // Webhook Getaround — raw body avant le parser JSON global (pour signature verification future)
   app.use('/api/v1/webhooks/getaround', express.raw({ type: '*/*' }), getaroundWebhooksRoutes);
@@ -165,6 +169,7 @@ export function createApp(): Express {
   app.use('/api/v1/onboarding', onboardingRoutes);
   app.use('/api/v1/blacklist', renterBlacklistRoutes);
   app.use('/api/v1/tenant-events', tenantEventsRoutes);
+  app.use('/api/v1/billing', billingRoutes);
   app.use('/api/v1/feedback', feedbackRoutes);
   app.use('/api/v1/scan', scanRoutes);
   app.use('/api/v1/sync', syncStatusRoutes);

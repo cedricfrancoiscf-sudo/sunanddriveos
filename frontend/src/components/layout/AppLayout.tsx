@@ -5,12 +5,25 @@ import NotificationBell from './NotificationBell';
 
 export default function AppLayout(): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(
+    localStorage.getItem('sidebar_collapsed') === 'true',
+  );
+
+  function toggleCollapse(): void {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem('sidebar_collapsed', String(next));
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
-      {/* Sidebar desktop — fixe */}
-      <aside className="hidden w-60 shrink-0 border-r border-gray-200 bg-white lg:flex lg:flex-col">
-        <Sidebar />
+      {/* Sidebar desktop — fixe, largeur variable */}
+      <aside
+        className={`hidden shrink-0 border-r border-gray-200 bg-white lg:flex lg:flex-col transition-all duration-200 ${
+          collapsed ? 'w-16' : 'w-60'
+        }`}
+      >
+        <Sidebar collapsed={collapsed} onToggleCollapse={toggleCollapse} />
       </aside>
 
       {/* Sidebar mobile — overlay */}

@@ -63,6 +63,52 @@ router.put('/:id/read', async (req: Request, res: Response, next: NextFunction) 
   } catch (err: unknown) { next(err); }
 });
 
+// DELETE /api/v1/notifications/old — purge des notifications obsolètes
+router.delete('/old', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const userId = req.auth!.userId!;
+    const now = new Date();
+    const thirtyDaysAgo  = new Date(now.getTime() - 30 * 86_400_000);
+    const ninetyDaysAgo  = new Date(now.getTime() - 90 * 86_400_000);
+    const sevenDaysAgo   = new Date(now.getTime() - 7  * 86_400_000);
+
+    // 1. Notifications lues de plus de 30 jours
+    const r1 = await db.notification.deleteMany({
+      where: { userId, isRead: true, createdAt: { lt: thirtyDaysAgo } },
+    });
+
+    // 2. Notifications non lues de plus de 90 jours
+    const r2 = await db.notification.deleteMany({
+      where: { userId, isRead: false, createdAt: { lt: ninetyDaysAgo } },
+    });
+
+    // 3. Notifications car_seat/accessory dont la location est terminée depuis > 7j
+    const staleRentalIds = (
+      await db.rental.findMany({
+        where: { status: 'completed', endAt: { lt: sevenDaysAgo } },
+        select: { id: true },
+      })
+    ).map(r => r.id);
+
+    let r3 = { count: 0 };
+    if (staleRentalIds.length > 0) {
+      r3 = await db.notification.deleteMany({
+        where: {
+          userId,
+          type: { in: ['car_seat_request', 'accessory_request'] },
+          relatedEntityType: 'rental',
+          relatedEntityId: { in: staleRentalIds },
+        },
+      });
+    }
+
+    const deleted = r1.count + r2.count + r3.count;
+    console.log(`[Notifications] Nettoyage: ${deleted} supprimée(s)`);
+    res.json({ success: true, deleted });
+  } catch (err: unknown) { next(err); }
+});
+
 // DELETE /api/v1/notifications/:id
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {

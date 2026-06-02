@@ -80,6 +80,14 @@ export default function NotificationBell(): React.JSX.Element {
     },
   });
 
+  const clearOld = useMutation({
+    mutationFn: () => api.delete('/notifications/old'),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['notifications'] });
+      void qc.invalidateQueries({ queryKey: ['notifications-count'] });
+    },
+  });
+
   // Fermer au clic extérieur
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -118,15 +126,19 @@ export default function NotificationBell(): React.JSX.Element {
           {/* En-tête */}
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
             <span className="text-sm font-semibold text-gray-900">Notifications</span>
-            {unread > 0 && (
-              <button
-                type="button"
-                onClick={() => markAllRead.mutate()}
-                className="text-xs text-teal-600 hover:text-teal-700 font-medium"
-              >
-                Tout marquer lu
+            <div className="flex items-center gap-3">
+              {unread > 0 && (
+                <button type="button" onClick={() => markAllRead.mutate()}
+                  className="text-xs text-teal-600 hover:text-teal-700 font-medium">
+                  Tout marquer lu
+                </button>
+              )}
+              <button type="button" onClick={() => clearOld.mutate()} disabled={clearOld.isPending}
+                className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-40 transition-colors"
+                title="Supprimer les notifications lues et obsolètes">
+                Tout effacer
               </button>
-            )}
+            </div>
           </div>
 
           {/* Liste */}

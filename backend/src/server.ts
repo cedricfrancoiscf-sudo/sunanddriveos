@@ -537,6 +537,58 @@ async function runDocumentExpiryAlerts(): Promise<void> {
 
 cron.schedule('0 9 * * *', () => void runDocumentExpiryAlerts());
 
+// ─── Nettoyage notifications obsolètes (3h chaque jour) ─────────────────────
+
+async function runNotificationCleanup(): Promise<void> {
+  try {
+    const master = getMasterClient();
+    const companies = await master.company.findMany({
+      where: { isActive: true },
+      select: { tenantDbUrl: true, slug: true },
+    });
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86_400_000);
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 86_400_000);
+    const sevenDaysAgo  = new Date(now.getTime() - 7  * 86_400_000);
+
+    for (const company of companies) {
+      try {
+        const db = getTenantClient(company.tenantDbUrl);
+
+        const [r1, r2] = await Promise.all([
+          db.notification.deleteMany({ where: { isRead: true,  createdAt: { lt: thirtyDaysAgo } } }),
+          db.notification.deleteMany({ where: { isRead: false, createdAt: { lt: ninetyDaysAgo } } }),
+        ]);
+
+        const staleIds = (await db.rental.findMany({
+          where: { status: 'completed', endAt: { lt: sevenDaysAgo } },
+          select: { id: true },
+        })).map(r => r.id);
+
+        let r3 = { count: 0 };
+        if (staleIds.length > 0) {
+          r3 = await db.notification.deleteMany({
+            where: {
+              type: { in: ['car_seat_request', 'accessory_request'] },
+              relatedEntityType: 'rental',
+              relatedEntityId: { in: staleIds },
+            },
+          });
+        }
+
+        const deleted = r1.count + r2.count + r3.count;
+        if (deleted > 0) console.log(`[NotifCleanup] ${company.slug}: ${deleted} supprimée(s)`);
+      } catch (err: unknown) {
+        console.error(`[NotifCleanup] Erreur ${company.slug}:`, err);
+      }
+    }
+  } catch (err: unknown) {
+    console.error('[NotifCleanup] Erreur:', err);
+  }
+}
+
+cron.schedule('0 3 * * *', () => void runNotificationCleanup());
+
 // Fermeture gracieuse — libère connexions Prisma proprement
 const shutdown = async (signal: string): Promise<void> => {
   console.log(`[SunanddriveOS] Signal ${signal} reçu — arrêt en cours...`);

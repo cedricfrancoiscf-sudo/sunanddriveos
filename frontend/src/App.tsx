@@ -63,10 +63,6 @@ const SuperAdminDashboard = React.lazy(() => import('./modules/superadmin/SuperA
 const OnboardingPage = React.lazy(() => import('./modules/onboarding/OnboardingPage'));
 const IntelligencePage = React.lazy(() => import('./modules/intelligence/IntelligencePage'));
 const ReportPage = React.lazy(() => import('./modules/intelligence/ReportPage'));
-const PerformancePage = React.lazy(() => import('./modules/intelligence/PerformancePage'));
-const RentabilityPage = React.lazy(() => import('./modules/intelligence/RentabilityPage'));
-const ForecastPage = React.lazy(() => import('./modules/intelligence/ForecastPage'));
-const AiSuggestionsPage = React.lazy(() => import('./modules/intelligence/AiSuggestionsPage'));
 const TrialExpiredPage = React.lazy(() => import('./modules/billing/TrialExpiredPage'));
 
 function LoadingFallback(): React.JSX.Element {
@@ -150,10 +146,6 @@ export default function App(): React.JSX.Element {
               <Route path="/onboarding" element={<OnboardingPage />} />
               <Route path="/intelligence" element={<IntelligencePage />} />
               <Route path="/intelligence/report" element={<ReportPage />} />
-              <Route path="/intelligence/performance" element={<PerformancePage />} />
-              <Route path="/intelligence/rentability" element={<RentabilityPage />} />
-              <Route path="/intelligence/forecasts" element={<ForecastPage />} />
-              <Route path="/intelligence/suggestions" element={<AiSuggestionsPage />} />
             </Route>
 
             {/* Redirections */}

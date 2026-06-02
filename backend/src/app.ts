@@ -70,6 +70,7 @@ import syncStatusRoutes from './modules/getaround-sync/sync-status.routes';
 import tenantEventsRoutes from './modules/tenant-events/tenant-events.routes';
 import feedbackRoutes from './modules/feedback/feedback.routes';
 import intelligenceRoutes from './modules/intelligence/intelligence.routes';
+import reportRoutes from './modules/intelligence/report.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -166,6 +167,7 @@ export function createApp(): Express {
   app.use('/api/v1/feedback', feedbackRoutes);
   app.use('/api/v1/sync', syncStatusRoutes);
   app.use('/api/v1/intelligence', intelligenceRoutes);
+  app.use('/api/v1/intelligence/report', requirePlan('pro'), reportRoutes);
   // Route publique iCal — pas de JWT, compatible abonnement calendriers
   app.use('/ical', icalRoutes);
 

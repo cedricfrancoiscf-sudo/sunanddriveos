@@ -62,6 +62,7 @@ const SuperAdminLoginPage = React.lazy(() => import('./modules/superadmin/SuperA
 const SuperAdminDashboard = React.lazy(() => import('./modules/superadmin/SuperAdminDashboard'));
 const OnboardingPage = React.lazy(() => import('./modules/onboarding/OnboardingPage'));
 const IntelligencePage = React.lazy(() => import('./modules/intelligence/IntelligencePage'));
+const ReportPage = React.lazy(() => import('./modules/intelligence/ReportPage'));
 const PerformancePage = React.lazy(() => import('./modules/intelligence/PerformancePage'));
 const RentabilityPage = React.lazy(() => import('./modules/intelligence/RentabilityPage'));
 const ForecastPage = React.lazy(() => import('./modules/intelligence/ForecastPage'));
@@ -148,6 +149,7 @@ export default function App(): React.JSX.Element {
               <Route path="/third-party-owners" element={<ThirdPartyOwnersPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
               <Route path="/intelligence" element={<IntelligencePage />} />
+              <Route path="/intelligence/report" element={<ReportPage />} />
               <Route path="/intelligence/performance" element={<PerformancePage />} />
               <Route path="/intelligence/rentability" element={<RentabilityPage />} />
               <Route path="/intelligence/forecasts" element={<ForecastPage />} />

@@ -8,6 +8,7 @@ import { vehiclesApi, vehicleCarkeepersApi, vehiclePhotosApi, vehicleRatingsApi,
 import { blockingsApi, BLOCKING_TYPE_LABELS, BLOCKING_TYPE_COLORS } from './blockingsApi';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../utils/api';
+import { DocumentScanner } from '../../components/ui/DocumentScanner';
 
 interface VehicleCost {
   id: string;
@@ -352,7 +353,19 @@ export default function VehicleDetailPage(): React.JSX.Element {
       {activeTab === 'costs' && (
         <div className="space-y-4 mb-6">
           <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Ajouter un coût fixe</h2>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Ajouter un coût fixe</h2>
+              <DocumentScanner
+                type="invoice"
+                label="Scanner une facture"
+                onResult={(data) => {
+                  if (data.label) setCostLabel(data.label as string);
+                  if (data.amountMonthly) setCostAmount(String(data.amountMonthly));
+                  else if (data.amount && data.period === 'annuel') setCostAmount(String(Math.round((data.amount as number) / 12 * 100) / 100));
+                  else if (data.amount) setCostAmount(String(data.amount));
+                }}
+              />
+            </div>
             <form
               onSubmit={(e) => { e.preventDefault(); if (costLabel && costAmount) addCost.mutate(); }}
               className="flex flex-wrap gap-3"

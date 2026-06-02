@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, isPast, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
+import { DocumentScanner } from '../../components/ui/DocumentScanner';
 
 interface Maintenance {
   id: string;
@@ -125,7 +126,20 @@ export default function MaintenancePage(): React.JSX.Element {
       {/* Formulaire */}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-2xl border border-[#01696e]/20 bg-[#01696e]/5 p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">Nouvel entretien</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-sm font-semibold text-gray-900">Nouvel entretien</h2>
+            <DocumentScanner
+              type="maintenance"
+              label="Scanner la facture"
+              onResult={(data) => {
+                if (data.type) setForm(f => ({ ...f, type: data.type as string }));
+                if (data.cost) setForm(f => ({ ...f, cost: String(data.cost) }));
+                if (data.performedAt) setForm(f => ({ ...f, performedAt: data.performedAt as string }));
+                if (data.mileage) setForm(f => ({ ...f, mileageAtService: String(data.mileage) }));
+                if (data.nextServiceDate) setForm(f => ({ ...f, nextServiceDate: data.nextServiceDate as string }));
+              }}
+            />
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Véhicule *</label>

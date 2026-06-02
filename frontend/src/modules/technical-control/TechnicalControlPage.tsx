@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, isPast, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
+import { DocumentScanner } from '../../components/ui/DocumentScanner';
 
 interface TechnicalControl {
   id: string;
@@ -99,7 +100,18 @@ export default function TechnicalControlPage(): React.JSX.Element {
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-2xl border border-[#01696e]/20 bg-[#01696e]/5 p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">Nouveau contrôle technique</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-sm font-semibold text-gray-900">Nouveau contrôle technique</h2>
+            <DocumentScanner
+              type="technical-control"
+              label="Scanner le rapport CT"
+              onResult={(data) => {
+                if (data.performedAt) setForm(f => ({ ...f, performedAt: data.performedAt as string }));
+                if (data.expiryAt) setForm(f => ({ ...f, expiryAt: data.expiryAt as string }));
+                if (data.result) setForm(f => ({ ...f, result: data.result as 'pass' | 'advisory' | 'fail' }));
+              }}
+            />
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Véhicule *</label>

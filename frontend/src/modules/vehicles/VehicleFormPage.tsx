@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { vehiclesApi } from './vehiclesApi';
+import { DocumentScanner } from '../../components/ui/DocumentScanner';
 
 const FUEL_TYPES = [
   { value: '', label: 'Non renseigné' },
@@ -143,6 +144,26 @@ export default function VehicleFormPage(): React.JSX.Element {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
           <h1 className="text-lg font-bold text-gray-900">{isEdit ? 'Modifier le véhicule' : 'Ajouter un véhicule'}</h1>
+
+          <div className="flex items-center gap-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4">
+            <span className="text-2xl">📷</span>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-700">Scanner une carte grise</p>
+              <p className="text-xs text-gray-400">L'IA extrait automatiquement les informations du véhicule</p>
+            </div>
+            <DocumentScanner
+              type="vehicle"
+              label="Scanner la carte grise"
+              onResult={(data) => {
+                if (data.licensePlate) setForm(f => ({ ...f, licensePlate: data.licensePlate as string }));
+                if (data.make) setForm(f => ({ ...f, make: data.make as string }));
+                if (data.model) setForm(f => ({ ...f, model: data.model as string }));
+                if (data.year) setForm(f => ({ ...f, year: data.year as number }));
+                if (data.color) setForm(f => ({ ...f, color: data.color as string }));
+                if (data.fuelType) setForm(f => ({ ...f, fuelType: data.fuelType as string }));
+              }}
+            />
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>

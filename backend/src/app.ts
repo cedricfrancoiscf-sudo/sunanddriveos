@@ -69,6 +69,7 @@ import getaroundWebhooksRoutes from './modules/getaround-sync/getaround-webhooks
 import syncStatusRoutes from './modules/getaround-sync/sync-status.routes';
 import tenantEventsRoutes from './modules/tenant-events/tenant-events.routes';
 import feedbackRoutes from './modules/feedback/feedback.routes';
+import scanRoutes from './modules/ai/scan.routes';
 import intelligenceRoutes from './modules/intelligence/intelligence.routes';
 import reportRoutes from './modules/intelligence/report.routes';
 
@@ -165,6 +166,7 @@ export function createApp(): Express {
   app.use('/api/v1/blacklist', renterBlacklistRoutes);
   app.use('/api/v1/tenant-events', tenantEventsRoutes);
   app.use('/api/v1/feedback', feedbackRoutes);
+  app.use('/api/v1/scan', scanRoutes);
   app.use('/api/v1/sync', syncStatusRoutes);
   app.use('/api/v1/intelligence', intelligenceRoutes);
   app.use('/api/v1/intelligence/report', requirePlan('pro'), reportRoutes);

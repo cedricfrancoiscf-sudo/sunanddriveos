@@ -169,8 +169,11 @@ export interface GetaroundMessage {
 
 // L'API Getaround attend un format ISO8601 date-time (RFC3339) sans millisecondes
 // ex: 2026-05-02T00:00:00Z — PAS .000Z, PAS un format date seul YYYY-MM-DD
+// Les payouts exigent le 1er du mois à minuit UTC exact → on force minuit avant sérialisation
 function toGetaroundDate(d: Date): string {
-  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const midnight = new Date(d);
+  midnight.setUTCHours(0, 0, 0, 0);
+  return midnight.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 // Découpe une plage en tranches ≤ 30 jours, du plus récent au plus ancien

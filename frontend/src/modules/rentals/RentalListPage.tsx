@@ -62,11 +62,15 @@ function RentalRow({ rental }: { rental: Rental }): React.JSX.Element {
             <p className="text-sm font-semibold text-gray-900">
               {rental.grossRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
             </p>
-            {rental.ownerPayout != null && (
-              <p className="text-xs text-gray-400">
+            {rental.ownerPayout != null ? (
+              <p className="text-xs font-medium text-green-600">
                 {rental.ownerPayout.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
               </p>
-            )}
+            ) : rental.ownerPayoutEstimated != null ? (
+              <p className="text-xs font-medium text-orange-500">
+                ~{rental.ownerPayoutEstimated.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+              </p>
+            ) : null}
           </>
         ) : (
           <span className="text-xs text-gray-300">—</span>
@@ -93,16 +97,16 @@ export default function RentalListPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
   useEffect(() => { void trackEvent('rentals', 'view'); }, []);
 
-  const { data: statsData } = useQuery({
-    queryKey: ['rental-stats'],
-    queryFn: rentalsApi.stats,
-    staleTime: 2 * 60_000,
-  });
-
   const monthStart = currentMonth;
   const monthEnd = endOfMonth(currentMonth);
   const fromIso = monthStart.toISOString();
   const toIso = new Date(monthEnd.getFullYear(), monthEnd.getMonth(), monthEnd.getDate(), 23, 59, 59).toISOString();
+
+  const { data: statsData } = useQuery({
+    queryKey: ['rental-stats', fromIso, toIso],
+    queryFn: () => rentalsApi.stats(fromIso, toIso),
+    staleTime: 2 * 60_000,
+  });
   const maxDate = new Date();
   maxDate.setMonth(maxDate.getMonth() + 3);
   const isMaxMonth = currentMonth.getFullYear() === maxDate.getFullYear() &&
@@ -239,18 +243,22 @@ export default function RentalListPage(): React.JSX.Element {
           {/* Sous-total mois */}
           <div className="mb-3 flex items-center justify-between rounded-xl border border-[#01696e]/20 bg-[#01696e]/5 px-4 py-2.5">
             <span className="text-sm font-medium capitalize text-gray-700">{monthLabel}</span>
-            <div className="flex items-center gap-4 text-sm">
-              <span className="text-gray-500">{filtered.length} location{filtered.length !== 1 ? 's' : ''}</span>
-              <span className="font-semibold text-gray-900">
-                CA : {monthRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-              </span>
-            </div>
+            <span className="text-sm text-gray-500">{filtered.length} location{filtered.length !== 1 ? 's' : ''}</span>
           </div>
 
           <div className="space-y-2">
             {filtered.map((r) => (
               <RentalRow key={r.id} rental={r} />
             ))}
+          </div>
+
+          <div className="mt-3 flex items-center gap-4 text-xs text-gray-400">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-green-500" /> CA encaissé
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-orange-400" /> CA estimé (ratio Getaround)
+            </span>
           </div>
         </>
       )}

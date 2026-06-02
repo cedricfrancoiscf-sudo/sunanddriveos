@@ -6,6 +6,8 @@ import { format, differenceInDays, isPast } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '../../utils/api';
+
+const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
 import { useAuth } from '../../hooks/useAuth';
 
 interface RentalStats { totalRevenue: number; occupancyRate: number; rentalCount: number; totalKm: number; vehicleCount: number; totalPayout: number; }
@@ -290,7 +292,7 @@ export default function DashboardPage(): React.JSX.Element {
                   formatter={(v: number) => [v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }), 'CA prévu']}
                   labelFormatter={(l: string) => formatWeekLabel(l)}
                 />
-                <Bar dataKey="expectedRevenue" fill="#01696e" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="expectedRevenue" fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

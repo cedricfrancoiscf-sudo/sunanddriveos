@@ -55,7 +55,14 @@ export async function listRentals(db: PrismaClient, filters: RentalFilters = {})
     db.rental.count({ where }),
   ]);
 
-  return { rentals, total, page, limit };
+  const rentalsWithEstimate = rentals.map(r => ({
+    ...r,
+    ownerPayoutEstimated: r.ownerPayout === null && (r.grossRevenue ?? 0) > 0
+      ? Math.round((r.grossRevenue ?? 0) / 1.2544 * 100) / 100
+      : null,
+  }));
+
+  return { rentals: rentalsWithEstimate, total, page, limit };
 }
 
 export async function getRental(db: PrismaClient, id: string) {

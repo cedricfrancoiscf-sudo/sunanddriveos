@@ -55,7 +55,7 @@ interface ChatMsg {
 
 // ── Couleurs chart ─────────────────────────────────────────────────────────────
 
-const CHART_COLORS = ['#01696e', '#0199a1', '#7eb8ba', '#3d8f93', '#c2d9da', '#04292a'];
+const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -376,7 +376,7 @@ export default function IntelligencePage(): React.JSX.Element {
                 <XAxis dataKey="week" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
                 <Tooltip formatter={(v: number) => [`${v.toFixed(0)}€`, 'CA net prévu']} />
-                <Bar dataKey="totalPayout" fill="#01696e" radius={[4, 4, 0, 0]} name="CA net prévu" />
+                <Bar dataKey="totalPayout" fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} name="CA net prévu" />
               </BarChart>
             </ResponsiveContainer>
           ) : (

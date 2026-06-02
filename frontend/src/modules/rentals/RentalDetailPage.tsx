@@ -442,7 +442,23 @@ export default function RentalDetailPage(): React.JSX.Element {
 
             {/* Virement net */}
             <div className="my-2 border-t border-gray-200" />
-            <FinancialRow label="Virement propriétaire" value={rental.ownerPayout} highlight />
+            {rental.ownerPayout != null ? (
+              <FinancialRow label="Virement propriétaire" value={rental.ownerPayout} highlight />
+            ) : (rental as { ownerPayoutEstimated?: number | null }).ownerPayoutEstimated != null ? (
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-sm font-semibold text-gray-900">Virement propriétaire</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-gray-900">
+                    ~{((rental as { ownerPayoutEstimated?: number | null }).ownerPayoutEstimated ?? 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                  </span>
+                  <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-600">
+                    Estimé
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <FinancialRow label="Virement propriétaire" value={null} highlight />
+            )}
           </div>
 
           {/* Évaluation */}

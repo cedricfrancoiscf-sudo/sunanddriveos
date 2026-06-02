@@ -58,8 +58,8 @@ router.get('/stats', async (req: Request, res: Response, next: NextFunction) => 
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const now = new Date();
-    const from = new Date(now.getFullYear(), now.getMonth(), 1); // 1er du mois courant
-    const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59); // dernier jour
+    const from = req.query.from ? new Date(req.query.from as string) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const to   = req.query.to   ? new Date(req.query.to   as string) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
     const stats = await getRentalStats(db, from, to);
     res.json({ stats, period: { from, to } });
   } catch (err: unknown) { next(err); }

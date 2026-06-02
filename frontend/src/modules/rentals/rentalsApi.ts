@@ -20,6 +20,7 @@ export interface Rental {
   fuelLevelCheckout: number | null;
   grossRevenue: number | null;
   ownerPayout: number | null;
+  ownerPayoutEstimated: number | null;
   basePrice: number | null;
   extraDistanceFee: number | null;
   insuranceFee: number | null;
@@ -78,9 +79,9 @@ export const rentalsApi = {
   update: (id: string, data: Partial<Rental>) =>
     api.put<{ rental: Rental }>(`/rentals/${id}`, data).then((r) => r.data.rental),
 
-  stats: () =>
+  stats: (from?: string, to?: string) =>
     api
-      .get<{ stats: RentalStats; period: { from: string; to: string } }>('/rentals/stats')
+      .get<{ stats: RentalStats; period: { from: string; to: string } }>('/rentals/stats', { params: { from, to } })
       .then((r) => r.data),
 
   syncRentals: (accountId: string) =>

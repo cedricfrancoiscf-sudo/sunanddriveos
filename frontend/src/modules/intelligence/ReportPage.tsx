@@ -5,6 +5,8 @@ import { fr } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '../../utils/api';
 
+const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface VehicleStat {
@@ -250,7 +252,7 @@ export default function ReportPage(): React.JSX.Element {
                       <XAxis dataKey="mois" tick={{ fontSize: 10 }} tickFormatter={v => v.slice(5)} />
                       <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v as number / 1000).toFixed(0)}k`} />
                       <Tooltip formatter={(v: number) => [`${v.toFixed(0)} €`, 'CA net']} />
-                      <Bar dataKey="ca" fill={theme.primaryColor} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="ca" fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (

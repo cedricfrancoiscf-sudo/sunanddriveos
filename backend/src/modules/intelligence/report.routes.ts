@@ -7,7 +7,13 @@ import Anthropic from '@anthropic-ai/sdk';
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/',
+  (req: Request, res: Response, next: NextFunction) => {
+    req.setTimeout(120_000);
+    res.setTimeout(120_000);
+    next();
+  },
+  async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const now = new Date();
@@ -141,7 +147,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    const response = await client.messages.create({
+    const AI_TIMEOUT_MS = 90_000;
+    const aiReportPromise = (async (): Promise<Record<string, unknown>> => {
+      const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,18 +223,34 @@ Retourne exactement ce JSON :
   }
 }`,
       }],
-    });
+      });
+      const textContent = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map(b => b.text)
+        .join('');
+      try {
+        return JSON.parse(textContent.replace(/```json|```/g, '').trim()) as Record<string, unknown>;
+      } catch {
+        return { resume_executif: textContent, error: 'Parsing JSON failed' };
+      }
+    })();
 
-    const textContent = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map(b => b.text)
-      .join('');
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('AI_TIMEOUT')), AI_TIMEOUT_MS)
+    );
 
     let reportData: Record<string, unknown>;
     try {
-      reportData = JSON.parse(textContent.replace(/```json|```/g, '').trim()) as Record<string, unknown>;
-    } catch {
-      reportData = { resume_executif: textContent, error: 'Parsing JSON failed' };
+      reportData = await Promise.race([aiReportPromise, timeoutPromise]);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'AI_TIMEOUT') {
+        reportData = {
+          resume_executif: 'Génération IA en cours — données internes disponibles. Régénérez dans quelques instants.',
+          swot: null, pestel: null, veille_zones: [], veille_sectorielle: null,
+          recommandations_ceo: [], analyse_accessoires: null,
+          _timeout: true,
+        };
+      } else throw err;
     }
 
     res.json({

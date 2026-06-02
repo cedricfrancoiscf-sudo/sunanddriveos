@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../utils/api';
 import { getaroundSyncApi, type GetaroundAccount } from '../vehicles/vehiclesApi';
+import { useAuth } from '../../hooks/useAuth';
 
 function defaultStartDate(): string {
   const d = new Date();
@@ -869,6 +870,65 @@ function ICalSection(): React.JSX.Element {
   );
 }
 
+// ─── Abonnement ──────────────────────────────────────────────────────────────
+
+const PLAN_LABELS: Record<string, string> = {
+  starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise',
+};
+const PLAN_COLORS: Record<string, string> = {
+  starter: 'bg-gray-100 text-gray-600',
+  pro: 'bg-blue-100 text-blue-700',
+  enterprise: 'bg-purple-100 text-purple-700',
+};
+
+function BillingSection(): React.JSX.Element {
+  const { user } = useAuth();
+  const plan = user?.plan ?? 'starter';
+  const hasSubscription = user?.hasActiveSubscription ?? false;
+
+  const portalMutation = useMutation({
+    mutationFn: () => api.post<{ url: string }>('/billing/portal').then(r => r.data.url),
+    onSuccess: (url) => { window.location.href = url; },
+  });
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-900">Abonnement</h2>
+        <p className="mt-0.5 text-xs text-gray-400">Plan actuel et informations de facturation</p>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${PLAN_COLORS[plan] ?? 'bg-gray-100 text-gray-600'}`}>
+            {PLAN_LABELS[plan] ?? plan}
+          </span>
+          {!hasSubscription && (
+            <span className="text-xs text-gray-500">Aucun abonnement actif</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/upgrade"
+            className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+            Changer de plan
+          </Link>
+          {hasSubscription && (
+            <button type="button"
+              onClick={() => portalMutation.mutate()}
+              disabled={portalMutation.isPending}
+              className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
+              style={{ backgroundColor: '#01696e' }}>
+              {portalMutation.isPending ? 'Chargement...' : 'Gérer mon abonnement'}
+            </button>
+          )}
+        </div>
+      </div>
+      {portalMutation.isError && (
+        <p className="text-xs text-red-600">Erreur lors de l'accès au portail de facturation</p>
+      )}
+    </section>
+  );
+}
+
 export default function SettingsPage(): React.JSX.Element {
   const qc = useQueryClient();
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -996,7 +1056,10 @@ export default function SettingsPage(): React.JSX.Element {
           </div>
         </section>
 
-        {/* 4. Notifications */}
+        {/* 4. Abonnement */}
+        <BillingSection />
+
+        {/* 5. Notifications */}
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-gray-900">Notifications</h2>
           <p className="mt-0.5 text-xs text-gray-400">Alertes automatiques et intégrations</p>
@@ -1021,10 +1084,10 @@ export default function SettingsPage(): React.JSX.Element {
           <AlertEmailsSection />
         </section>
 
-        {/* 5. Intégrations */}
+        {/* 6. Intégrations */}
         <ICalSection />
 
-        {/* 6. Messagerie automatique */}
+        {/* 7. Messagerie automatique */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
             <div>
@@ -1075,7 +1138,7 @@ export default function SettingsPage(): React.JSX.Element {
             </div>
           </section>
 
-          {/* 6. Export & comptabilité */}
+          {/* 8. Export & comptabilité */}
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -1094,7 +1157,7 @@ export default function SettingsPage(): React.JSX.Element {
             </div>
           </section>
 
-          {/* 7. Apparence */}
+          {/* 9. Apparence */}
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
             <h2 className="text-sm font-semibold text-gray-900">Apparence</h2>
 

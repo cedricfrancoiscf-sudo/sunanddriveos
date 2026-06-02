@@ -28,16 +28,17 @@ interface ReportData {
   vehicleStats: VehicleStat[];
   report: {
     resume_executif: string;
-    swot: { forces: string[]; faiblesses: string[]; opportunites: string[]; menaces: string[] };
-    pestel: { politique: string; economique: string; sociologique: string; technologique: string; environnemental: string; legal: string };
+    swot: { forces: string[]; faiblesses: string[]; opportunites: string[]; menaces: string[] } | null;
+    pestel: { politique: string; economique: string; sociologique: string; technologique: string; environnemental: string; legal: string } | null;
     veille_zones: Array<{ zone: string; trafic_voyageurs: string; perspectives: string; opportunites: string; risques: string }>;
-    veille_sectorielle: { autopartage: string; ademe: string; fiscalite: string; marche: string };
+    veille_sectorielle: { autopartage: string; ademe: string; fiscalite: string; marche: string } | null;
     recommandations_ceo: Array<{ priorite: string; action: string; detail: string; echeance: string }>;
     analyse_accessoires: {
       demandes_par_zone: Array<{ zone: string; demandes_siege: number; stock_estime: string }>;
       recommandations: string[];
-    };
+    } | null;
     error?: string;
+    _timeout?: boolean;
   };
 }
 
@@ -70,6 +71,7 @@ export default function ReportPage(): React.JSX.Element {
   const [msgIdx, setMsgIdx] = useState(0);
   const [perfView, setPerfView] = useState<'chart' | 'table'>('chart');
   const [generated, setGenerated] = useState(false);
+  const [retryIn, setRetryIn] = useState<number | null>(null);
   const navRef = useRef<HTMLDivElement>(null);
 
   const { data, isFetching, refetch } = useQuery<ReportData>({
@@ -84,6 +86,18 @@ export default function ReportPage(): React.JSX.Element {
     const timer = setInterval(() => setMsgIdx(i => (i + 1) % LOADING_MESSAGES.length), 3000);
     return () => clearInterval(timer);
   }, [isFetching]);
+
+  useEffect(() => {
+    if (!data?.report._timeout) { setRetryIn(null); return; }
+    let t = 10;
+    setRetryIn(t);
+    const interval = setInterval(() => {
+      t -= 1;
+      if (t <= 0) { clearInterval(interval); setRetryIn(null); void refetch(); }
+      else setRetryIn(t);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [data?.report._timeout]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleGenerate(): void {
     setGenerated(true);
@@ -196,6 +210,25 @@ export default function ReportPage(): React.JSX.Element {
         {/* Rapport généré */}
         {data && report && internal && (
           <>
+            {/* Banner timeout */}
+            {report._timeout && (
+              <div className="no-print flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Données partielles — cliquez sur Régénérer</p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    La recherche IA a dépassé le délai. Les données internes sont disponibles.
+                    {retryIn !== null && ` Nouvelle tentative dans ${retryIn}s…`}
+                  </p>
+                </div>
+                <button type="button" onClick={() => { void refetch(); }}
+                  disabled={isFetching}
+                  className="shrink-0 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  style={{ backgroundColor: '#01696e' }}>
+                  Régénérer
+                </button>
+              </div>
+            )}
+
             {/* RÉSUMÉ EXÉCUTIF */}
             <section id="resume" className="page-break rounded-2xl p-8 text-white"
               style={{ backgroundColor: theme.primaryColor }}>
@@ -359,7 +392,7 @@ export default function ReportPage(): React.JSX.Element {
             </section>
 
             {/* SWOT */}
-            <section id="swot" className="page-break">
+            {report.swot && <section id="swot" className="page-break">
               <h2 className="mb-4 text-lg font-bold text-gray-900">Analyse SWOT</h2>
               <div className="grid grid-cols-2 gap-4">
                 {[
@@ -380,10 +413,10 @@ export default function ReportPage(): React.JSX.Element {
                   </div>
                 ))}
               </div>
-            </section>
+            </section>}
 
             {/* PESTEL */}
-            <section id="pestel" className="page-break">
+            {report.pestel && <section id="pestel" className="page-break">
               <h2 className="mb-4 text-lg font-bold text-gray-900">Analyse PESTEL</h2>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {[
@@ -404,7 +437,7 @@ export default function ReportPage(): React.JSX.Element {
                   </div>
                 ))}
               </div>
-            </section>
+            </section>}
 
             {/* ZONES */}
             <section id="zones" className="page-break">
@@ -437,7 +470,7 @@ export default function ReportPage(): React.JSX.Element {
             </section>
 
             {/* VEILLE SECTORIELLE */}
-            <section id="veille" className="page-break">
+            {report.veille_sectorielle && <section id="veille" className="page-break">
               <h2 className="mb-4 text-lg font-bold text-gray-900">Veille sectorielle</h2>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {[
@@ -454,7 +487,7 @@ export default function ReportPage(): React.JSX.Element {
                   </div>
                 ))}
               </div>
-            </section>
+            </section>}
 
             {/* RECOMMANDATIONS */}
             <section id="reco" className="page-break">

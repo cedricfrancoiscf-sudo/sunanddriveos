@@ -15,12 +15,42 @@ const PLANS = ['starter', 'pro', 'enterprise'] as const;
 router.get('/stats', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const master = getMasterClient();
-    const [total, active, onTrial, perPlan] = await Promise.all([
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
+    const threeDaysFromNow = new Date(now.getTime() + 3 * 86_400_000);
+    const oneMonthAgo = new Date(now.getTime() - 30 * 86_400_000);
+
+    const [total, active, onTrial, perPlan, trialExpiringSoon, activeCompanies] = await Promise.all([
       master.company.count(),
       master.company.count({ where: { isActive: true } }),
-      master.company.count({ where: { isActive: true, trialEndsAt: { gte: new Date() } } }),
+      master.company.count({ where: { isActive: true, trialEndsAt: { gte: now } } }),
       master.company.groupBy({ by: ['plan'], _count: { id: true } }),
+      master.company.count({ where: { isActive: true, trialEndsAt: { gte: now, lte: threeDaysFromNow } } }),
+      master.company.findMany({
+        where: { isActive: true },
+        select: {
+          tenantDbUrl: true,
+          tenantEvents: { where: { occurredAt: { gte: sevenDaysAgo } }, take: 1, select: { id: true } },
+        },
+      }),
     ]);
+
+    const churnRisk = activeCompanies.filter(c => c.tenantEvents.length === 0).length;
+
+    const payouts = await Promise.allSettled(activeCompanies.map(async (c) => {
+      const db = getTenantClient(c.tenantDbUrl);
+      const agg = await db.rental.aggregate({
+        _sum: { ownerPayout: true },
+        where: { endAt: { gte: oneMonthAgo } },
+      });
+      return agg._sum.ownerPayout ?? 0;
+    }));
+    const mrrTotal = Math.round(payouts.reduce((sum, p) => sum + (p.status === 'fulfilled' ? p.value : 0), 0));
+
+    const planDistribution = { starter: 0, pro: 0, enterprise: 0 };
+    for (const p of perPlan) {
+      planDistribution[p.plan as keyof typeof planDistribution] = p._count.id;
+    }
 
     res.json({
       stats: {
@@ -29,6 +59,12 @@ router.get('/stats', async (_req: Request, res: Response, next: NextFunction) =>
         inactive: total - active,
         onTrial,
         perPlan: Object.fromEntries(perPlan.map(p => [p.plan, p._count.id])),
+        mrrTotal,
+        arrTotal: mrrTotal * 12,
+        tenantCount: active,
+        churnRisk,
+        trialExpiringSoon,
+        planDistribution,
       },
     });
   } catch (err: unknown) { next(err); }
@@ -40,24 +76,30 @@ router.get('/stats', async (_req: Request, res: Response, next: NextFunction) =>
 router.get('/companies', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const master = getMasterClient();
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
+    const threeDaysFromNow = new Date(now.getTime() + 3 * 86_400_000);
+
     const companies = await master.company.findMany({
       select: {
         id: true, name: true, slug: true, logoUrl: true, primaryColor: true,
         plan: true, isActive: true, trialEndsAt: true, createdAt: true, updatedAt: true,
         stripeCustomerId: true, stripeSubscriptionId: true,
         _count: { select: { billingEvents: true } },
+        tenantEvents: { orderBy: { occurredAt: 'desc' }, take: 1, select: { occurredAt: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Récupère les stats tenant pour chaque société (nb users, véhicules)
     const companiesWithStats = await Promise.all(companies.map(async (c) => {
+      const { tenantEvents, ...rest } = c;
+      const lastActivityAt = tenantEvents[0]?.occurredAt?.toISOString() ?? null;
+      const alertInactive = !lastActivityAt || new Date(lastActivityAt) < sevenDaysAgo;
+      const alertTrial = c.trialEndsAt != null && c.trialEndsAt >= now && c.trialEndsAt <= threeDaysFromNow;
+
       try {
-        const fullCompany = await master.company.findUnique({
-          where: { id: c.id },
-          select: { tenantDbUrl: true },
-        });
-        if (!fullCompany?.tenantDbUrl) return { ...c, tenantStats: null };
+        const fullCompany = await master.company.findUnique({ where: { id: c.id }, select: { tenantDbUrl: true } });
+        if (!fullCompany?.tenantDbUrl) return { ...rest, tenantStats: null, lastActivityAt, alertInactive, alertTrial };
 
         const db = getTenantClient(fullCompany.tenantDbUrl);
         const [userCount, vehicleCount, rentalCount] = await Promise.all([
@@ -65,9 +107,9 @@ router.get('/companies', async (_req: Request, res: Response, next: NextFunction
           db.vehicle.count({ where: { isActive: true } }),
           db.rental.count({ where: { status: 'completed' } }),
         ]);
-        return { ...c, tenantStats: { userCount, vehicleCount, rentalCount } };
+        return { ...rest, tenantStats: { userCount, vehicleCount, rentalCount }, lastActivityAt, alertInactive, alertTrial };
       } catch {
-        return { ...c, tenantStats: null };
+        return { ...rest, tenantStats: null, lastActivityAt, alertInactive, alertTrial };
       }
     }));
 

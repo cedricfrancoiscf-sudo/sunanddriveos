@@ -37,6 +37,9 @@ interface Company {
   stripeSubscriptionId: string | null;
   _count: { billingEvents: number };
   tenantStats: { userCount: number; vehicleCount: number; rentalCount: number; activeRentals?: number } | null;
+  lastActivityAt: string | null;
+  alertInactive: boolean;
+  alertTrial: boolean;
 }
 
 interface CompanyDetail extends Company {
@@ -52,6 +55,12 @@ interface Stats {
   inactive: number;
   onTrial: number;
   perPlan: Record<string, number>;
+  mrrTotal: number;
+  arrTotal: number;
+  tenantCount: number;
+  churnRisk: number;
+  trialExpiringSoon: number;
+  planDistribution: { starter: number; pro: number; enterprise: number };
 }
 
 interface SuperAdmin {
@@ -247,18 +256,51 @@ function DashboardContent(): React.JSX.Element {
             <div className="flex w-80 shrink-0 flex-col border-r border-gray-800">
               {/* Stats */}
               {stats && (
-                <div className="grid grid-cols-3 gap-px border-b border-gray-800 bg-gray-800">
-                  <div className="bg-gray-900 p-3 text-center">
-                    <p className="text-xl font-bold text-white">{stats.total}</p>
-                    <p className="text-[10px] text-gray-500 uppercase">Total</p>
+                <div className="border-b border-gray-800">
+                  {/* MRR / ARR */}
+                  <div className="grid grid-cols-2 gap-px bg-gray-800">
+                    <div className="bg-gray-900 p-3 text-center">
+                      <p className="text-lg font-bold text-emerald-400">
+                        {stats.mrrTotal.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                      </p>
+                      <p className="text-[10px] text-gray-500 uppercase">MRR</p>
+                    </div>
+                    <div className="bg-gray-900 p-3 text-center">
+                      <p className="text-lg font-bold text-blue-400">
+                        {stats.arrTotal.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                      </p>
+                      <p className="text-[10px] text-gray-500 uppercase">ARR</p>
+                    </div>
                   </div>
-                  <div className="bg-gray-900 p-3 text-center">
-                    <p className="text-xl font-bold text-emerald-400">{stats.active}</p>
-                    <p className="text-[10px] text-gray-500 uppercase">Actives</p>
+                  {/* Compteurs */}
+                  <div className="grid grid-cols-3 gap-px bg-gray-800">
+                    <div className="bg-gray-900 p-2.5 text-center">
+                      <p className="text-base font-bold text-white">{stats.total}</p>
+                      <p className="text-[10px] text-gray-500 uppercase">Total</p>
+                    </div>
+                    <div className="bg-gray-900 p-2.5 text-center">
+                      <p className={`text-base font-bold ${stats.churnRisk > 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                        {stats.churnRisk}
+                      </p>
+                      <p className="text-[10px] text-gray-500 uppercase">Churn risk</p>
+                    </div>
+                    <div className="bg-gray-900 p-2.5 text-center">
+                      <p className={`text-base font-bold ${stats.trialExpiringSoon > 0 ? 'text-orange-400' : 'text-gray-400'}`}>
+                        {stats.trialExpiringSoon}
+                      </p>
+                      <p className="text-[10px] text-gray-500 uppercase">Trial J-3</p>
+                    </div>
                   </div>
-                  <div className="bg-gray-900 p-3 text-center">
-                    <p className="text-xl font-bold text-blue-400">{stats.onTrial}</p>
-                    <p className="text-[10px] text-gray-500 uppercase">En essai</p>
+                  {/* Plan distribution */}
+                  <div className="flex gap-px bg-gray-800">
+                    {(['starter', 'pro', 'enterprise'] as Plan[]).map(p => (
+                      <div key={p} className={`flex-1 bg-gray-900 p-2 text-center`}>
+                        <p className={`text-sm font-semibold ${PLAN_CONFIG[p].text}`}>
+                          {stats.planDistribution?.[p] ?? stats.perPlan[p] ?? 0}
+                        </p>
+                        <p className="text-[9px] text-gray-600 uppercase">{p}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -296,12 +338,29 @@ function DashboardContent(): React.JSX.Element {
                         <span className={`h-1.5 w-1.5 rounded-full ${c.isActive ? 'bg-emerald-400' : 'bg-gray-600'}`} />
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500 font-mono">{c.slug}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                      <p className="text-xs text-gray-500 font-mono">{c.slug}</p>
+                      {c.alertInactive && (
+                        <span className="rounded-full bg-red-900/50 px-1.5 py-0.5 text-[9px] font-medium text-red-400">
+                          Churn risk
+                        </span>
+                      )}
+                      {c.alertTrial && (
+                        <span className="rounded-full bg-orange-900/50 px-1.5 py-0.5 text-[9px] font-medium text-orange-400">
+                          Trial expire bientôt
+                        </span>
+                      )}
+                    </div>
                     {c.tenantStats && (
-                      <div className="mt-1 flex gap-3 text-[10px] text-gray-500">
+                      <div className="flex gap-3 text-[10px] text-gray-500">
                         <span>{c.tenantStats.vehicleCount} véh.</span>
                         <span>{c.tenantStats.userCount} users</span>
                         <span>{c.tenantStats.rentalCount} loc.</span>
+                        {c.lastActivityAt && (
+                          <span className="ml-auto text-[9px] text-gray-600">
+                            {format(new Date(c.lastActivityAt), 'dd/MM HH:mm', { locale: fr })}
+                          </span>
+                        )}
                       </div>
                     )}
                   </button>

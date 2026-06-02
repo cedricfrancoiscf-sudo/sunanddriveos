@@ -66,12 +66,23 @@ function FeedbackSection(): React.JSX.Element {
       <form onSubmit={e => { e.preventDefault(); submitMutation.mutate(); }} className="space-y-3">
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
-          <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30">
-            {Object.entries(FEEDBACK_TYPE_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>{l}</option>
+          <div className="flex gap-2">
+            {([
+              { value: 'bug', label: '🐛 Bug' },
+              { value: 'feature', label: '✨ Fonctionnalité' },
+              { value: 'feedback', label: '💬 Retour' },
+            ] as const).map(({ value, label }) => (
+              <button key={value} type="button"
+                onClick={() => setForm(f => ({ ...f, type: value }))}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  form.type === value
+                    ? 'border-[#01696e] bg-[#01696e]/10 text-[#01696e]'
+                    : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}>
+                {label}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Titre</label>

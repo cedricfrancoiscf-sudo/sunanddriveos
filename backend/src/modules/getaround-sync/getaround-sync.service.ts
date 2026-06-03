@@ -229,6 +229,76 @@ export async function syncAllAccounts(
   return results;
 }
 
+// ─── 1b. Sync fenêtre glissante (cron horaire) ──────────────────────────────
+// Synce une fenêtre fixe de -2 mois → +3 mois, indépendante de lastSyncAt.
+// Ne modifie pas lastSyncAt — réservé à la resync complète.
+
+export async function syncRecentWindowForAccount(
+  db: PrismaClient,
+  accountId: string,
+  tenantSlug = 'default',
+): Promise<RentalSyncResult> {
+  const account = await db.getaroundAccount.findUnique({ where: { id: accountId } });
+  if (!account) throw Object.assign(new Error('Compte Getaround introuvable'), { status: 404 });
+
+  const result: RentalSyncResult = { accountId, created: 0, updated: 0, errors: [] };
+  const apiKey = decrypt(account.apiKeyHash);
+  const ga = createGetaroundClient(apiKey);
+  const userCache = new Map<number, string>();
+
+  const totalStart = new Date(Date.now() - 2 * 30 * 86_400_000);   // -2 mois
+  const totalEnd   = new Date(Date.now() + 3 * 30 * 86_400_000);   // +3 mois
+
+  // Découpage en fenêtres de 30 jours du plus récent au plus ancien
+  let windowEnd   = new Date(totalEnd);
+  let windowStart = new Date(Math.max(windowEnd.getTime() - 30 * 86_400_000, totalStart.getTime()));
+
+  while (windowEnd > totalStart) {
+    const winLabel = `${windowStart.toISOString().slice(0, 10)} → ${windowEnd.toISOString().slice(0, 10)}`;
+    console.log(`[Cron] Fenêtre glissante ${winLabel}`);
+
+    try {
+      const windowRentals = await ga.getRentals(windowStart, windowEnd);
+      const apiIds = new Set(windowRentals.map(r => String(r.id)));
+
+      for (const r of windowRentals) {
+        await processRental(db, ga, r, result, tenantSlug, userCache);
+        await sleep(2_000);
+      }
+
+      // Messages
+      await syncMessagesForWindow(db, ga, accountId, windowStart, windowEnd, tenantSlug);
+
+      // Payouts
+      const payoutStart = new Date(Date.UTC(windowStart.getUTCFullYear(), windowStart.getUTCMonth(), 1));
+      const payoutEnd   = new Date(Date.UTC(windowStart.getUTCFullYear(), windowStart.getUTCMonth() + 1, 1));
+      await syncPayoutsForWindow(db, ga, payoutStart, payoutEnd, tenantSlug);
+
+      // Détection annulations : booked en base absent de l'API
+      const bookedInWindow = await db.rental.findMany({
+        where: { status: 'booked', startAt: { gte: windowStart, lte: windowEnd } },
+        select: { id: true, getaroundId: true },
+      });
+      for (const rental of bookedInWindow) {
+        if (rental.getaroundId && !apiIds.has(rental.getaroundId)) {
+          await db.rental.update({ where: { id: rental.id }, data: { status: 'cancelled' } });
+          console.log(`[Cron] Annulation détectée : ${rental.getaroundId}`);
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Cron] Erreur fenêtre ${winLabel} : ${msg}`);
+    }
+
+    windowEnd   = new Date(windowStart);
+    windowStart = new Date(Math.max(windowEnd.getTime() - 30 * 86_400_000, totalStart.getTime()));
+    await sleep(3_000);
+  }
+
+  console.log(`[Cron][${tenantSlug}] Fenêtre glissante terminée — +${result.created} créés, ${result.updated} mis à jour`);
+  return result;
+}
+
 // ─── 2. Locations — fonctions privées ────────────────────────────────────────
 
 export interface RentalSyncResult {
@@ -723,6 +793,22 @@ export async function syncAccountRentals(
 
     await sleep(3_000);
   }
+
+  // Après resync complète : lastSyncAt = maintenant (pas absoluteStart)
+  // Évite que le prochain cron repart de 2 ans en arrière
+  try {
+    const accounts2 = await db.getaroundAccount.findMany({
+      where: { isActive: true, id: accountId },
+      select: { id: true },
+    });
+    if (accounts2.length > 0) {
+      await db.getaroundAccount.update({
+        where: { id: accountId },
+        data: { lastSyncAt: new Date() },
+      });
+      console.log(`[Sync][${tenantSlug}] lastSyncAt remis à now après resync complète`);
+    }
+  } catch (e) { console.error(`[Sync][${tenantSlug}] Erreur reset lastSyncAt:`, e); }
 
   console.log(`[Sync][${tenantSlug}] ═══ FIN SYNC ═══`);
   updateSyncState(tenantSlug, {

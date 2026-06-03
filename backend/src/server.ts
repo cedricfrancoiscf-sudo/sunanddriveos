@@ -10,7 +10,7 @@ import cron from 'node-cron';
 import { createApp } from './app';
 import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client';
 import { executePendingSequences, cleanupObsoleteSequences } from './modules/sequences/sequences.service';
-import { syncAllAccounts } from './modules/getaround-sync/getaround-sync.service';
+import { syncAllAccounts, syncRecentWindowForAccount } from './modules/getaround-sync/getaround-sync.service';
 import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
 import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
@@ -169,9 +169,51 @@ setTimeout(() => {
   setInterval(() => void runSequenceScheduler(), 60_000);
 }, 10_000);
 
-// Premier passage Getaround après 120s, puis toutes les heures
-setTimeout(() => void runGetaroundSyncForAllTenants(), 120_000);
-cron.schedule('0 * * * *', () => void runGetaroundSyncForAllTenants());
+// Sync fenêtre glissante (cron horaire) — -2 mois à +3 mois, sans toucher lastSyncAt
+let isRecentSyncRunning = false;
+
+async function runRecentWindowSyncForAllTenants(): Promise<void> {
+  if (isRecentSyncRunning) { console.log('[RecentSync] Déjà en cours, skip'); return; }
+  isRecentSyncRunning = true;
+  try {
+    const master = getMasterClient();
+    const companies = await master.company.findMany({
+      where: { isActive: true },
+      select: { tenantDbUrl: true, slug: true },
+    });
+    for (const company of companies) {
+      const db = getTenantClient(company.tenantDbUrl);
+      const accounts = await db.getaroundAccount.findMany({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      for (const account of accounts) {
+        try {
+          await syncRecentWindowForAccount(db, account.id, company.slug);
+        } catch (err: unknown) {
+          console.error(`[RecentSync] ${company.slug} compte ${account.id} :`, err instanceof Error ? err.message : err);
+        }
+      }
+      // Rattrapage : active dont endAt est passé
+      try {
+        const expired = await db.rental.updateMany({
+          where: { status: 'active', endAt: { lt: new Date() } },
+          data: { status: 'completed' },
+        });
+        if (expired.count > 0) console.log(`[RecentSync] ${company.slug} : ${expired.count} expirée(s) → completed`);
+      } catch (e) { console.error(`[RecentSync] Rattrapage ${company.slug}:`, e); }
+      void cleanupObsoleteSequences(db).catch(e => console.error('[RecentSync] cleanup séquences:', e));
+    }
+  } catch (err: unknown) {
+    console.error('[RecentSync] Erreur générale :', err);
+  } finally {
+    isRecentSyncRunning = false;
+  }
+}
+
+// Premier passage Getaround après 120s (fenêtre glissante), puis toutes les heures
+setTimeout(() => void runRecentWindowSyncForAllTenants(), 120_000);
+cron.schedule('0 * * * *', () => void runRecentWindowSyncForAllTenants());
 
 // ─── 4.6 — Résumé matinal (8h chaque jour) ────────────────────────────────
 

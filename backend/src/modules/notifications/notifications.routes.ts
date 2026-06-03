@@ -109,6 +109,17 @@ router.delete('/old', async (req: Request, res: Response, next: NextFunction) =>
   } catch (err: unknown) { next(err); }
 });
 
+// DELETE /api/v1/notifications/all — supprime TOUTES les notifications de l'utilisateur
+router.delete('/all', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const { count } = await db.notification.deleteMany({
+      where: { userId: req.auth!.userId! },
+    });
+    res.json({ success: true, deleted: count });
+  } catch (err: unknown) { next(err); }
+});
+
 // DELETE /api/v1/notifications/:id
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -80,11 +80,15 @@ export default function NotificationBell(): React.JSX.Element {
     },
   });
 
+  const [clearToast, setClearToast] = useState(false);
+
   const clearOld = useMutation({
-    mutationFn: () => api.delete('/notifications/old'),
+    mutationFn: () => api.delete('/notifications/all'),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['notifications'] });
       void qc.invalidateQueries({ queryKey: ['notifications-count'] });
+      setClearToast(true);
+      setTimeout(() => setClearToast(false), 3000);
     },
   });
 
@@ -133,13 +137,22 @@ export default function NotificationBell(): React.JSX.Element {
                   Tout marquer lu
                 </button>
               )}
-              <button type="button" onClick={() => clearOld.mutate()} disabled={clearOld.isPending}
+              <button type="button"
+                onClick={() => { if (confirm('Supprimer toutes les notifications ?')) clearOld.mutate(); }}
+                disabled={clearOld.isPending}
                 className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-40 transition-colors"
-                title="Supprimer les notifications lues et obsolètes">
-                Tout effacer
+                title="Supprimer toutes les notifications">
+                {clearOld.isPending ? 'Suppression...' : 'Tout effacer'}
               </button>
             </div>
           </div>
+
+          {/* Toast confirmation */}
+          {clearToast && (
+            <div className="border-b border-green-100 bg-green-50 px-4 py-2 text-xs text-green-700 font-medium">
+              ✓ Toutes les notifications ont été supprimées
+            </div>
+          )}
 
           {/* Liste */}
           <div className="max-h-96 overflow-y-auto">

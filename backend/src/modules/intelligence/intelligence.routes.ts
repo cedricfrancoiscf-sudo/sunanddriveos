@@ -48,8 +48,22 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
       db.technicalControl.count({ where: { expiryAt: { gte: now, lte: thirtyDaysFromNow } } }),
     ]);
 
-    const sum = (arr: Array<number | null | undefined>): number => arr.reduce<number>((s, v) => s + (v ?? 0), 0);
-    const ownerPayout = sum(currentRentals.map(r => r.ownerPayout));
+    // Clamp négatifs — protection contre refunds/annulations mal comptabilisés
+    const safeAmt = (v: number | null | undefined): number => Math.max(0, v ?? 0);
+    const sum = (arr: Array<number | null | undefined>): number => arr.reduce<number>((s, v) => s + safeAmt(v), 0);
+
+    // Distinction encaissé (ownerPayout > 0 sur completed) vs prévisionnel (booked/active)
+    const encaisseRentals = currentRentals.filter(r => {
+      // ownerPayout > 0 = virement reçu
+      return (r.ownerPayout ?? 0) > 0;
+    });
+    const previsionnelRentals = currentRentals.filter(r => (r.ownerPayout ?? 0) <= 0);
+    const ownerPayoutEncaisse   = sum(encaisseRentals.map(r => r.ownerPayout));
+    const ownerPayoutPrevisionnel = sum(previsionnelRentals.map(r => r.grossRevenue)) * 0.70;
+
+    const ownerPayout = sum(currentRentals.map(r => r.ownerPayout)) +
+      // Locations sans payout : estimer à 70% grossRevenue
+      previsionnelRentals.reduce((s, r) => s + safeAmt(r.grossRevenue) * 0.70, 0);
     const grossRevenue = sum(currentRentals.map(r => r.grossRevenue));
     const insuranceFee = sum(currentRentals.map(r => r.insuranceFee));
     const rentalCount = currentRentals.length;
@@ -85,6 +99,8 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
 
     res.json({
       ownerPayout: Math.round(ownerPayout * 100) / 100,
+      ownerPayoutEncaisse: Math.round(ownerPayoutEncaisse * 100) / 100,
+      ownerPayoutPrevisionnel: Math.round(ownerPayoutPrevisionnel * 100) / 100,
       grossRevenue: Math.round(grossRevenue * 100) / 100,
       insuranceFee: Math.round(insuranceFee * 100) / 100,
       rentalCount,
@@ -106,6 +122,90 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/v1/intelligence/annual-kpis — KPIs annuels (1 jan → 31 déc) + histogramme 12 mois
+router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const yearEnd   = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    const safeAmt = (v: number | null | undefined): number => Math.max(0, v ?? 0);
+
+    const rentals = await db.rental.findMany({
+      where: {
+        startAt: { gte: yearStart, lte: yearEnd },
+        status: { in: ['booked', 'active', 'completed'] },
+      },
+      select: {
+        vehicleId: true, startAt: true, endAt: true, status: true,
+        grossRevenue: true, ownerPayout: true, kmDriven: true,
+      },
+    });
+
+    // Filtrer les annulations et clamp négatifs
+    const valid = rentals.filter(r => r.status !== 'cancelled');
+
+    const totalEncaisse   = valid.filter(r => (r.ownerPayout ?? 0) > 0)
+      .reduce((s, r) => s + safeAmt(r.ownerPayout), 0);
+    const totalPrevisionnel = valid.filter(r => (r.ownerPayout ?? 0) <= 0)
+      .reduce((s, r) => s + safeAmt(r.grossRevenue) * 0.70, 0);
+
+    const vehicles = await db.vehicle.findMany({
+      where: { isActive: true }, select: { id: true },
+    });
+    const vehicleCount = vehicles.length;
+    const daysSinceYearStart = Math.max(1,
+      (now.getTime() - yearStart.getTime()) / 86_400_000
+    );
+    const totalRentalDays = valid.reduce((s, r) =>
+      s + Math.max(0, (new Date(r.endAt).getTime() - new Date(r.startAt).getTime()) / 86_400_000), 0);
+    const occupancyRate = vehicleCount > 0
+      ? Math.round((totalRentalDays / (vehicleCount * daysSinceYearStart)) * 100) : 0;
+
+    const totalKm = valid.reduce((s, r) => s + safeAmt(r.kmDriven), 0);
+
+    // Histogramme mensuel
+    const months: Record<string, { encaisse: number; previsionnel: number; rentalCount: number; km: number }> = {};
+    for (let m = 0; m < 12; m++) {
+      const key = `${now.getFullYear()}-${String(m + 1).padStart(2, '0')}`;
+      months[key] = { encaisse: 0, previsionnel: 0, rentalCount: 0, km: 0 };
+    }
+    for (const r of valid) {
+      const key = new Date(r.startAt).toISOString().slice(0, 7);
+      if (!(key in months)) continue;
+      months[key].rentalCount++;
+      months[key].km += safeAmt(r.kmDriven);
+      if ((r.ownerPayout ?? 0) > 0) {
+        months[key].encaisse += safeAmt(r.ownerPayout);
+      } else {
+        months[key].previsionnel += safeAmt(r.grossRevenue) * 0.70;
+      }
+    }
+
+    const FR_MONTHS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+    const monthlyData = Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([key, v], i) => ({
+      month: key,
+      label: FR_MONTHS[i] ?? key,
+      encaisse: Math.round(v.encaisse * 100) / 100,
+      previsionnel: Math.round(v.previsionnel * 100) / 100,
+      total: Math.round((v.encaisse + v.previsionnel) * 100) / 100,
+      rentalCount: v.rentalCount,
+      km: v.km,
+    }));
+
+    res.json({
+      totalEncaisse: Math.round(totalEncaisse * 100) / 100,
+      totalPrevisionnel: Math.round(totalPrevisionnel * 100) / 100,
+      totalCA: Math.round((totalEncaisse + totalPrevisionnel) * 100) / 100,
+      rentalCount: valid.length,
+      occupancyRate,
+      totalKm,
+      vehicleCount,
+      monthlyData,
+    });
+  } catch (err) { next(err); }
+});
+
 // GET /api/v1/intelligence/performance
 router.get('/performance', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -121,7 +221,7 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
       db.rental.findMany({
         where: { startAt: { gte: sixMonthsAgo }, status: { in: ['booked', 'active', 'completed'] } },
         select: {
-          vehicleId: true, startAt: true, endAt: true, grossRevenue: true, ownerPayout: true,
+          vehicleId: true, startAt: true, endAt: true, status: true, grossRevenue: true, ownerPayout: true,
           insuranceFee: true, kmDriven: true, gasRefillFee: true, lateReturnFee: true,
           driverMessFee: true, damageCompensation: true,
         },
@@ -132,11 +232,16 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
       }),
     ]);
 
-    const sum = (arr: Array<number | null | undefined>): number => arr.reduce<number>((s, v) => s + (v ?? 0), 0);
+    const safeP = (v: number | null | undefined): number => Math.max(0, v ?? 0);
+    const sum = (arr: Array<number | null | undefined>): number => arr.reduce<number>((s, v) => s + safeP(v), 0);
 
     const performance = vehicles.map(v => {
-      const vRentals = rentals.filter(r => r.vehicleId === v.id);
-      const totalPayout = sum(vRentals.map(r => r.ownerPayout));
+      const vRentals = rentals.filter(r => r.vehicleId === v.id && r.status !== 'cancelled' as string);
+      const encaisseR = vRentals.filter(r => (r.ownerPayout ?? 0) > 0);
+      const previsR   = vRentals.filter(r => (r.ownerPayout ?? 0) <= 0);
+      const totalEncaisse = sum(encaisseR.map(r => r.ownerPayout));
+      const totalPrevisionnel = previsR.reduce((s, r) => s + safeP(r.grossRevenue) * 0.70, 0);
+      const totalPayout = totalEncaisse + totalPrevisionnel;
       const totalGross = sum(vRentals.map(r => r.grossRevenue));
       const totalInsurance = sum(vRentals.map(r => r.insuranceFee));
       const rentalCount = vRentals.length;
@@ -175,7 +280,10 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
         make: v.make,
         model: v.model,
         licensePlate: v.licensePlate,
+        label: v.licensePlate, // axe X des graphiques
         totalPayout: Math.round(totalPayout * 100) / 100,
+        totalEncaisse: Math.round(totalEncaisse * 100) / 100,
+        totalPrevisionnel: Math.round(totalPrevisionnel * 100) / 100,
         totalGross: Math.round(totalGross * 100) / 100,
         totalInsurance: Math.round(totalInsurance * 100) / 100,
         rentalCount,
@@ -241,65 +349,64 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
   } catch (err) { next(err); }
 });
 
-// GET /api/v1/intelligence/forecasts
+// GET /api/v1/intelligence/forecasts — 4 semaines glissantes à partir d'aujourd'hui
 router.get('/forecasts', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const now = new Date();
-    const thirtyDaysFromNow = new Date(Date.now() + 30 * 86_400_000);
+    const safeAmt = (v: number | null | undefined): number => Math.max(0, v ?? 0);
 
-    const [rentals, vehicles] = await Promise.all([
-      db.rental.findMany({
-        where: {
-          status: { in: ['booked', 'active'] },
-          endAt: { gte: now, lte: thirtyDaysFromNow },
-        },
-        select: { vehicleId: true, ownerPayout: true, grossRevenue: true, startAt: true, endAt: true },
-      }),
-      db.vehicle.findMany({
-        where: { isActive: true },
-        select: { id: true, make: true, model: true, licensePlate: true },
-      }),
-    ]);
+    // 4 semaines glissantes : S1=aujourd'hui..+6j, S2=+7..+13j, etc.
+    const weekWindows: Array<{ start: Date; end: Date; label: string }> = [];
+    const FR_MONTHS_SHORT = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
+    for (let w = 0; w < 4; w++) {
+      const start = new Date(now);
+      start.setDate(now.getDate() + w * 7);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+      const fmt = (d: Date) => `${d.getDate()} ${FR_MONTHS_SHORT[d.getMonth()]}`;
+      weekWindows.push({ start, end, label: `${fmt(start)} – ${fmt(end)}` });
+    }
 
-    const weeks: Record<string, { rentalCount: number; totalPayout: number }> = {};
-    rentals.forEach(r => {
-      const key = isoWeek(new Date(r.endAt));
-      if (!weeks[key]) weeks[key] = { rentalCount: 0, totalPayout: 0 };
-      weeks[key].rentalCount++;
-      weeks[key].totalPayout += r.ownerPayout ?? 0;
+    const fourWeeksOut = weekWindows[3].end;
+
+    const rentals = await db.rental.findMany({
+      where: {
+        status: { in: ['booked', 'active', 'completed'] },
+        startAt: { lte: fourWeeksOut },
+        endAt: { gte: now },
+      },
+      select: { vehicleId: true, ownerPayout: true, grossRevenue: true, startAt: true, endAt: true, status: true },
     });
 
-    const forecasts = Object.entries(weeks)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([week, d]) => ({
-        week,
-        rentalCount: d.rentalCount,
-        totalPayout: Math.round(d.totalPayout * 100) / 100,
-      }));
+    const forecasts = weekWindows.map(w => {
+      const weekRentals = rentals.filter(r => {
+        const s = new Date(r.startAt);
+        return s >= w.start && s <= w.end;
+      });
+      let encaisse = 0, previsionnel = 0;
+      for (const r of weekRentals) {
+        if ((r.ownerPayout ?? 0) > 0) {
+          encaisse += safeAmt(r.ownerPayout);
+        } else {
+          previsionnel += safeAmt(r.grossRevenue) * 0.70;
+        }
+      }
+      return {
+        week: w.label,
+        label: w.label,
+        rentalCount: weekRentals.length,
+        encaisse: Math.round(encaisse * 100) / 100,
+        previsionnel: Math.round(previsionnel * 100) / 100,
+        totalPayout: Math.round((encaisse + previsionnel) * 100) / 100,
+      };
+    });
 
     const totalForecast = forecasts.reduce((s, f) => s + f.totalPayout, 0);
 
-    // Breakdown par véhicule
-    const byVehicle = vehicles.map(v => {
-      const vRentals = rentals.filter(r => r.vehicleId === v.id);
-      const totalPayout = vRentals.reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
-      const totalGross = vRentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
-      return {
-        vehicleId: v.id,
-        licensePlate: v.licensePlate,
-        label: `${v.make} ${v.model} — ${v.licensePlate}`,
-        rentalCount: vRentals.length,
-        totalPayout: Math.round(totalPayout * 100) / 100,
-        totalGross: Math.round(totalGross * 100) / 100,
-      };
-    }).filter(v => v.rentalCount > 0);
-
-    const average = byVehicle.length > 0
-      ? Math.round((byVehicle.reduce((s, v) => s + v.totalPayout, 0) / byVehicle.length) * 100) / 100
-      : 0;
-
-    res.json({ forecasts, totalForecast: Math.round(totalForecast * 100) / 100, byVehicle, average });
+    res.json({ forecasts, totalForecast: Math.round(totalForecast * 100) / 100 });
   } catch (err) { next(err); }
 });
 

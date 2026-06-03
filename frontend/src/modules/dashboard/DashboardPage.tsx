@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, differenceInDays, isPast } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { api } from '../../utils/api';
 
 const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
@@ -59,7 +59,7 @@ export default function DashboardPage(): React.JSX.Element {
   type CtExpiring = { id: string; expiryAt: string; vehicle: { make: string; model: string; licensePlate: string } };
   type DocExpiring = { id: string; name: string; expiryDate: string; vehicle: { make: string; model: string; licensePlate: string } };
   type PendingCarSeat = { id: string; rental: { id: string; driverName: string } | null; vehicle: { make: string; model: string; licensePlate: string } };
-  type CashflowWeek = { week: string; weekStart: string; expectedRevenue: number; rentalCount: number };
+  type ForecastWeek = { week: string; label: string; rentalCount: number; encaisse: number; previsionnel: number; totalPayout: number };
   type InboxSummary = { pendingCount: number; unansweredRentals: number };
 
   const { data: statsData } = useQuery<RentalStats>({
@@ -99,9 +99,9 @@ export default function DashboardPage(): React.JSX.Element {
     staleTime: 2 * 60_000,
   });
 
-  const { data: cashflowForecast = [] } = useQuery<CashflowWeek[]>({
-    queryKey: ['cashflow-forecast'],
-    queryFn: () => api.get<{ forecast: CashflowWeek[] }>('/ai/cashflow-forecast').then(r => r.data.forecast),
+  const { data: forecastData } = useQuery<{ forecasts: ForecastWeek[]; totalForecast: number }>({
+    queryKey: ['dashboard-forecasts'],
+    queryFn: () => api.get<{ forecasts: ForecastWeek[]; totalForecast: number }>('/intelligence/forecasts').then(r => r.data),
     staleTime: 5 * 60_000,
     enabled: user?.role !== 'carkeeper',
   });
@@ -257,12 +257,24 @@ export default function DashboardPage(): React.JSX.Element {
         <div>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Ce mois-ci</h2>
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-            <KpiCard
-              label="Chiffre d'affaires"
-              value={stats ? stats.totalRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}
-              sub={stats ? `Virement : ${stats.totalPayout.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}` : undefined}
-              link="/rentals"
-            />
+            {/* CA card custom : encaissé (vert) + prévisionnel (bleu) */}
+            {stats ? (
+              <Link to="/rentals" className="block hover:opacity-90 transition">
+                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Chiffre d'affaires</p>
+                  <p className="mt-2 text-2xl font-bold text-green-700">
+                    {stats.totalPayout.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                  </p>
+                  {(stats.totalRevenue - stats.totalPayout) > 0 && (
+                    <p className="mt-0.5 text-xs font-medium text-blue-600">
+                      + {(stats.totalRevenue - stats.totalPayout).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} prév.
+                    </p>
+                  )}
+                </div>
+              </Link>
+            ) : (
+              <KpiCard label="Chiffre d'affaires" value="—" link="/rentals" />
+            )}
             <KpiCard
               label="Taux d'occupation"
               value={stats ? `${stats.occupancyRate} %` : '—'}
@@ -314,26 +326,35 @@ export default function DashboardPage(): React.JSX.Element {
         </div>
       )}
 
-      {/* Prévision trésorerie 30 jours */}
-      {user?.role !== 'carkeeper' && cashflowForecast.length > 0 && (
+      {/* Prévision 4 semaines glissantes — barres empilées vert/bleu */}
+      {user?.role !== 'carkeeper' && forecastData && forecastData.forecasts.some(w => w.rentalCount > 0) && (
         <div>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Prévision 30 jours</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Trésorerie — 4 semaines</h2>
+            <div className="flex items-center gap-3 text-[11px] text-gray-400">
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-green-500 inline-block" /> Encaissé</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400 inline-block" /> Prévisionnel</span>
+            </div>
+          </div>
           <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <div className="mb-2 flex items-center justify-between text-xs text-gray-400">
-              <span>{cashflowForecast.reduce((s, w) => s + w.rentalCount, 0)} locations réservées</span>
+            <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
+              <span>{forecastData.forecasts.reduce((s, w) => s + w.rentalCount, 0)} locations</span>
               <span className="font-semibold text-gray-700">
-                {cashflowForecast.reduce((s, w) => s + w.expectedRevenue, 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} estimés
+                {forecastData.totalForecast.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} total
               </span>
             </div>
-            <ResponsiveContainer width="100%" height={140}>
-              <BarChart data={cashflowForecast} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <XAxis dataKey="week" tick={{ fontSize: 10 }} tickFormatter={formatWeekLabel} />
-                <YAxis tick={{ fontSize: 11 }} />
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={forecastData.forecasts} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}€`} />
                 <Tooltip
-                  formatter={(v: number) => [v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }), 'CA prévu']}
-                  labelFormatter={(l: string) => formatWeekLabel(l)}
+                  formatter={(v: number, name: string) => [
+                    v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }),
+                    name === 'encaisse' ? 'Encaissé' : 'Prévisionnel',
+                  ]}
                 />
-                <Bar dataKey="expectedRevenue" fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="encaisse" stackId="a" fill="#16a34a" name="encaisse" />
+                <Bar dataKey="previsionnel" stackId="a" fill="#60a5fa" radius={[3, 3, 0, 0]} name="previsionnel" />
               </BarChart>
             </ResponsiveContainer>
           </div>

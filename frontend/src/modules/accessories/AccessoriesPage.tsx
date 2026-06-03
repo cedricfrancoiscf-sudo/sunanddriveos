@@ -643,7 +643,7 @@ function StockBar({ seat }: { seat: CarSeat }): React.JSX.Element {
 // ── Page container ─────────────────────────────────────────────────────────
 
 export default function AccessoriesPage(): React.JSX.Element {
-  const [activeTab, setActiveTab] = useState<Tab>('accessories');
+  const [activeTab, setActiveTab] = useState<Tab>('car-seats');
 
   const { data: carSeats = [] } = useQuery({
     queryKey: ['car-seats'],
@@ -657,13 +657,13 @@ export default function AccessoriesPage(): React.JSX.Element {
       <h1 className="mb-5 text-xl font-bold text-gray-900">Accessoires &amp; Sièges auto</h1>
 
       <div className="mb-5 flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 w-fit">
-        <TabBtn label="Accessoires" active={activeTab === 'accessories'} onClick={() => setActiveTab('accessories')} />
         <TabBtn
           label="Sièges auto"
           active={activeTab === 'car-seats'}
           onClick={() => setActiveTab('car-seats')}
           badge={outOfStockCount > 0 ? outOfStockCount : undefined}
         />
+        <TabBtn label="Accessoires" active={activeTab === 'accessories'} onClick={() => setActiveTab('accessories')} />
       </div>
 
       {activeTab === 'accessories' ? <AccessoriesTab /> : <CarSeatsTab />}

@@ -272,19 +272,19 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
             <ul className="space-y-0.5">
               <li>
                 {isStarterPlan ? (
-                  <div title={collapsed ? 'Vue unifiée' : undefined}
+                  <div title={collapsed ? 'Intelligence' : undefined}
                     className={`flex items-center rounded-lg text-sm font-medium text-gray-300 cursor-not-allowed select-none ${collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'}`}>
                     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    {!collapsed && <><span className="flex-1">Vue unifiée</span><svg className="h-3.5 w-3.5 shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg></>}
+                    {!collapsed && <><span className="flex-1">Intelligence</span><svg className="h-3.5 w-3.5 shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg></>}
                   </div>
                 ) : (
-                  <NavLink to="/intelligence" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Vue unifiée' : undefined}>
+                  <NavLink to="/intelligence" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Intelligence' : undefined}>
                     <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    {!collapsed && 'Vue unifiée'}
+                    {!collapsed && 'Intelligence'}
                   </NavLink>
                 )}
               </li>

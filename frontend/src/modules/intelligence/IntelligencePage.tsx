@@ -1,61 +1,30 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  CartesianGrid, Legend, Line, ComposedChart, ReferenceLine, Cell,
 } from 'recharts';
 import { api } from '../../utils/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface KPIs {
-  ownerPayout: number;
-  grossRevenue: number;
-  insuranceFee: number;
-  rentalCount: number;
-  evolution: { ownerPayout: number; grossRevenue: number; rentalCount: number };
-  occupancyRate: number;
-  avgDuration: number;
-  avgKmPerRental: number;
-  revpar: number;
-  extraFeesRate: number;
-  totalKm: number;
-  fleetHealthScore: number;
-  vehicleCount: number;
-  alerts: { pendingMaintenances: number; expiringCT: number };
+interface AnnualKPIs {
+  totalEncaisse: number; totalPrevisionnel: number; totalCA: number;
+  rentalCount: number; occupancyRate: number; totalKm: number; vehicleCount: number;
+  monthlyData: Array<{ month: string; label: string; encaisse: number; previsionnel: number; total: number; rentalCount: number; km: number }>;
 }
 
 interface VehiclePerf {
-  vehicleId: string;
-  make: string;
-  model: string;
-  licensePlate: string;
-  totalPayout: number;
-  totalGross: number;
-  totalInsurance: number;
-  rentalCount: number;
-  avgDuration: number;
-  avgKmPerRental: number;
-  occupancyRate: number;
-  incidentCount: number;
-  extraFeesRate: number;
+  vehicleId: string; make: string; model: string; licensePlate: string; label: string;
+  totalPayout: number; totalEncaisse: number; totalPrevisionnel: number;
+  totalGross: number; totalInsurance: number;
+  rentalCount: number; avgDuration: number; avgKmPerRental: number;
+  occupancyRate: number; incidentCount: number; extraFeesRate: number;
   healthScore: number;
   monthlyCA: Array<{ month: string; ca: number }>;
 }
 
-interface ForecastWeek {
-  week: string;
-  rentalCount: number;
-  totalPayout: number;
-}
-
-interface ChatMsg {
-  role: 'user' | 'ai';
-  content: string;
-}
-
-// ── Couleurs chart ─────────────────────────────────────────────────────────────
-
-const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
+interface ChatMsg { role: 'user' | 'ai'; content: string; }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -76,7 +45,7 @@ function HealthBar({ score }: { score: number }): React.JSX.Element {
   const color = score >= 75 ? '#16a34a' : score >= 50 ? '#f59e0b' : '#ef4444';
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
+      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-gray-100">
         <div className="h-full rounded-full" style={{ width: `${score}%`, backgroundColor: color }} />
       </div>
       <span className="text-xs font-semibold" style={{ color }}>{score}</span>
@@ -88,62 +57,38 @@ const SUGGESTED_QUESTIONS = [
   'Quelle est ma voiture la plus rentable ?',
   'Quel lieu rapporte le plus ?',
   'Quel est mon meilleur mois ?',
-  'Combien d\'assurance en 2025 ?',
-  'Taux d\'occupation par voiture ?',
+  "Taux d'occupation par voiture ?",
+  'Quel véhicule a le plus de km ?',
 ];
 
 // ── Page principale ────────────────────────────────────────────────────────────
 
 export default function IntelligencePage(): React.JSX.Element {
   const [perfView, setPerfView] = useState<'chart' | 'table'>('chart');
-  const [forecastView, setForecastView] = useState<'chart' | 'table'>('chart');
   const [sortKey, setSortKey] = useState('totalPayout');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // KPIs
-  const { data: kpis, isLoading: kpisLoading } = useQuery<KPIs>({
-    queryKey: ['intelligence-kpis'],
-    queryFn: () => api.get<KPIs>('/intelligence/kpis').then(r => r.data),
+  const { data: annual, isLoading: annualLoading } = useQuery<AnnualKPIs>({
+    queryKey: ['intelligence-annual'],
+    queryFn: () => api.get<AnnualKPIs>('/intelligence/annual-kpis').then(r => r.data),
     staleTime: 5 * 60_000,
   });
 
-  // Performance
   const { data: perfData, isLoading: perfLoading } = useQuery<{ performance: VehiclePerf[] }>({
     queryKey: ['intelligence-performance'],
     queryFn: () => api.get<{ performance: VehiclePerf[] }>('/intelligence/performance').then(r => r.data),
     staleTime: 5 * 60_000,
   });
 
-  // Forecasts
-  const { data: forecastData } = useQuery<{ forecasts: ForecastWeek[]; totalForecast: number }>({
-    queryKey: ['intelligence-forecasts'],
-    queryFn: () => api.get<{ forecasts: ForecastWeek[]; totalForecast: number }>('/intelligence/forecasts').then(r => r.data),
-    staleTime: 5 * 60_000,
-  });
-
-  // Briefing IA
-  const { data: briefing, isLoading: briefingLoading } = useQuery<string>({
-    queryKey: ['intelligence-briefing'],
-    queryFn: () => api.post<{ answer: string }>('/intelligence/chat', {
-      question: 'Génère un briefing de 3 phrases sur la performance de la flotte ce mois : taux d\'occupation, meilleure voiture, et un point d\'attention.',
-    }).then(r => r.data.answer),
-    staleTime: 10 * 60_000,
-  });
-
-  // Chat
   const chatMutation = useMutation({
     mutationFn: (question: string) =>
       api.post<{ answer: string }>('/intelligence/chat', { question }).then(r => r.data.answer),
-    onSuccess: (answer) => {
-      setMessages(prev => [...prev, { role: 'ai', content: answer }]);
-    },
+    onSuccess: (answer) => setMessages(prev => [...prev, { role: 'ai', content: answer }]),
   });
 
   function sendChat(question: string): void {
@@ -153,21 +98,14 @@ export default function IntelligencePage(): React.JSX.Element {
     chatMutation.mutate(question);
   }
 
-  // Chart data performance (groupé par mois)
   const performance = perfData?.performance ?? [];
-  const allMonths = performance.length > 0 && performance[0]
-    ? performance[0].monthlyCA.map(m => m.month)
-    : [];
-  const perfChartData = allMonths.map(month => {
-    const entry: Record<string, string | number> = { month: month.slice(0, 7) };
-    performance.forEach(v => {
-      const mc = v.monthlyCA.find(m => m.month === month);
-      entry[`${v.make} ${v.model}`] = mc?.ca ?? 0;
-    });
-    return entry;
-  });
+  const avgPayout = performance.length > 0
+    ? performance.reduce((s, v) => s + v.totalPayout, 0) / performance.length
+    : 0;
+  const avgOccupancy = performance.length > 0
+    ? performance.reduce((s, v) => s + v.occupancyRate, 0) / performance.length
+    : 0;
 
-  // Tableau trié
   const sortedPerf = [...performance].sort((a, b) => {
     const aVal = (a as unknown as Record<string, unknown>)[sortKey];
     const bVal = (b as unknown as Record<string, unknown>)[sortKey];
@@ -183,87 +121,126 @@ export default function IntelligencePage(): React.JSX.Element {
   const SortBtn = ({ k, label }: { k: string; label: string }) => (
     <button type="button" onClick={() => toggleSort(k)}
       className="flex items-center gap-0.5 text-xs font-semibold text-gray-500 hover:text-gray-800">
-      {label}
-      {sortKey === k && <span className="text-[10px]">{sortDir === 'desc' ? ' ↓' : ' ↑'}</span>}
+      {label}{sortKey === k && <span className="text-[10px]">{sortDir === 'desc' ? ' ↓' : ' ↑'}</span>}
     </button>
   );
 
   return (
-    <div className="p-4 lg:p-6 max-w-6xl space-y-5">
+    <div className="p-4 lg:p-6 max-w-6xl space-y-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Intelligence ✨</h1>
-        <p className="text-sm text-gray-500">Analyse de performance, prévisions et assistant IA</p>
+        <p className="text-sm text-gray-500">Analyse annuelle, performance par véhicule et assistant IA</p>
       </div>
 
-      {/* 4.1 — Briefing IA */}
-      <div className="rounded-2xl border border-[#01696e]/20 bg-gradient-to-r from-[#01696e]/5 to-[#0199a1]/5 p-5">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="text-lg">✨</span>
-          <span className="text-sm font-semibold text-[#01696e]">Briefing IA du jour</span>
+      {/* ── SECTION 1 : KPIs ANNUELS ─────────────────────────────────────────── */}
+      {annualLoading ? (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[1,2,3,4].map(i => <div key={i} className="h-28 rounded-2xl bg-gray-100 animate-pulse" />)}
         </div>
-        {briefingLoading ? (
-          <div className="space-y-2">
-            {[1, 2, 3].map(i => <div key={i} className="h-3 rounded bg-gray-200 animate-pulse" style={{ width: i === 3 ? '60%' : '100%' }} />)}
+      ) : annual && (
+        <>
+          <div>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Année {new Date().getFullYear()} — cumulé
+            </h2>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {/* CA annuel */}
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500">CA annuel</p>
+                <p className="mt-1 text-xl font-bold text-green-700">{fmtEuro(annual.totalEncaisse)}</p>
+                {annual.totalPrevisionnel > 0 && (
+                  <p className="text-xs font-medium text-blue-600 mt-0.5">
+                    + {fmtEuro(annual.totalPrevisionnel)} prév.
+                  </p>
+                )}
+                <p className="text-[10px] text-gray-400 mt-1">Total : {fmtEuro(annual.totalCA)}</p>
+              </div>
+              {/* Taux occupation */}
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500">Taux d'occupation</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900">{annual.occupancyRate}%</p>
+                <p className="text-xs text-gray-400">{annual.vehicleCount} véhicule{annual.vehicleCount !== 1 ? 's' : ''}</p>
+              </div>
+              {/* Nombre de locations */}
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500">Locations</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900">{annual.rentalCount}</p>
+                <p className="text-xs text-gray-400">sur l'année</p>
+              </div>
+              {/* Km total */}
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <p className="text-xs font-medium text-gray-500">Km parcourus</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900">{annual.totalKm.toLocaleString('fr-FR')}</p>
+                <p className="text-xs text-gray-400">sur l'année</p>
+              </div>
+            </div>
           </div>
-        ) : (
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{briefing}</p>
-        )}
-      </div>
 
-      {/* 4.2 — KPI Cards */}
-      {kpisLoading ? (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[1, 2, 3, 4].map(i => <div key={i} className="h-24 rounded-2xl bg-gray-100 animate-pulse" />)}
-        </div>
-      ) : kpis && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {/* CA net */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium text-gray-500">CA net du mois</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{fmtEuro(kpis.ownerPayout)}</p>
-            <EvoChip pct={kpis.evolution.ownerPayout} />
+          {/* ── SECTION 2 : HISTOGRAMME CA MENSUEL ──────────────────────────── */}
+          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+              <h2 className="text-sm font-semibold text-gray-900">CA mensuel — {new Date().getFullYear()}</h2>
+              <div className="flex items-center gap-3 text-[11px] text-gray-400">
+                <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-green-500 inline-block" /> Encaissé</span>
+                <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400 inline-block" /> Prévisionnel</span>
+                <span className="flex items-center gap-1"><span className="h-0.5 w-4 bg-orange-400 inline-block" /> Km</span>
+              </div>
+            </div>
+            <div className="p-5">
+              {annual.monthlyData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <ComposedChart data={annual.monthlyData} margin={{ top: 10, right: 40, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="ca" tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
+                    <YAxis yAxisId="km" orientation="right" tick={{ fontSize: 10 }} tickFormatter={v => `${v}km`} />
+                    <Tooltip
+                      formatter={(v: number, name: string) => {
+                        if (name === 'km') return [`${v.toLocaleString('fr-FR')} km`, 'Km'];
+                        if (name === 'encaisse') return [fmtEuro(v), 'Encaissé'];
+                        if (name === 'previsionnel') return [fmtEuro(v), 'Prévisionnel'];
+                        return [v, name];
+                      }}
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null;
+                        const d = annual.monthlyData.find(m => m.label === label);
+                        return (
+                          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs">
+                            <p className="font-semibold text-gray-900 mb-1.5">{label}</p>
+                            {d && <p className="text-gray-500 mb-1">{d.rentalCount} location{d.rentalCount !== 1 ? 's' : ''}</p>}
+                            {payload.map((e) => (
+                              <p key={e.name} style={{ color: e.color }}>
+                                {e.name === 'km' ? `${(e.value as number).toLocaleString('fr-FR')} km` :
+                                 e.name === 'encaisse' ? `Encaissé : ${fmtEuro(e.value as number)}` :
+                                 `Prévisionnel : ${fmtEuro(e.value as number)}`}
+                              </p>
+                            ))}
+                          </div>
+                        );
+                      }}
+                    />
+                    <Bar yAxisId="ca" dataKey="encaisse" stackId="ca" fill="#16a34a" name="encaisse" />
+                    <Bar yAxisId="ca" dataKey="previsionnel" stackId="ca" fill="#60a5fa" radius={[3,3,0,0]} name="previsionnel"
+                      label={{ position: 'top', fontSize: 10, fill: '#9ca3af',
+                        formatter: (_: unknown, entry: { payload?: { rentalCount?: number } }) =>
+                          (entry?.payload?.rentalCount ?? 0) > 0 ? `${entry.payload?.rentalCount}` : '' }}
+                    />
+                    <Line yAxisId="km" type="monotone" dataKey="km" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} name="km" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              ) : <p className="py-10 text-center text-sm text-gray-400">Aucune donnée pour l'année en cours</p>}
+            </div>
           </div>
-          {/* Taux occupation */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium text-gray-500">Taux d'occupation</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{kpis.occupancyRate}%</p>
-            <p className="text-xs text-gray-400">{kpis.vehicleCount} véhicule{kpis.vehicleCount !== 1 ? 's' : ''}</p>
-          </div>
-          {/* Santé flotte */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium text-gray-500">Score santé flotte</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{kpis.fleetHealthScore}<span className="text-sm font-normal text-gray-400">/100</span></p>
-            <HealthBar score={kpis.fleetHealthScore} />
-          </div>
-          {/* RevPAR */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium text-gray-500">RevPAR</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{fmtEuro(kpis.revpar)}</p>
-            <p className="text-xs text-gray-400">par véhicule/jour</p>
-          </div>
-        </div>
+        </>
       )}
 
-      {/* Alertes */}
-      {kpis && (kpis.alerts.pendingMaintenances > 0 || kpis.alerts.expiringCT > 0) && (
-        <div className="flex flex-wrap gap-2">
-          {kpis.alerts.pendingMaintenances > 0 && (
-            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-              ⚠️ {kpis.alerts.pendingMaintenances} entretien{kpis.alerts.pendingMaintenances > 1 ? 's' : ''} en retard
-            </span>
-          )}
-          {kpis.alerts.expiringCT > 0 && (
-            <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
-              🔴 {kpis.alerts.expiringCT} CT expirant dans 30j
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* 4.3 — Performance véhicules */}
+      {/* ── SECTION 3 : PERFORMANCES PAR VÉHICULE ───────────────────────────── */}
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-gray-900">Performance véhicules — 6 mois</h2>
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Performance par véhicule — 6 mois</h2>
+            <p className="text-xs text-gray-400">Identifié par immatriculation</p>
+          </div>
           <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
             <button type="button" onClick={() => setPerfView('chart')}
               className={`rounded px-3 py-1 text-xs font-medium transition ${perfView === 'chart' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
@@ -283,29 +260,54 @@ export default function IntelligencePage(): React.JSX.Element {
             </div>
           ) : perfView === 'chart' ? (
             performance.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={perfChartData} margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
-                  <Tooltip formatter={(v: number) => [`${v.toFixed(0)}€`, '']} />
-                  <Legend />
-                  {performance.map((v, i) => (
-                    <Bar key={v.vehicleId} dataKey={`${v.make} ${v.model}`}
-                      fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[2, 2, 0, 0]} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
+              <>
+                <div className="mb-3 flex items-center gap-3 text-[11px] text-gray-400">
+                  <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-green-500 inline-block" /> Encaissé</span>
+                  <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400 inline-block" /> Prévisionnel</span>
+                  <span className="flex items-center gap-1"><span className="h-0.5 w-4 border-t-2 border-dashed border-gray-400 inline-block" /> Moyenne flotte</span>
+                </div>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={performance}
+                    margin={{ top: 10, right: 10, left: 0, bottom: 40 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis
+                      dataKey="licensePlate"
+                      tick={{ fontSize: 11 }}
+                      angle={-35}
+                      textAnchor="end"
+                      interval={0}
+                    />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
+                    <Tooltip
+                      formatter={(v: number, name: string) => [
+                        fmtEuro(v),
+                        name === 'totalEncaisse' ? 'Encaissé' : 'Prévisionnel',
+                      ]}
+                      labelFormatter={(lp: string) => {
+                        const v = performance.find(p => p.licensePlate === lp);
+                        return v ? `${v.make} ${v.model} — ${v.licensePlate}` : lp;
+                      }}
+                    />
+                    <ReferenceLine y={avgPayout} stroke="#94a3b8" strokeDasharray="4 4"
+                      label={{ value: `Moy. ${fmtEuro(avgPayout)}`, position: 'right', fontSize: 10, fill: '#94a3b8' }} />
+                    <Bar dataKey="totalEncaisse" stackId="a" fill="#16a34a" name="totalEncaisse" />
+                    <Bar dataKey="totalPrevisionnel" stackId="a" fill="#60a5fa" radius={[3,3,0,0]} name="totalPrevisionnel" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </>
             ) : <p className="py-12 text-center text-sm text-gray-400">Aucune donnée</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100">
-                    <th className="pb-2 text-left text-xs font-semibold text-gray-500">Véhicule</th>
-                    <th className="pb-2 text-right"><SortBtn k="totalPayout" label="CA net" /></th>
-                    <th className="pb-2 text-right"><SortBtn k="totalGross" label="CA brut" /></th>
-                    <th className="pb-2 text-right"><SortBtn k="totalInsurance" label="Assurance" /></th>
+                    <th className="pb-2 text-left text-xs font-semibold text-gray-500">Immatriculation</th>
+                    <th className="pb-2 text-left text-xs font-semibold text-gray-500">Modèle</th>
+                    <th className="pb-2 text-right"><SortBtn k="totalEncaisse" label="CA encaissé" /></th>
+                    <th className="pb-2 text-right"><SortBtn k="totalPrevisionnel" label="CA prév." /></th>
+                    <th className="pb-2 text-right"><SortBtn k="totalPayout" label="Total CA" /></th>
                     <th className="pb-2 text-right"><SortBtn k="rentalCount" label="Locations" /></th>
                     <th className="pb-2 text-right"><SortBtn k="occupancyRate" label="Occupation" /></th>
                     <th className="pb-2 text-right"><SortBtn k="avgKmPerRental" label="Km moy" /></th>
@@ -316,20 +318,18 @@ export default function IntelligencePage(): React.JSX.Element {
                   {sortedPerf.map(v => (
                     <tr key={v.vehicleId} className="border-b border-gray-50 last:border-0">
                       <td className="py-2.5">
-                        <p className="font-medium text-gray-900">{v.make} {v.model}</p>
-                        <p className="text-xs text-gray-400">{v.licensePlate}</p>
+                        <span className="rounded-md bg-gray-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700">{v.licensePlate}</span>
                       </td>
+                      <td className="py-2.5 text-xs text-gray-600">{v.make} {v.model}</td>
+                      <td className="py-2.5 text-right text-xs font-semibold text-green-700">{fmtEuro(v.totalEncaisse)}</td>
+                      <td className="py-2.5 text-right text-xs font-medium text-blue-600">{fmtEuro(v.totalPrevisionnel)}</td>
                       <td className="py-2.5 text-right">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                           v.totalPayout >= 500 ? 'bg-green-100 text-green-700' :
                           v.totalPayout >= 200 ? 'bg-amber-100 text-amber-700' :
                           'bg-red-100 text-red-600'
-                        }`}>
-                          {fmtEuro(v.totalPayout)}
-                        </span>
+                        }`}>{fmtEuro(v.totalPayout)}</span>
                       </td>
-                      <td className="py-2.5 text-right text-xs text-gray-600">{fmtEuro(v.totalGross)}</td>
-                      <td className="py-2.5 text-right text-xs text-gray-600">{fmtEuro(v.totalInsurance)}</td>
                       <td className="py-2.5 text-right text-xs text-gray-600">{v.rentalCount}</td>
                       <td className="py-2.5 text-right text-xs text-gray-600">{v.occupancyRate}%</td>
                       <td className="py-2.5 text-right text-xs text-gray-600">{v.avgKmPerRental} km</td>
@@ -343,73 +343,48 @@ export default function IntelligencePage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* 4.4 — Prévisions 30 jours */}
-      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Prévisions 30 jours</h2>
-            {forecastData && (
-              <p className="text-xs text-gray-400">
-                Total prévu : <span className="font-semibold text-gray-700">{fmtEuro(forecastData.totalForecast)}</span>
-              </p>
-            )}
+      {/* ── SECTION 4 : TAUX D'OCCUPATION PAR VÉHICULE ───────────────────────── */}
+      {performance.length > 0 && (
+        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">Taux d'occupation par véhicule</h2>
+            <span className="text-xs text-gray-400">Objectif : 70 %</span>
           </div>
-          <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-            <button type="button" onClick={() => setForecastView('chart')}
-              className={`rounded px-3 py-1 text-xs font-medium transition ${forecastView === 'chart' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
-              📊 Graphique
-            </button>
-            <button type="button" onClick={() => setForecastView('table')}
-              className={`rounded px-3 py-1 text-xs font-medium transition ${forecastView === 'table' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
-              📋 Tableau
-            </button>
+          <div className="p-5 space-y-3">
+            {[...performance].sort((a, b) => b.occupancyRate - a.occupancyRate).map(v => {
+              const color = v.occupancyRate >= 70 ? '#16a34a' : v.occupancyRate >= 50 ? '#f59e0b' : '#ef4444';
+              return (
+                <div key={v.vehicleId}>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="font-mono font-semibold text-gray-700">{v.licensePlate}</span>
+                    <span className="text-gray-500 mr-2">{v.make} {v.model}</span>
+                    <span className="font-bold ml-auto" style={{ color }}>{v.occupancyRate}%</span>
+                  </div>
+                  <div className="h-3 w-full overflow-hidden rounded-full bg-gray-100 relative">
+                    {/* Ligne objectif 70% */}
+                    <div className="absolute top-0 bottom-0 w-px bg-gray-400 z-10" style={{ left: '70%' }} />
+                    <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, v.occupancyRate)}%`, backgroundColor: color }} />
+                  </div>
+                </div>
+              );
+            })}
+            <div className="flex items-center gap-4 text-[11px] text-gray-400 pt-1">
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-green-500" /> ≥ 70%</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" /> 50–70%</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-red-400" /> &lt; 50%</span>
+              <span className="flex items-center gap-1"><span className="h-px w-4 bg-gray-400 inline-block" /> Objectif 70%</span>
+            </div>
           </div>
         </div>
+      )}
 
-        <div className="p-5">
-          {!forecastData || forecastData.forecasts.length === 0 ? (
-            <p className="py-8 text-center text-sm text-gray-400">Aucune location prévue dans les 30 prochains jours</p>
-          ) : forecastView === 'chart' ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={forecastData.forecasts} margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
-                <Tooltip formatter={(v: number) => [`${v.toFixed(0)}€`, 'CA net prévu']} />
-                <Bar dataKey="totalPayout" fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} name="CA net prévu" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="pb-2 text-left text-xs font-semibold text-gray-500">Semaine</th>
-                  <th className="pb-2 text-right text-xs font-semibold text-gray-500">Nb locations</th>
-                  <th className="pb-2 text-right text-xs font-semibold text-gray-500">CA net prévu</th>
-                </tr>
-              </thead>
-              <tbody>
-                {forecastData.forecasts.map(f => (
-                  <tr key={f.week} className="border-b border-gray-50 last:border-0">
-                    <td className="py-2.5 font-medium text-gray-900">{f.week}</td>
-                    <td className="py-2.5 text-right text-gray-600">{f.rentalCount}</td>
-                    <td className="py-2.5 text-right font-semibold text-gray-900">{fmtEuro(f.totalPayout)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-
-      {/* 4.5 — Chat IA */}
+      {/* ── SECTION 5 : ASSISTANT IA ─────────────────────────────────────────── */}
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="border-b border-gray-100 px-5 py-3">
           <h2 className="text-sm font-semibold text-gray-900">Assistant IA ✨</h2>
           <p className="text-xs text-gray-400">Posez vos questions sur la flotte — données 12 mois</p>
         </div>
 
-        {/* Questions suggérées */}
         <div className="flex flex-wrap gap-2 border-b border-gray-100 px-5 py-3">
           {SUGGESTED_QUESTIONS.map(q => (
             <button key={q} type="button" onClick={() => sendChat(q)}
@@ -420,7 +395,6 @@ export default function IntelligencePage(): React.JSX.Element {
           ))}
         </div>
 
-        {/* Messages */}
         <div className="h-64 overflow-y-auto px-5 py-3 space-y-3">
           {messages.length === 0 && (
             <p className="py-8 text-center text-sm text-gray-400">Posez une question ci-dessous ou cliquez sur une suggestion</p>
@@ -431,9 +405,7 @@ export default function IntelligencePage(): React.JSX.Element {
                 <span className="mr-2 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#01696e]/10 text-xs">✨</span>
               )}
               <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                m.role === 'user'
-                  ? 'bg-[#01696e] text-white'
-                  : 'border border-gray-200 bg-gray-50 text-gray-800'
+                m.role === 'user' ? 'bg-[#01696e] text-white' : 'border border-gray-200 bg-gray-50 text-gray-800'
               }`}>
                 {m.content}
               </div>
@@ -444,7 +416,7 @@ export default function IntelligencePage(): React.JSX.Element {
               <span className="mr-2 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#01696e]/10 text-xs">✨</span>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5">
                 <div className="flex gap-1">
-                  {[0, 1, 2].map(i => (
+                  {[0,1,2].map(i => (
                     <div key={i} className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                   ))}
                 </div>
@@ -454,17 +426,11 @@ export default function IntelligencePage(): React.JSX.Element {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input */}
         <div className="border-t border-gray-100 px-5 py-3">
           <form onSubmit={e => { e.preventDefault(); sendChat(chatInput); }} className="flex gap-2">
-            <input
-              type="text"
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              placeholder="Votre question..."
-              disabled={chatMutation.isPending}
-              className="flex-1 rounded-xl border border-gray-200 px-4 py-2 text-sm outline-none focus:border-[#01696e] disabled:opacity-50"
-            />
+            <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)}
+              placeholder="Votre question..." disabled={chatMutation.isPending}
+              className="flex-1 rounded-xl border border-gray-200 px-4 py-2 text-sm outline-none focus:border-[#01696e] disabled:opacity-50" />
             <button type="submit" disabled={!chatInput.trim() || chatMutation.isPending}
               className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-40 transition"
               style={{ backgroundColor: '#01696e' }}>

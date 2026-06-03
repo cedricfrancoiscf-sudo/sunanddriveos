@@ -74,11 +74,12 @@ export default function ReportPage(): React.JSX.Element {
   const [retryIn, setRetryIn] = useState<number | null>(null);
   const navRef = useRef<HTMLDivElement>(null);
 
-  const { data, isFetching, refetch } = useQuery<ReportData>({
+  const { data, isFetching, isError, error, refetch } = useQuery<ReportData>({
     queryKey: ['ceo-report'],
     queryFn: () => api.get<ReportData>('/intelligence/report').then(r => r.data),
     staleTime: 60 * 60 * 1000,
     enabled: false,
+    retry: 1,
   });
 
   useEffect(() => {
@@ -180,7 +181,7 @@ export default function ReportPage(): React.JSX.Element {
 
       <main className="mx-auto max-w-5xl px-4 py-8 space-y-8">
         {/* État initial */}
-        {!generated && !isFetching && !data && (
+        {!generated && !isFetching && !data && !isError && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="text-6xl mb-6">📊</div>
             <h2 className="text-2xl font-bold text-gray-900 mb-3">Rapport CEO</h2>
@@ -194,6 +195,26 @@ export default function ReportPage(): React.JSX.Element {
               ✨ Générer le rapport
             </button>
             <p className="mt-3 text-xs text-gray-400">30 à 60 secondes — recherche de données externes en cours</p>
+          </div>
+        )}
+
+        {/* État erreur */}
+        {isError && !isFetching && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="text-5xl mb-4">⚠️</div>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Erreur de génération</h2>
+            <p className="text-sm text-gray-500 max-w-md mb-1">
+              {(error as { response?: { data?: { error?: string } } })?.response?.data?.error
+                ?? (error instanceof Error ? error.message : 'Erreur inconnue')}
+            </p>
+            <p className="text-xs text-gray-400 mb-6">
+              Vérifiez que la clé ANTHROPIC_API_KEY est configurée et que le tenant est actif.
+            </p>
+            <button type="button" onClick={handleGenerate}
+              className="rounded-2xl px-6 py-2.5 text-sm font-semibold text-white"
+              style={{ backgroundColor: theme.primaryColor }}>
+              ↺ Réessayer
+            </button>
           </div>
         )}
 

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { format, differenceInDays, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { rentalsApi, type RentalStatus, type Rental } from './rentalsApi';
+import { getRentalFinancialStatus } from '../../utils/rentalFinance';
 
 const STATUS_LABELS: Record<RentalStatus, string> = {
   booked: 'Réservée',
@@ -56,23 +57,23 @@ function RentalRow({ rental }: { rental: Rental }): React.JSX.Element {
         <p className="text-xs text-gray-400">{duration} jour{duration !== 1 ? 's' : ''}</p>
       </div>
 
-      <div className="hidden text-right md:block w-24">
-        {rental.grossRevenue != null ? (
-          <>
-            <p className="text-sm font-semibold text-gray-900">
-              {rental.grossRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-            </p>
-            {rental.ownerPayout != null ? (
-              <p className="text-xs font-medium text-green-600">
-                {rental.ownerPayout.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+      <div className="hidden text-right md:block w-28">
+        {rental.status !== 'cancelled' ? (() => {
+          const fin = getRentalFinancialStatus(rental);
+          return (
+            <>
+              <p className={`text-sm font-semibold ${fin.color === 'green' ? 'text-green-700' : 'text-blue-700'}`}>
+                {fin.amount.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
               </p>
-            ) : rental.ownerPayoutEstimated != null ? (
-              <p className="text-xs font-medium text-orange-500">
-                ~{rental.ownerPayoutEstimated.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-              </p>
-            ) : null}
-          </>
-        ) : (
+              <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                fin.color === 'green' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'
+              }`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${fin.color === 'green' ? 'bg-green-500' : 'bg-blue-500'}`} />
+                {fin.label}
+              </span>
+            </>
+          );
+        })() : (
           <span className="text-xs text-gray-300">—</span>
         )}
       </div>
@@ -254,10 +255,10 @@ export default function RentalListPage(): React.JSX.Element {
 
           <div className="mt-3 flex items-center gap-4 text-xs text-gray-400">
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-green-500" /> CA encaissé
+              <span className="h-2 w-2 rounded-full bg-green-500" /> Encaissé
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-orange-400" /> CA estimé (ratio Getaround)
+              <span className="h-2 w-2 rounded-full bg-blue-500" /> À encaisser / Prévisionnel
             </span>
           </div>
         </>

@@ -154,11 +154,21 @@ export default function RentalListPage(): React.JSX.Element {
       {/* KPIs du mois */}
       {stats && (
         <div className="mb-6 grid gap-3 grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            label="CA du mois"
-            value={stats.totalRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-            sub={`Virement : ${stats.totalPayout.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}`}
-          />
+          {/* Carte CA : encaissé (vert) + prévisionnel (bleu) */}
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">CA du mois</p>
+            <p className="mt-1 text-2xl font-bold text-green-700">
+              {stats.totalEncaisse.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+            </p>
+            {stats.totalPrevisionnel > 0 && (
+              <p className="text-xs font-medium text-blue-600 mt-0.5">
+                + {stats.totalPrevisionnel.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} prévu
+              </p>
+            )}
+            <p className="text-xs text-gray-400 mt-1">
+              Total : {(stats.totalEncaisse + stats.totalPrevisionnel).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+            </p>
+          </div>
           <StatCard
             label="Taux d'occupation"
             value={`${stats.occupancyRate} %`}

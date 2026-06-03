@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { requireAuth, requireSuperAdmin } from '../../middleware/auth';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
-import { getEffectivePayout } from '../../utils/revenue';
 
 const router: Router = Router();
 router.use(requireAuth, requireSuperAdmin);
@@ -44,7 +43,7 @@ router.get('/stats', async (_req: Request, res: Response, next: NextFunction) =>
         _sum: { ownerPayout: true },
         where: { endAt: { gte: oneMonthAgo } },
       });
-      return getEffectivePayout(agg._sum.ownerPayout, undefined);
+      return Math.max(0, agg._sum.ownerPayout ?? 0);
     }));
     const mrrTotal = Math.round(payouts.reduce((sum, p) => sum + (p.status === 'fulfilled' ? p.value : 0), 0));
 

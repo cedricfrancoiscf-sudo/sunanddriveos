@@ -52,8 +52,12 @@ export interface RentalDetail extends Rental {
 export interface RentalStats {
   totalRevenue: number;
   totalPayout: number;
+  totalEncaisse: number;
+  totalPrevisionnel: number;
   totalKm: number;
   rentalCount: number;
+  countDone: number;
+  countUpcoming: number;
   occupancyRate: number;
   vehicleCount: number;
 }

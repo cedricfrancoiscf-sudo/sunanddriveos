@@ -10,7 +10,7 @@ import { api } from '../../utils/api';
 const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
 import { useAuth } from '../../hooks/useAuth';
 
-interface RentalStats { totalRevenue: number; occupancyRate: number; rentalCount: number; countDone: number; countUpcoming: number; totalKm: number; vehicleCount: number; totalPayout: number; }
+interface RentalStats { totalRevenue: number; totalEncaisse: number; totalPrevisionnel: number; occupancyRate: number; rentalCount: number; countDone: number; countUpcoming: number; totalKm: number; vehicleCount: number; totalPayout: number; }
 interface ActiveRental { id: string; driverName: string; startAt: string; endAt: string; vehicle: { make: string; model: string; licensePlate: string }; }
 interface Alert { id: string; type: string; label: string; severity: 'high' | 'medium'; link: string; }
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; lastSyncAt: string | null; lastSyncResult: { created: number; updated: number } | null; error: string | null; isTrialLimited: boolean; }
@@ -106,16 +106,6 @@ export default function DashboardPage(): React.JSX.Element {
     enabled: user?.role !== 'carkeeper',
   });
 
-  type PendingRevenueData = {
-    pendingRevenue: { amount: number; count: number; oldestDate: string | null; note: string };
-    forecastRevenue: { byMonth: { month: string; rentalCount: number; amount: number; estimated: boolean }[]; total: number; count: number };
-  };
-  const { data: pendingRevenueData } = useQuery<PendingRevenueData>({
-    queryKey: ['pending-revenue'],
-    queryFn: () => api.get<PendingRevenueData>('/intelligence/pending-revenue').then(r => r.data),
-    staleTime: 5 * 60_000,
-    enabled: user?.role !== 'carkeeper',
-  });
 
   const { data: syncStatus } = useQuery<SyncStateData>({
     queryKey: ['sync-status'],
@@ -143,11 +133,13 @@ export default function DashboardPage(): React.JSX.Element {
       label: `Document "${d.name}" — ${d.vehicle.make} ${d.vehicle.model} expire le ${format(new Date(d.expiryDate), 'dd/MM/yy', { locale: fr })}`,
       link: '/documents',
     })),
-    ...pendingCarSeats.slice(0, 2).map(r => ({
-      id: `csr-${r.id}`, type: 'car_seat', severity: 'medium' as const,
-      label: `Siège auto demandé — ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.rental ? ` · ${r.rental.driverName}` : ''}`,
-      link: r.rental ? `/messages?rentalId=${r.rental.id}` : '/messages',
-    })),
+    ...pendingCarSeats
+      .filter(r => !r.rental || new Date(r.rental.endAt) >= new Date())
+      .slice(0, 2).map(r => ({
+        id: `csr-${r.id}`, type: 'car_seat', severity: 'medium' as const,
+        label: `Siège auto demandé — ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.rental ? ` · ${r.rental.driverName}` : ''}`,
+        link: r.rental ? `/messages?rentalId=${r.rental.id}` : '/messages',
+      })),
   ];
 
   const stats = statsData;
@@ -257,19 +249,22 @@ export default function DashboardPage(): React.JSX.Element {
         <div>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Ce mois-ci</h2>
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-            {/* CA card custom : encaissé (vert) + prévisionnel (bleu) */}
+            {/* Carte CA : encaissé (vert) + prévisionnel (bleu) + total */}
             {stats ? (
               <Link to="/rentals" className="block hover:opacity-90 transition">
                 <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Chiffre d'affaires</p>
                   <p className="mt-2 text-2xl font-bold text-green-700">
-                    {stats.totalPayout.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                    {stats.totalEncaisse.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
                   </p>
-                  {(stats.totalRevenue - stats.totalPayout) > 0 && (
-                    <p className="mt-0.5 text-xs font-medium text-blue-600">
-                      + {(stats.totalRevenue - stats.totalPayout).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} prév.
+                  {stats.totalPrevisionnel > 0 && (
+                    <p className="text-xs font-medium text-blue-600 mt-0.5">
+                      + {stats.totalPrevisionnel.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} prévu
                     </p>
                   )}
+                  <p className="text-xs text-gray-400 mt-1 border-t border-gray-100 pt-1">
+                    Total : {(stats.totalEncaisse + stats.totalPrevisionnel).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                  </p>
                 </div>
               </Link>
             ) : (
@@ -302,43 +297,14 @@ export default function DashboardPage(): React.JSX.Element {
             />
           </div>
 
-          {/* Cartes financières prévisionnelles */}
-          {pendingRevenueData && (
-            <div className="mt-3 grid gap-3 grid-cols-1 sm:grid-cols-2">
-              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-base">💰</span>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-yellow-700">À encaisser</p>
-                </div>
-                <p className="text-2xl font-bold text-yellow-900">
-                  {pendingRevenueData.pendingRevenue.amount.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-                </p>
-                <p className="text-xs text-yellow-600 mt-1">
-                  {pendingRevenueData.pendingRevenue.count} location{pendingRevenueData.pendingRevenue.count !== 1 ? 's' : ''} terminée{pendingRevenueData.pendingRevenue.count !== 1 ? 's' : ''} — {pendingRevenueData.pendingRevenue.note}
-                </p>
-              </div>
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-base">📅</span>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Prévisionnel</p>
-                </div>
-                <p className="text-2xl font-bold text-blue-900">
-                  {pendingRevenueData.forecastRevenue.total.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-                </p>
-                <p className="text-xs text-blue-600 mt-1">
-                  Basé sur {pendingRevenueData.forecastRevenue.count} réservation{pendingRevenueData.forecastRevenue.count !== 1 ? 's' : ''} à venir (90 jours)
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Prévision 4 semaines glissantes — barres empilées vert/bleu */}
+      {/* CA — 4 semaines glissantes — barres empilées vert/bleu */}
       {user?.role !== 'carkeeper' && forecastData && forecastData.forecasts.some(w => w.rentalCount > 0) && (
         <div>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Trésorerie — 4 semaines</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">CA — 4 semaines</h2>
             <div className="flex items-center gap-3 text-[11px] text-gray-400">
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-green-500 inline-block" /> Encaissé</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400 inline-block" /> Prévisionnel</span>

@@ -11,8 +11,15 @@ router.use(requireAuth, resolveTenant);
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
+    const where: Record<string, unknown> = {};
+    if (req.query.status) where.status = req.query.status as string;
+    // Exclure les demandes liées à des locations déjà terminées
+    where.OR = [
+      { rentalId: null },
+      { rental: { endAt: { gte: new Date() } } },
+    ];
     const requests = await db.carSeatRequest.findMany({
-      where: req.query.status ? { status: req.query.status as string } : undefined,
+      where,
       include: {
         vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
         rental: { select: { id: true, driverName: true, startAt: true, endAt: true } },

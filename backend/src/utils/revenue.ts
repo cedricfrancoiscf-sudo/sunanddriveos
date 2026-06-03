@@ -1,16 +1,28 @@
-export const PAYOUT_TO_BASE_RATIO = 1.2544
-export const PAYOUT_TO_GROSS_RATIO = 0.9297
+// Règle fondamentale CA — appliquée partout sans exception :
+// ownerPayout > 0  → CA ENCAISSÉ (vert)
+// ownerPayout null ou 0 → CA PRÉVISIONNEL = grossRevenue (bleu)
+// Jamais de ratio, jamais d'estimation.
 
-export function getEffectivePayout(
+export type CAType = 'encaisse' | 'previsionnel';
+
+export interface CA {
+  amount: number;
+  type: CAType;
+}
+
+export function getCA(
   ownerPayout: number | null | undefined,
-  grossRevenue: number | null | undefined
-): number {
-  if (ownerPayout != null && ownerPayout > 0) return ownerPayout
-  if (grossRevenue != null && grossRevenue > 0)
-    return Math.round(grossRevenue * PAYOUT_TO_GROSS_RATIO * 100) / 100
-  return 0
+  grossRevenue: number | null | undefined,
+): CA {
+  if (ownerPayout != null && ownerPayout > 0) {
+    return { amount: ownerPayout, type: 'encaisse' };
+  }
+  if (grossRevenue != null && grossRevenue > 0) {
+    return { amount: grossRevenue, type: 'previsionnel' };
+  }
+  return { amount: 0, type: 'previsionnel' };
 }
 
 export function isPayoutReal(ownerPayout: number | null | undefined): boolean {
-  return ownerPayout != null && ownerPayout > 0
+  return ownerPayout != null && ownerPayout > 0;
 }

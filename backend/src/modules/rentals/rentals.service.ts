@@ -1,5 +1,5 @@
 import type { PrismaClient, RentalStatus, EvaluationStatus } from '../../generated/tenant';
-import { getEffectivePayout } from '../../utils/revenue';
+import { getCA } from '../../utils/revenue';
 
 export type RentalFilters = {
   vehicleId?: string;
@@ -128,8 +128,13 @@ export async function getRentalStats(db: PrismaClient, from: Date, to: Date) {
     db.vehicle.count({ where: { isActive: true } }),
   ]);
 
-  const totalRevenue = rentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
-  const totalPayout = rentals.reduce((s, r) => s + getEffectivePayout(r.ownerPayout, r.grossRevenue), 0);
+  // ownerPayout > 0 → encaissé ; sinon → prévisionnel = grossRevenue
+  const totalEncaisse     = rentals.filter(r => (r.ownerPayout ?? 0) > 0)
+    .reduce((s, r) => s + r.ownerPayout!, 0);
+  const totalPrevisionnel = rentals.filter(r => !((r.ownerPayout ?? 0) > 0))
+    .reduce((s, r) => s + Math.max(0, r.grossRevenue ?? 0), 0);
+  const totalPayout   = totalEncaisse + totalPrevisionnel;
+  const totalRevenue  = rentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
   const totalKm = rentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
 
   // Taux d'occupation = jours loués / (nb véhicules × nb jours période)
@@ -148,8 +153,10 @@ export async function getRentalStats(db: PrismaClient, from: Date, to: Date) {
   const countUpcoming = rentals.filter(r => r.status === 'booked').length;
 
   return {
-    totalRevenue: Math.round(totalRevenue * 100) / 100,
-    totalPayout: Math.round(totalPayout * 100) / 100,
+    totalRevenue:      Math.round(totalRevenue * 100) / 100,
+    totalPayout:       Math.round(totalPayout * 100) / 100,
+    totalEncaisse:     Math.round(totalEncaisse * 100) / 100,
+    totalPrevisionnel: Math.round(totalPrevisionnel * 100) / 100,
     totalKm,
     rentalCount: countDone + countUpcoming,
     countDone,

@@ -3,7 +3,6 @@ import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import Anthropic from '@anthropic-ai/sdk';
-import { getEffectivePayout } from '../../utils/revenue';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -62,7 +61,7 @@ router.get('/',
       }),
     ]);
 
-    const totalCA = rentals.reduce((s, r) => s + getEffectivePayout(r.ownerPayout, r.grossRevenue), 0);
+    const totalCA = rentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
     const totalGross = rentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
 
     const monthlyCA: Record<string, number> = {};
@@ -72,14 +71,14 @@ router.get('/',
     }
     rentals.forEach(r => {
       const key = new Date(r.startAt).toISOString().slice(0, 7);
-      if (key in monthlyCA) monthlyCA[key] += getEffectivePayout(r.ownerPayout, r.grossRevenue);
+      if (key in monthlyCA) monthlyCA[key] += (r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0);
     });
 
     const zoneStats: Record<string, { ca: number; count: number; carSeats: number }> = {};
     rentals.forEach(r => {
       const zone = r.vehicle?.deliveryPointName ?? r.vehicle?.parkingZone ?? 'Non définie';
       if (!zoneStats[zone]) zoneStats[zone] = { ca: 0, count: 0, carSeats: 0 };
-      zoneStats[zone].ca += getEffectivePayout(r.ownerPayout, r.grossRevenue);
+      zoneStats[zone].ca += (r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0);
       zoneStats[zone].count++;
     });
     carSeatRequests.forEach(r => {
@@ -98,7 +97,7 @@ router.get('/',
 
     const vehicleStats = vehicles.map(v => {
       const vRentals = rentals.filter(r => r.vehicleId === v.id);
-      const vCA = vRentals.reduce((s, r) => s + getEffectivePayout(r.ownerPayout, r.grossRevenue), 0);
+      const vCA = vRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
       const vKm = vRentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
       const vIncidents = incidents.filter(i => i.vehicleId === v.id).length;
       const vMaint = maintenances.filter(m => m.vehicleId === v.id);

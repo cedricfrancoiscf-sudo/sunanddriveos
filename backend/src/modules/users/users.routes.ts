@@ -53,7 +53,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const users = await db.user.findMany({
-      select: { id: true, name: true, email: true, role: true, isActive: true, lastLoginAt: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, roles: true, isActive: true, lastLoginAt: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     });
     res.json({ users });

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth, requireSuperAdmin } from '../../middleware/auth';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
+import { resetCorruptedPayouts } from '../getaround-sync/getaround-sync.service';
 
 const router: Router = Router();
 router.use(requireAuth, requireSuperAdmin);
@@ -238,6 +239,30 @@ router.put('/companies/:id', async (req: Request, res: Response, next: NextFunct
     });
 
     res.json({ company });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/superadmin/tenants/:slug/reset-payouts
+// Remet à null tous les champs financiers + vide getaround_invoices → force recalcul propre
+router.post('/tenants/:slug/reset-payouts', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug: (req.params.slug as string), isActive: true },
+      select: { tenantDbUrl: true, name: true },
+    });
+    if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
+
+    const db = getTenantClient(company.tenantDbUrl);
+    const result = await resetCorruptedPayouts(db, req.params.slug as string);
+
+    res.json({
+      success: true,
+      tenant: company.name,
+      slug: req.params.slug,
+      ...result,
+      message: `Reset terminé. Lancez maintenant Recalculer les virements depuis les Paramètres.`,
+    });
   } catch (err: unknown) { next(err); }
 });
 

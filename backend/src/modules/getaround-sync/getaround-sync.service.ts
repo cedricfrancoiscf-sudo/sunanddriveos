@@ -343,15 +343,21 @@ async function processRental(
   const driverName = userCache.get(r.user_id)!;
 
   const status = inferStatus(r);
-  const grossRevenue = (r.price + (r.insurance_fee ?? 0)) / 100;
+  // grossRevenue depuis l'API rental (price + insurance_fee) — peut être null si l'API ne retourne pas price
+  const grossRevenue = r.price != null
+    ? Math.round((r.price + (r.insurance_fee ?? 0)) / 100 * 100) / 100
+    : null;
 
   // Vérifier le statut existant pour ne pas écraser un 'cancelled' manuel
   const existingRental = await db.rental.findUnique({
     where: { getaroundId: String(r.id) },
-    select: { id: true, status: true, startMileage: true, endMileage: true, fuelLevelCheckin: true },
+    select: { id: true, status: true, startMileage: true, endMileage: true, fuelLevelCheckin: true, grossRevenue: true },
   });
   const prevStatus = existingRental?.status;
   const newStatus = prevStatus === 'cancelled' ? 'cancelled' : status;
+
+  // Si price null → garder la valeur existante (possiblement renseignée par syncPayoutsForWindow)
+  const effectiveGrossRevenue = grossRevenue ?? existingRental?.grossRevenue ?? 0;
 
   const commonData = {
     vehicleId: vehicle.id,
@@ -359,7 +365,7 @@ async function processRental(
     driverGetaroundId: String(r.user_id),
     startAt: new Date(r.starts_at),
     endAt: new Date(r.ends_at),
-    grossRevenue,
+    grossRevenue: effectiveGrossRevenue,
   };
 
   const upserted = await db.rental.upsert({
@@ -1313,90 +1319,148 @@ export async function syncPayoutsForWindow(
 
       for (const inv of payout.invoices) {
         try {
+          // #4 IDEMPOTENCE : skip si cette invoice a déjà été traitée
+          const alreadyProcessed = await db.getaroundInvoice.findUnique({
+            where: { getaroundId: inv.id },
+            select: { getaroundId: true },
+          });
+          if (alreadyProcessed) {
+            console.log(`[Payouts][${tenantSlug}] Invoice ${inv.id} déjà traitée — skip`);
+            continue;
+          }
+
           const invoice = await ga.getInvoice(inv.id);
           await sleep(300);
 
-          if (invoice.product_type !== 'Rental') continue;
+          if (invoice.product_type !== 'Rental') {
+            // Enregistrer l'invoice non-rental pour ne pas la retraiter
+            await db.getaroundInvoice.upsert({
+              where: { getaroundId: inv.id },
+              create: { getaroundId: inv.id, totalPrice: invoice.total_price ?? 0 },
+              update: {},
+            });
+            continue;
+          }
 
           const rental = await db.rental.findFirst({
             where: { getaroundId: String(invoice.product_id) },
           });
           if (!rental) continue;
 
+          // #2 MAPPING COMPLET des charges v1.json
+          const rnd = (v: number) => Math.round(v * 100) / 100;
           let basePrice = 0, insuranceFee = 0, extraDistanceFee = 0;
           let driverMessFee = 0, damageCompensation = 0, lateReturnFee = 0;
           let gasRefillFee = 0, deliveryFee = 0, assistanceFee = 0;
+          let batteryRechargeFee = 0, ownerInfractionFee = 0, ownerTowFee = 0;
+          let guaranteeEarning = 0, otherCompensation = 0;
+          let getaroundServiceFee = 0, cancellationFee = 0;
 
           for (const charge of invoice.charges) {
-            const amount = charge.amount / 100;
+            const a = charge.amount / 100;
             switch (charge.type) {
               case 'driver_rental_payment':
-                basePrice += amount; break;
+                basePrice += a; break;
               case 'self_insurance_payment':
               case 'additional_self_insurance_payment':
               case 'mileage_package_insurance':
-                insuranceFee += amount; break;
+              case 'insurance_fee':
+                insuranceFee += a; break;
               case 'extra_distance_payment':
               case 'mileage_package':
-                extraDistanceFee += amount; break;
+                extraDistanceFee += a; break;
               case 'driver_mess_fee':
               case 'drivy_mess_fee':
-                driverMessFee += Math.abs(amount); break;
+                driverMessFee += Math.abs(a); break;
               case 'damage_compensation':
-                damageCompensation += Math.abs(amount); break;
+                damageCompensation += Math.abs(a); break;
               case 'driver_late_return_fee':
               case 'drivy_late_return_fee':
-                lateReturnFee += Math.abs(amount); break;
+              case 'driver_late_rental_impact_fee':
+                lateReturnFee += Math.abs(a); break;
               case 'driver_gas_refill_fee':
               case 'driver_gas_compensation':
-                gasRefillFee += Math.abs(amount); break;
+              case 'drivy_gas_compensation':
+                gasRefillFee += a; break; // peut être négatif
               case 'delivery_fee':
-                deliveryFee += amount; break;
+              case 'delivery_admin_fee':
+                deliveryFee += a; break;
               case 'assistance_fee':
-                assistanceFee += amount; break;
+                assistanceFee += a; break;
+              case 'battery_recharge_compensation':
+              case 'rental_recharging_compensation':
+              case 'battery_recharge_fee':
+                batteryRechargeFee += a; break;
+              case 'owner_infraction_compensation':
+              case 'driver_infraction_fee':
+              case 'driver_toll_compensation':
+              case 'driver_parking_compensation':
+                ownerInfractionFee += a; break;
+              case 'owner_tow_compensation':
+                ownerTowFee += a; break;
+              case 'guarantee_earning':
+                guaranteeEarning += a; break;
+              case 'other_compensation':
+              case 'exceptional_event_compensation':
+              case 'driver_compensation':
+              case 'driver_compensation_for_offsite_payment':
+              case 'driver_recharging_fee':
+              case 'repatriation_fee':
+              case 'claims_owner_fee_cg':
+                otherCompensation += a; break;
+              case 'drivy_service_fee':
+              case 'drivy_breakdown_management_fee':
+              case 'drivy_unfulfillment_fee':
+                getaroundServiceFee += a; break; // négatif — commission Getaround
+              case 'driver_cancellation_fee':
+              case 'drivy_cancellation_fee':
+                cancellationFee += a; break;
             }
           }
 
-          const grossRevenue = Math.round((
-            basePrice + insuranceFee + extraDistanceFee +
-            driverMessFee + damageCompensation + lateReturnFee +
-            gasRefillFee + deliveryFee + assistanceFee
-          ) * 100) / 100;
+          // grossRevenue = basePrice + insuranceFee (montant locataire → propriétaire)
+          const grossRevenue = rnd(basePrice + insuranceFee);
+          // ownerPayout = total facture virement (depuis invoice.total_price directement)
+          const ownerPayout = rnd(Math.abs(invoice.total_price) / 100);
 
-          const ownerPayout = Math.round(
-            Math.abs(invoice.total_price) / 100 * 100,
-          ) / 100;
-
-          const existing = await db.rental.findUnique({
-            where: { id: rental.id },
-            select: {
-              ownerPayout: true, grossRevenue: true, basePrice: true,
-              insuranceFee: true, extraDistanceFee: true, driverMessFee: true,
-              damageCompensation: true, lateReturnFee: true, gasRefillFee: true,
-              deliveryFee: true, assistanceFee: true,
-            },
-          });
-
-          const add = (prev: number | null | undefined, delta: number) =>
-            Math.round(((prev ?? 0) + delta) * 100) / 100;
-
+          // #3 ASSIGNATION DIRECTE — plus de add(), jamais de cumul
           await db.rental.update({
             where: { id: rental.id },
             data: {
-              ownerPayout:        add(existing?.ownerPayout, ownerPayout),
-              grossRevenue:       add(existing?.grossRevenue, grossRevenue),
-              basePrice:          basePrice          ? add(existing?.basePrice, basePrice)                   : undefined,
-              insuranceFee:       insuranceFee       ? add(existing?.insuranceFee, insuranceFee)             : undefined,
-              extraDistanceFee:   extraDistanceFee   ? add(existing?.extraDistanceFee, extraDistanceFee)     : undefined,
-              driverMessFee:      driverMessFee      ? add(existing?.driverMessFee, driverMessFee)           : undefined,
-              damageCompensation: damageCompensation ? add(existing?.damageCompensation, damageCompensation) : undefined,
-              lateReturnFee:      lateReturnFee      ? add(existing?.lateReturnFee, lateReturnFee)           : undefined,
-              gasRefillFee:       gasRefillFee       ? add(existing?.gasRefillFee, gasRefillFee)             : undefined,
-              deliveryFee:        deliveryFee        ? add(existing?.deliveryFee, deliveryFee)               : undefined,
-              assistanceFee:      assistanceFee      ? add(existing?.assistanceFee, assistanceFee)           : undefined,
+              ownerPayout,
+              grossRevenue,
+              basePrice:           rnd(basePrice),
+              insuranceFee:        rnd(insuranceFee),
+              extraDistanceFee:    rnd(extraDistanceFee),
+              driverMessFee:       rnd(driverMessFee),
+              damageCompensation:  rnd(damageCompensation),
+              lateReturnFee:       rnd(lateReturnFee),
+              gasRefillFee:        rnd(gasRefillFee),
+              deliveryFee:         rnd(deliveryFee),
+              assistanceFee:       rnd(assistanceFee),
+              batteryRechargeFee:  rnd(batteryRechargeFee),
+              ownerInfractionFee:  rnd(ownerInfractionFee),
+              ownerTowFee:         rnd(ownerTowFee),
+              guaranteeEarning:    rnd(guaranteeEarning),
+              otherCompensation:   rnd(otherCompensation),
+              getaroundServiceFee: rnd(getaroundServiceFee),
+              cancellationFee:     rnd(cancellationFee),
             },
           });
+
+          // #4 Marquer l'invoice comme traitée pour idempotence
+          await db.getaroundInvoice.upsert({
+            where: { getaroundId: inv.id },
+            create: {
+              getaroundId: inv.id,
+              totalPrice: invoice.total_price ?? 0,
+              rentalId: rental.id,
+            },
+            update: {},
+          });
+
           result.updated++;
+          console.log(`[Payouts][${tenantSlug}] Invoice ${inv.id} → rental ${rental.id} : ownerPayout=${ownerPayout}€`);
 
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -1413,6 +1477,40 @@ export async function syncPayoutsForWindow(
 
   console.log(`[Sync][${tenantSlug}] Payouts : ${result.updated} location(s) mises à jour`);
   return result;
+}
+
+// ─── Reset des valeurs financières corrompues ────────────────────────────────
+
+export async function resetCorruptedPayouts(db: PrismaClient, tenantSlug = 'default'): Promise<{ rentalsReset: number; invoicesDeleted: number }> {
+  const { count: rentalsReset } = await db.rental.updateMany({
+    data: {
+      ownerPayout: null,
+      grossRevenue: null,
+      basePrice: null,
+      insuranceFee: null,
+      extraDistanceFee: null,
+      driverMessFee: null,
+      damageCompensation: null,
+      lateReturnFee: null,
+      gasRefillFee: null,
+      deliveryFee: null,
+      assistanceFee: null,
+      batteryRechargeFee: null,
+      ownerInfractionFee: null,
+      ownerTowFee: null,
+      guaranteeEarning: null,
+      otherCompensation: null,
+      getaroundServiceFee: null,
+      repatriationFee: null,
+      cancellationFee: null,
+    },
+  });
+
+  // Vider la table getaround_invoices pour forcer le retraitement idempotent
+  const { count: invoicesDeleted } = await db.getaroundInvoice.deleteMany({});
+
+  console.log(`[Reset][${tenantSlug}] ${rentalsReset} locations remises à null, ${invoicesDeleted} invoices supprimées`);
+  return { rentalsReset, invoicesDeleted };
 }
 
 export async function recalculateHistoricalPayouts(db: PrismaClient, tenantSlug = 'default'): Promise<void> {
@@ -1439,17 +1537,9 @@ export async function recalculateHistoricalPayouts(db: PrismaClient, tenantSlug 
 
   console.log(`[Payouts] Démarrage recalcul — ${windows.length} mois`);
 
-  // Remise à zéro des champs financiers pour éviter les doubles comptes
-  // grossRevenue est exclu : valeur réelle issue de r.price API Getaround, ne jamais écraser
-  await db.rental.updateMany({
-    data: {
-      ownerPayout: null, basePrice: null,
-      insuranceFee: null, extraDistanceFee: null, driverMessFee: null,
-      damageCompensation: null, lateReturnFee: null, gasRefillFee: null,
-      deliveryFee: null, assistanceFee: null,
-    },
-  });
-  console.log('[Payouts] Champs financiers remis à zéro avant recalcul (grossRevenue préservé)');
+  // Reset complet avant recalcul — vider aussi getaround_invoices pour forcer le retraitement
+  await resetCorruptedPayouts(db, tenantSlug);
+  console.log('[Payouts] Reset + getaround_invoices vidée — recalcul propre');
 
   for (const account of accounts) {
     const apiKey = decrypt(account.apiKeyHash);

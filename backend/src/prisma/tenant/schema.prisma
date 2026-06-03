@@ -207,6 +207,15 @@ model Rental {
   damageCompensation  Float?              // Compensation dommage → créer incident
   gasRefillFee        Float?              // Frais carburant → noter
   lateReturnFee       Float?              // Frais retard → noter
+  // Champs manquants v1.json — ajoutés pour mapping complet des charges
+  batteryRechargeFee   Float?             // battery_recharge_compensation + rental_recharging_compensation
+  ownerInfractionFee   Float?             // owner_infraction_compensation + driver_infraction_fee + tolls + parking
+  ownerTowFee          Float?             // owner_tow_compensation
+  guaranteeEarning     Float?             // guarantee_earning
+  otherCompensation    Float?             // other_compensation + exceptional_event_compensation + misc
+  getaroundServiceFee  Float?             // drivy_service_fee (négatif — commission Getaround)
+  repatriationFee      Float?             // repatriation_fee
+  cancellationFee      Float?             // driver_cancellation_fee + drivy_cancellation_fee
   status              RentalStatus        @default(booked)
   evaluationStatus    EvaluationStatus    @default(pending)
   evaluationRating    Int?

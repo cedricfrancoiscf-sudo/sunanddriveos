@@ -69,7 +69,9 @@
       "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $env:DATABASE_TENANT_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\"; npx prisma generate --schema src/prisma/tenant/schema.prisma 2>&1 | Select-Object -Last 4)",
       "Bash(find frontend/src/modules/settings -name \"*.tsx\")",
       "Bash(dir frontend\\\\src\\\\modules\\\\settings /b)",
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\" -Recurse -Filter \"Dockerfile*\")"
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\" -Recurse -Filter \"Dockerfile*\")",
+      "Bash(npx tsx *)",
+      "Bash(npx --prefix backend tsx backend/src/scripts/test-invoices.ts)"
     ]
   }
 }

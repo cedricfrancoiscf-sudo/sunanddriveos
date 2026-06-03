@@ -404,7 +404,7 @@ export default function ReportPage(): React.JSX.Element {
                   <div key={key} className={`rounded-2xl border p-5 ${cls}`}>
                     <h3 className={`mb-3 text-sm font-bold ${hdg}`}>{label}</h3>
                     <ul className="space-y-1.5">
-                      {((report.swot[key as keyof typeof report.swot]) as string[]).map((item, i) => (
+                      {((report.swot?.[key as keyof typeof report.swot]) as string[] ?? []).map((item, i) => (
                         <li key={i} className={`text-sm ${dot.replace('text-', 'text-gray-')}`}>
                           <span className={dot}>• </span>{item}
                         </li>
@@ -432,7 +432,7 @@ export default function ReportPage(): React.JSX.Element {
                       {icon} {label}
                     </h3>
                     <p className="text-sm text-gray-600 leading-relaxed">
-                      {report.pestel[key as keyof typeof report.pestel]}
+                      {report.pestel?.[key as keyof typeof report.pestel] ?? ''}
                     </p>
                   </div>
                 ))}
@@ -482,7 +482,7 @@ export default function ReportPage(): React.JSX.Element {
                   <div key={key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                     <h3 className="mb-2 text-sm font-semibold text-gray-900">{icon} {label}</h3>
                     <p className="text-sm text-gray-600 leading-relaxed">
-                      {report.veille_sectorielle[key as keyof typeof report.veille_sectorielle]}
+                      {report.veille_sectorielle?.[key as keyof typeof report.veille_sectorielle] ?? ''}
                     </p>
                   </div>
                 ))}

@@ -58,7 +58,7 @@ export default function DashboardPage(): React.JSX.Element {
 
   type CtExpiring = { id: string; expiryAt: string; vehicle: { make: string; model: string; licensePlate: string } };
   type DocExpiring = { id: string; name: string; expiryDate: string; vehicle: { make: string; model: string; licensePlate: string } };
-  type PendingCarSeat = { id: string; rental: { id: string; driverName: string } | null; vehicle: { make: string; model: string; licensePlate: string } };
+  type PendingCarSeat = { id: string; rental: { id: string; driverName: string; endAt: string } | null; vehicle: { make: string; model: string; licensePlate: string } };
   type ForecastWeek = { week: string; label: string; rentalCount: number; encaisse: number; previsionnel: number; totalPayout: number };
   type InboxSummary = { pendingCount: number; unansweredRentals: number };
 

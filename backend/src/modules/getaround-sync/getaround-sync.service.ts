@@ -637,6 +637,8 @@ export async function syncAccountRentals(
       updateSyncState(tenantSlug, { totalItems: windowRentals.length, processedItems: 0 });
 
       // 2. Traiter chaque location séquentiellement
+      const apiIds = new Set(windowRentals.map(r => String(r.id)));
+
       for (let i = 0; i < windowRentals.length; i++) {
         const r = windowRentals[i];
         await processRental(db, ga, r, result, tenantSlug, userCache);
@@ -647,6 +649,24 @@ export async function syncAccountRentals(
           progress: Math.round(15 + ((i + 1) / Math.max(windowRentals.length, 1)) * 65),
         });
         await sleep(2_000);
+      }
+
+      // Détection annulations : locations booked en base absentes de la réponse API
+      const bookedInWindow = await db.rental.findMany({
+        where: {
+          status: 'booked',
+          startAt: { gte: windowStart, lte: windowEnd },
+        },
+        select: { id: true, getaroundId: true },
+      });
+      for (const rental of bookedInWindow) {
+        if (rental.getaroundId && !apiIds.has(rental.getaroundId)) {
+          await db.rental.update({
+            where: { id: rental.id },
+            data: { status: 'cancelled' },
+          });
+          console.log(`[Sync][${tenantSlug}] Annulation détectée : ${rental.getaroundId}`);
+        }
       }
 
       // 3. Messages de la fenêtre

@@ -10,7 +10,7 @@ import { api } from '../../utils/api';
 const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
 import { useAuth } from '../../hooks/useAuth';
 
-interface RentalStats { totalRevenue: number; occupancyRate: number; rentalCount: number; totalKm: number; vehicleCount: number; totalPayout: number; }
+interface RentalStats { totalRevenue: number; occupancyRate: number; rentalCount: number; countDone: number; countUpcoming: number; totalKm: number; vehicleCount: number; totalPayout: number; }
 interface ActiveRental { id: string; driverName: string; startAt: string; endAt: string; vehicle: { make: string; model: string; licensePlate: string }; }
 interface Alert { id: string; type: string; label: string; severity: 'high' | 'medium'; link: string; }
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; lastSyncAt: string | null; lastSyncResult: { created: number; updated: number } | null; error: string | null; isTrialLimited: boolean; }
@@ -281,12 +281,20 @@ export default function DashboardPage(): React.JSX.Element {
               sub={stats ? `${stats.vehicleCount} véhicule${stats.vehicleCount !== 1 ? 's' : ''}` : undefined}
               link="/vehicles"
             />
-            <KpiCard
-              label="Locations"
-              value={stats ? String(stats.rentalCount) : '—'}
-              sub="ce mois"
-              link="/rentals"
-            />
+            {stats ? (
+              <Link to="/rentals" className="block hover:opacity-90 transition">
+                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Locations</p>
+                  <p className="mt-2 text-2xl font-bold text-gray-900">{stats.countDone}</p>
+                  <p className="text-xs text-gray-400">réalisées</p>
+                  {stats.countUpcoming > 0 && (
+                    <p className="mt-0.5 text-xs font-medium text-blue-600">+ {stats.countUpcoming} à venir</p>
+                  )}
+                </div>
+              </Link>
+            ) : (
+              <KpiCard label="Locations" value="—" sub="ce mois" link="/rentals" />
+            )}
             <KpiCard
               label="Km parcourus"
               value={stats ? stats.totalKm.toLocaleString('fr-FR') : '—'}

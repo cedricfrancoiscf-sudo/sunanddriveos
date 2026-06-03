@@ -32,7 +32,7 @@ export async function listRentals(db: PrismaClient, filters: RentalFilters = {})
   const where = {
     ...(vehicleId ? { vehicleId } : {}),
     ...(vehicleIds ? { vehicleId: { in: vehicleIds } } : {}),
-    ...(status ? { status } : {}),
+    status: status ? { equals: status } : { not: 'cancelled' as const },
     ...(from || to
       ? {
           startAt: {
@@ -113,7 +113,7 @@ export async function getRentalStats(db: PrismaClient, from: Date, to: Date) {
       where: {
         startAt: { gte: from },
         endAt: { lte: to },
-        status: { in: ['completed', 'active'] },
+        status: { in: ['completed', 'active', 'booked'] },
       },
       select: {
         grossRevenue: true,
@@ -144,11 +144,16 @@ export async function getRentalStats(db: PrismaClient, from: Date, to: Date) {
       ? Math.round((bookedDays / (vehicleCount * periodDays)) * 100)
       : 0;
 
+  const countDone     = rentals.filter(r => r.status === 'completed' || r.status === 'active').length;
+  const countUpcoming = rentals.filter(r => r.status === 'booked').length;
+
   return {
     totalRevenue: Math.round(totalRevenue * 100) / 100,
     totalPayout: Math.round(totalPayout * 100) / 100,
     totalKm,
-    rentalCount: rentals.length,
+    rentalCount: countDone + countUpcoming,
+    countDone,
+    countUpcoming,
     occupancyRate,
     vehicleCount,
   };

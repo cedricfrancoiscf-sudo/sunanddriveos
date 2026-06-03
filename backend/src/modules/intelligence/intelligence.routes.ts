@@ -4,6 +4,7 @@ import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import reportRouter from './report.routes';
+import { getEffectivePayout } from '../../utils/revenue';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -263,7 +264,7 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
       const months: Record<string, number> = {};
       vRentals.forEach(r => {
         const key = new Date(r.startAt).toISOString().slice(0, 7);
-        months[key] = (months[key] ?? 0) + (r.ownerPayout ?? 0);
+        months[key] = (months[key] ?? 0) + getEffectivePayout(r.ownerPayout, r.grossRevenue);
       });
       const allMonths: string[] = [];
       for (let i = 5; i >= 0; i--) {
@@ -322,7 +323,7 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
 
     const rentability = vehicles.map(v => {
       const vRentals = rentals.filter(r => r.vehicleId === v.id);
-      const caNet = vRentals.reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
+      const caNet = vRentals.reduce((s, r) => s + getEffectivePayout(r.ownerPayout, r.grossRevenue), 0);
       const caGross = vRentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
       const vCosts = costs.filter(c => c.vehicleId === v.id);
       const fixedCosts = vCosts.filter(c => c.type === 'fixed').reduce((s, c) => s + c.amount, 0);
@@ -449,7 +450,7 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
 
     const vehicleStats = vehicles.map(v => {
       const vRentals = rentals.filter(r => r.vehicleId === v.id && r.status !== 'cancelled');
-      const totalPayout = vRentals.reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
+      const totalPayout = vRentals.reduce((s, r) => s + getEffectivePayout(r.ownerPayout, r.grossRevenue), 0);
       const totalGross = vRentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
       const totalInsurance = vRentals.reduce((s, r) => s + (r.insuranceFee ?? 0), 0);
       const totalKm = vRentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
@@ -474,7 +475,7 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
       const key = new Date(r.startAt).toISOString().slice(0, 7);
       if (!monthlyData[key]) monthlyData[key] = { gross: 0, payout: 0, count: 0 };
       monthlyData[key].gross += r.grossRevenue ?? 0;
-      monthlyData[key].payout += r.ownerPayout ?? 0;
+      monthlyData[key].payout += getEffectivePayout(r.ownerPayout, r.grossRevenue);
       monthlyData[key].count++;
     });
 
@@ -482,7 +483,7 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
     rentals.filter(r => r.status !== 'cancelled').forEach(r => {
       const zone = r.vehicle?.parkingZone ?? 'Non définie';
       if (!zoneData[zone]) zoneData[zone] = { payout: 0, count: 0 };
-      zoneData[zone].payout += r.ownerPayout ?? 0;
+      zoneData[zone].payout += getEffectivePayout(r.ownerPayout, r.grossRevenue);
       zoneData[zone].count++;
     });
 

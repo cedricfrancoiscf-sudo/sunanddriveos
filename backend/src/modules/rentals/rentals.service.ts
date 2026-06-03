@@ -1,4 +1,5 @@
 import type { PrismaClient, RentalStatus, EvaluationStatus } from '../../generated/tenant';
+import { getEffectivePayout } from '../../utils/revenue';
 
 export type RentalFilters = {
   vehicleId?: string;
@@ -128,7 +129,7 @@ export async function getRentalStats(db: PrismaClient, from: Date, to: Date) {
   ]);
 
   const totalRevenue = rentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
-  const totalPayout = rentals.reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
+  const totalPayout = rentals.reduce((s, r) => s + getEffectivePayout(r.ownerPayout, r.grossRevenue), 0);
   const totalKm = rentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
 
   // Taux d'occupation = jours loués / (nb véhicules × nb jours période)

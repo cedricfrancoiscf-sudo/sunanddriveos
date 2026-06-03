@@ -273,7 +273,7 @@ async function processRental(
   const driverName = userCache.get(r.user_id)!;
 
   const status = inferStatus(r);
-  const grossRevenue = r.price / 100;
+  const grossRevenue = (r.price + (r.insurance_fee ?? 0)) / 100;
 
   // Vérifier le statut existant pour ne pas écraser un 'cancelled' manuel
   const existingRental = await db.rental.findUnique({
@@ -1334,15 +1334,16 @@ export async function recalculateHistoricalPayouts(db: PrismaClient, tenantSlug 
   console.log(`[Payouts] Démarrage recalcul — ${windows.length} mois`);
 
   // Remise à zéro des champs financiers pour éviter les doubles comptes
+  // grossRevenue est exclu : valeur réelle issue de r.price API Getaround, ne jamais écraser
   await db.rental.updateMany({
     data: {
-      ownerPayout: null, grossRevenue: null, basePrice: null,
+      ownerPayout: null, basePrice: null,
       insuranceFee: null, extraDistanceFee: null, driverMessFee: null,
       damageCompensation: null, lateReturnFee: null, gasRefillFee: null,
       deliveryFee: null, assistanceFee: null,
     },
   });
-  console.log('[Payouts] Champs financiers remis à zéro avant recalcul');
+  console.log('[Payouts] Champs financiers remis à zéro avant recalcul (grossRevenue préservé)');
 
   for (const account of accounts) {
     const apiKey = decrypt(account.apiKeyHash);

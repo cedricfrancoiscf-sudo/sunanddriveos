@@ -224,7 +224,7 @@ async function runMorningSummary(): Promise<void> {
         }
 
         for (const admin of admins) {
-          if (process.env.SMTP_USER) {
+          if (process.env.RESEND_API_KEY) {
             await sendEmail({ to: admin.email, subject: `☀️ Résumé matinal — ${company.name}`, html });
           } else {
             console.log(`[MorningSummary] ${company.slug} → ${admin.email} :\n${summary}`);

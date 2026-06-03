@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
+import reportRouter from './report.routes';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -247,13 +248,19 @@ router.get('/forecasts', async (req: Request, res: Response, next: NextFunction)
     const now = new Date();
     const thirtyDaysFromNow = new Date(Date.now() + 30 * 86_400_000);
 
-    const rentals = await db.rental.findMany({
-      where: {
-        status: { in: ['booked', 'active'] },
-        endAt: { gte: now, lte: thirtyDaysFromNow },
-      },
-      select: { ownerPayout: true, startAt: true, endAt: true },
-    });
+    const [rentals, vehicles] = await Promise.all([
+      db.rental.findMany({
+        where: {
+          status: { in: ['booked', 'active'] },
+          endAt: { gte: now, lte: thirtyDaysFromNow },
+        },
+        select: { vehicleId: true, ownerPayout: true, grossRevenue: true, startAt: true, endAt: true },
+      }),
+      db.vehicle.findMany({
+        where: { isActive: true },
+        select: { id: true, make: true, model: true, licensePlate: true },
+      }),
+    ]);
 
     const weeks: Record<string, { rentalCount: number; totalPayout: number }> = {};
     rentals.forEach(r => {
@@ -273,7 +280,26 @@ router.get('/forecasts', async (req: Request, res: Response, next: NextFunction)
 
     const totalForecast = forecasts.reduce((s, f) => s + f.totalPayout, 0);
 
-    res.json({ forecasts, totalForecast: Math.round(totalForecast * 100) / 100 });
+    // Breakdown par véhicule
+    const byVehicle = vehicles.map(v => {
+      const vRentals = rentals.filter(r => r.vehicleId === v.id);
+      const totalPayout = vRentals.reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
+      const totalGross = vRentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
+      return {
+        vehicleId: v.id,
+        licensePlate: v.licensePlate,
+        label: `${v.make} ${v.model} — ${v.licensePlate}`,
+        rentalCount: vRentals.length,
+        totalPayout: Math.round(totalPayout * 100) / 100,
+        totalGross: Math.round(totalGross * 100) / 100,
+      };
+    }).filter(v => v.rentalCount > 0);
+
+    const average = byVehicle.length > 0
+      ? Math.round((byVehicle.reduce((s, v) => s + v.totalPayout, 0) / byVehicle.length) * 100) / 100
+      : 0;
+
+    res.json({ forecasts, totalForecast: Math.round(totalForecast * 100) / 100, byVehicle, average });
   } catch (err) { next(err); }
 });
 
@@ -397,5 +423,79 @@ ${dataContext}`,
     res.json({ question, answer, timestamp: now.toISOString() });
   } catch (err) { next(err); }
 });
+
+// GET /api/v1/intelligence/pending-revenue — CA à encaisser + CA prévisionnel par mois
+router.get('/pending-revenue', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const nextThreeMonths = new Date(Date.now() + 90 * 86_400_000);
+
+    const [completedUnpaid, futureRentals] = await Promise.all([
+      // Locations terminées dont le paiement n'est pas encore reçu (ownerPayout null ou 0)
+      db.rental.findMany({
+        where: {
+          status: 'completed',
+          endAt: { lt: now },
+          OR: [{ ownerPayout: null }, { ownerPayout: 0 }],
+          grossRevenue: { gt: 0 },
+        },
+        select: { id: true, endAt: true, grossRevenue: true, ownerPayout: true, driverName: true, vehicleId: true },
+        orderBy: { endAt: 'desc' },
+      }),
+      // Locations futures confirmées
+      db.rental.findMany({
+        where: {
+          status: { in: ['booked', 'active'] },
+          startAt: { gte: now, lte: nextThreeMonths },
+        },
+        select: { id: true, startAt: true, endAt: true, grossRevenue: true, ownerPayout: true, driverName: true, vehicleId: true },
+        orderBy: { startAt: 'asc' },
+      }),
+    ]);
+
+    // CA à encaisser (locations terminées sans paiement)
+    const pendingRevenue = completedUnpaid.reduce((s, r) => {
+      // Estimation payout = 70% du grossRevenue si ownerPayout non renseigné
+      const estimated = (r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : (r.grossRevenue ?? 0) * 0.7;
+      return s + estimated;
+    }, 0);
+    const oldestPendingDate = completedUnpaid.length > 0 ? completedUnpaid[completedUnpaid.length - 1].endAt : null;
+
+    // CA prévisionnel groupé par mois
+    const forecastByMonth: Record<string, { month: string; rentalCount: number; amount: number; estimated: boolean }> = {};
+    futureRentals.forEach(r => {
+      const month = new Date(r.startAt).toISOString().slice(0, 7);
+      if (!forecastByMonth[month]) forecastByMonth[month] = { month, rentalCount: 0, amount: 0, estimated: false };
+      const payout = (r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : (r.grossRevenue ?? 0) * 0.7;
+      forecastByMonth[month].rentalCount++;
+      forecastByMonth[month].amount += payout;
+      if ((r.ownerPayout ?? 0) === 0) forecastByMonth[month].estimated = true;
+    });
+
+    const forecastMonths = Object.values(forecastByMonth)
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map(m => ({ ...m, amount: Math.round(m.amount * 100) / 100 }));
+
+    const forecastTotal = forecastMonths.reduce((s, m) => s + m.amount, 0);
+
+    res.json({
+      pendingRevenue: {
+        amount: Math.round(pendingRevenue * 100) / 100,
+        count: completedUnpaid.length,
+        oldestDate: oldestPendingDate,
+        note: 'Getaround paie le 4 du mois suivant',
+      },
+      forecastRevenue: {
+        byMonth: forecastMonths,
+        total: Math.round(forecastTotal * 100) / 100,
+        count: futureRentals.length,
+      },
+    });
+  } catch (err) { next(err); }
+});
+
+// Rapport CEO — monté ici pour éviter le double plan-gating depuis app.ts
+router.use('/report', reportRouter);
 
 export default router;

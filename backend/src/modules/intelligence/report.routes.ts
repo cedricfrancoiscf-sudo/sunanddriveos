@@ -147,91 +147,94 @@ router.get('/',
 
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+    // Rapport de fallback basé sur les données internes (utilisé en cas de timeout IA)
+    function buildFallbackReport(): Record<string, unknown> {
+      const topVehicle = vehicleStats.sort((a, b) => b.caNet - a.caNet)[0];
+      return {
+        resume_executif: `La flotte compte ${vehicles.length} véhicule(s) actif(s) avec un CA net de ${internalContext.caNet.toLocaleString('fr-FR')} € sur 12 mois (${internalContext.nbLocations} locations). Le taux d'occupation moyen est de ${internalContext.tauxOccupation}%. ${topVehicle ? `Meilleure performance : ${topVehicle.vehicule} avec ${topVehicle.caNet.toLocaleString('fr-FR')} € net.` : ''}`,
+        swot: {
+          forces: [`CA net 12 mois : ${internalContext.caNet.toLocaleString('fr-FR')} €`, `${internalContext.nbLocations} locations réalisées`, `Taux d'occupation : ${internalContext.tauxOccupation}%`],
+          faiblesses: internalContext.nbIncidents > 0 ? [`${internalContext.nbIncidents} incident(s) sur la période`] : ['Données insuffisantes pour analyse complète'],
+          opportunites: ['Optimisation des zones de livraison', 'Développement parc véhicules'],
+          menaces: ['Concurrence autopartage', 'Évolution réglementation'],
+        },
+        pestel: { politique: 'Données veille externe non disponibles — relancez pour une analyse complète.', economique: '', sociologique: '', technologique: '', environnemental: '', legal: '' },
+        veille_zones: zones.map(z => ({ zone: z, trafic_voyageurs: 'À compléter', perspectives: 'À analyser', opportunites: 'À évaluer', risques: 'À surveiller' })),
+        veille_sectorielle: { autopartage: 'Données non disponibles', ademe: 'Données non disponibles', fiscalite: 'Données non disponibles', marche: 'Données non disponibles' },
+        recommandations_ceo: [
+          { priorite: 'haute', action: 'Analyser la rentabilité par véhicule', detail: `Focus sur les véhicules avec taux d'occupation < ${internalContext.tauxOccupation}%`, echeance: 'Court terme (1 mois)' },
+          { priorite: 'moyenne', action: 'Optimiser les créneaux de disponibilité', detail: 'Identifier les périodes creuses et proposer des tarifs adaptés', echeance: 'Moyen terme (3 mois)' },
+        ],
+        analyse_accessoires: { demandes_par_zone: [], recommandations: ['Collecter plus de données sur les demandes de sièges auto'] },
+        _fallback: true,
+      };
+    }
+
     const AI_TIMEOUT_MS = 90_000;
     const aiReportPromise = (async (): Promise<Record<string, unknown>> => {
       const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
-      system: `Tu es un analyste stratégique expert en mobilité et location de véhicules entre particuliers.
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8000,
+        system: `Tu es un analyste stratégique expert en mobilité et location de véhicules entre particuliers.
 Tu génères des rapports CEO professionnels, proactifs et actionnables en français.
-Tu combines données internes réelles avec une veille externe rigoureuse et sourcée.
+Tu bases ton analyse sur les données internes réelles fournies.
 IMPORTANT : retourne UNIQUEMENT du JSON valide, sans markdown, sans backticks.`,
-      messages: [{
-        role: 'user',
-        content: `Génère un rapport CEO complet pour ${settings?.senderName ?? 'Sun and Drive'}, service de location de voitures Getaround.
+        messages: [{
+          role: 'user',
+          content: `Génère un rapport CEO complet pour ${settings?.senderName ?? 'Sun and Drive'}, service de location de voitures Getaround.
 
 DONNÉES INTERNES :
 ${JSON.stringify(internalContext, null, 2)}
 
 ZONES DE LIVRAISON : ${zones.join(', ')}
 
-Recherche sur le web :
-1. Trafic voyageurs et perspectives 2025-2026 pour ces zones : ${zones.join(', ')}
-2. Grands projets ferroviaires, travaux gares à proximité
-3. Actualités syndicat autopartage France 2025-2026
-4. Décisions ADEME mobilité et autopartage 2025-2026
-5. Fiscalité location voitures entre particuliers France 2026
-6. Tendances marché location courte durée France 2026
-
-Retourne exactement ce JSON :
+Retourne exactement ce JSON (sans markdown, sans backticks) :
 {
   "resume_executif": "3-4 phrases résumant situation et priorités avec chiffres réels",
   "swot": {
     "forces": ["point avec chiffre réel", "point 2", "point 3"],
     "faiblesses": ["point 1", "point 2", "point 3"],
-    "opportunites": ["point avec source externe", "point 2", "point 3", "point 4"],
+    "opportunites": ["point 1", "point 2", "point 3", "point 4"],
     "menaces": ["point 1", "point 2", "point 3"]
   },
   "pestel": {
-    "politique": "2-3 phrases avec données actuelles sourcées",
+    "politique": "2-3 phrases",
     "economique": "2-3 phrases avec chiffres marché",
     "sociologique": "2-3 phrases tendances mobilité",
     "technologique": "2-3 phrases innovations secteur",
-    "environnemental": "2-3 phrases réglementation et enjeux",
-    "legal": "2-3 phrases fiscalité 2026 précise"
+    "environnemental": "2-3 phrases réglementation",
+    "legal": "2-3 phrases fiscalité 2026"
   },
   "veille_zones": [
-    {
-      "zone": "nom exact",
-      "trafic_voyageurs": "données chiffrées actuelles",
-      "perspectives": "projets et évolutions prévues avec dates",
-      "opportunites": "impact concret pour la flotte",
-      "risques": "points de vigilance opérationnels"
-    }
+    { "zone": "nom exact", "trafic_voyageurs": "données", "perspectives": "projets", "opportunites": "impact", "risques": "vigilance" }
   ],
   "veille_sectorielle": {
-    "autopartage": "actualités syndicat et réglementation 2025-2026",
-    "ademe": "dernières décisions et aides disponibles",
-    "fiscalite": "situation fiscale précise 2026 et évolutions attendues",
-    "marche": "tendances concurrence et opportunités"
+    "autopartage": "actualités 2025-2026",
+    "ademe": "aides disponibles",
+    "fiscalite": "situation 2026",
+    "marche": "tendances"
   },
   "recommandations_ceo": [
-    {
-      "priorite": "haute",
-      "action": "titre court actionnable",
-      "detail": "explication avec bénéfice chiffré si possible",
-      "echeance": "court terme (1 mois)"
-    }
+    { "priorite": "haute", "action": "titre court", "detail": "explication", "echeance": "court terme (1 mois)" }
   ],
   "analyse_accessoires": {
-    "demandes_par_zone": [
-      { "zone": "nom", "demandes_siege": 0, "stock_estime": "suffisant" }
-    ],
-    "recommandations": ["recommandation concrète 1", "recommandation 2"]
+    "demandes_par_zone": [{ "zone": "nom", "demandes_siege": 0, "stock_estime": "suffisant" }],
+    "recommandations": ["recommandation 1", "recommandation 2"]
   }
 }`,
-      }],
+        }],
       });
       const textContent = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map(b => b.text)
         .join('');
+      // Extraction robuste du JSON
+      const jsonMatch = textContent.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return buildFallbackReport();
       try {
-        return JSON.parse(textContent.replace(/```json|```/g, '').trim()) as Record<string, unknown>;
+        return JSON.parse(jsonMatch[0]) as Record<string, unknown>;
       } catch {
-        return { resume_executif: textContent, error: 'Parsing JSON failed' };
+        return { resume_executif: textContent.slice(0, 500), _parseError: true, ...buildFallbackReport() };
       }
     })();
 
@@ -244,12 +247,7 @@ Retourne exactement ce JSON :
       reportData = await Promise.race([aiReportPromise, timeoutPromise]);
     } catch (err) {
       if (err instanceof Error && err.message === 'AI_TIMEOUT') {
-        reportData = {
-          resume_executif: 'Génération IA en cours — données internes disponibles. Régénérez dans quelques instants.',
-          swot: null, pestel: null, veille_zones: [], veille_sectorielle: null,
-          recommandations_ceo: [], analyse_accessoires: null,
-          _timeout: true,
-        };
+        reportData = buildFallbackReport();
       } else throw err;
     }
 

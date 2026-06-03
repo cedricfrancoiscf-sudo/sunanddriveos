@@ -1508,5 +1508,6 @@ export async function updateAccountKey(db: PrismaClient, id: string, apiKey: str
 }
 
 export async function deleteAccount(db: PrismaClient, id: string) {
+  await db.vehicle.updateMany({ where: { getaroundAccountId: id }, data: { isActive: false } });
   return db.getaroundAccount.update({ where: { id }, data: { isActive: false } });
 }

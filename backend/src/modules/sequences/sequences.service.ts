@@ -183,9 +183,12 @@ export async function executePendingSequences(
         try {
           await sendToGetaround(rentalGetaroundId, content);
           messageStatus = 'sent';
+          console.log(`[AutoMessage] ✅ Envoi rental #${rentalGetaroundId} — séquence "${exec.sequence.name}"`);
         } catch (sendErr: unknown) {
-          console.error('[Séquences] Échec envoi Getaround rental', rentalGetaroundId, sendErr);
+          console.error(`[AutoMessage] ❌ Échec envoi rental #${rentalGetaroundId} — séquence "${exec.sequence.name}":`, sendErr instanceof Error ? sendErr.message : sendErr);
         }
+      } else if (!rentalGetaroundId) {
+        console.warn(`[AutoMessage] ⚠️ Rental ${exec.rentalId} sans getaroundId — message stocké en base uniquement`);
       }
 
       const message = await db.message.create({

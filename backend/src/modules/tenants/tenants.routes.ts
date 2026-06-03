@@ -241,6 +241,31 @@ router.put('/companies/:id', async (req: Request, res: Response, next: NextFunct
   } catch (err: unknown) { next(err); }
 });
 
+// POST /api/v1/superadmin/companies/:id/set-plan — forcer un plan sans Stripe
+router.post('/companies/:id/set-plan', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      plan: z.enum(PLANS),
+      trialDays: z.number().int().min(0).max(3650).optional(), // 0 = no trial, absent = keep current
+    }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+
+    const master = getMasterClient();
+    const data: Record<string, unknown> = { plan: body.data.plan };
+    if (body.data.trialDays !== undefined) {
+      data.trialEndsAt = body.data.trialDays > 0
+        ? new Date(Date.now() + body.data.trialDays * 86_400_000)
+        : null;
+    }
+    const company = await master.company.update({
+      where: { id: (req.params.id as string) },
+      data,
+      select: { id: true, name: true, slug: true, plan: true, trialEndsAt: true, stripeSubscriptionId: true },
+    });
+    res.json({ company });
+  } catch (err: unknown) { next(err); }
+});
+
 // ─── Analytics par tenant ────────────────────────────────────────────────────
 
 // GET /api/v1/superadmin/analytics

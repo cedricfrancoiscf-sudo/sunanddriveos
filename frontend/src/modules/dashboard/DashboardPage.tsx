@@ -106,6 +106,17 @@ export default function DashboardPage(): React.JSX.Element {
     enabled: user?.role !== 'carkeeper',
   });
 
+  type PendingRevenueData = {
+    pendingRevenue: { amount: number; count: number; oldestDate: string | null; note: string };
+    forecastRevenue: { byMonth: { month: string; rentalCount: number; amount: number; estimated: boolean }[]; total: number; count: number };
+  };
+  const { data: pendingRevenueData } = useQuery<PendingRevenueData>({
+    queryKey: ['pending-revenue'],
+    queryFn: () => api.get<PendingRevenueData>('/intelligence/pending-revenue').then(r => r.data),
+    staleTime: 5 * 60_000,
+    enabled: user?.role !== 'carkeeper',
+  });
+
   const { data: syncStatus } = useQuery<SyncStateData>({
     queryKey: ['sync-status'],
     queryFn: () => api.get<{ state: SyncStateData }>('/sync/status').then(r => r.data.state),
@@ -270,6 +281,36 @@ export default function DashboardPage(): React.JSX.Element {
               sub="ce mois"
             />
           </div>
+
+          {/* Cartes financières prévisionnelles */}
+          {pendingRevenueData && (
+            <div className="mt-3 grid gap-3 grid-cols-1 sm:grid-cols-2">
+              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">💰</span>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-yellow-700">À encaisser</p>
+                </div>
+                <p className="text-2xl font-bold text-yellow-900">
+                  {pendingRevenueData.pendingRevenue.amount.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                </p>
+                <p className="text-xs text-yellow-600 mt-1">
+                  {pendingRevenueData.pendingRevenue.count} location{pendingRevenueData.pendingRevenue.count !== 1 ? 's' : ''} terminée{pendingRevenueData.pendingRevenue.count !== 1 ? 's' : ''} — {pendingRevenueData.pendingRevenue.note}
+                </p>
+              </div>
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">📅</span>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Prévisionnel</p>
+                </div>
+                <p className="text-2xl font-bold text-blue-900">
+                  {pendingRevenueData.forecastRevenue.total.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  Basé sur {pendingRevenueData.forecastRevenue.count} réservation{pendingRevenueData.forecastRevenue.count !== 1 ? 's' : ''} à venir (90 jours)
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

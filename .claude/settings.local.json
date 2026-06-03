@@ -58,7 +58,18 @@
       "Bash(npx prisma *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\frontend\\\\src\\\\modules\" -Recurse -Filter \"*.tsx\")",
       "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $env:DATABASE_TENANT_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\"; npx prisma migrate dev --schema src/prisma/tenant/schema.prisma --name add_delivery_point_fields --create-only 2>&1 | Select-Object -Last 20)",
-      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $env:DATABASE_TENANT_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\"; npx prisma generate --schema src/prisma/tenant/schema.prisma 2>&1 | Select-Object -Last 5)"
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $env:DATABASE_TENANT_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\"; npx prisma generate --schema src/prisma/tenant/schema.prisma 2>&1 | Select-Object -Last 5)",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; \\(Get-Content package.json | ConvertFrom-Json\\).dependencies | Select-Object -Property \"@anthropic-ai/sdk\")",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\frontend; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 20)",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; \\(Get-Content package.json | ConvertFrom-Json\\).dependencies | Select-Object -Property \"stripe\")",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 20)",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; \\(Get-Content package.json | ConvertFrom-Json\\).dependencies | Select-Object -Property \"resend\",\"nodemailer\")",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 15)",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\frontend; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 15)",
+      "PowerShell(cd C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend; $env:DATABASE_TENANT_URL=\"postgresql://dummy:dummy@localhost:5432/dummy\"; npx prisma generate --schema src/prisma/tenant/schema.prisma 2>&1 | Select-Object -Last 4)",
+      "Bash(find frontend/src/modules/settings -name \"*.tsx\")",
+      "Bash(dir frontend\\\\src\\\\modules\\\\settings /b)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\" -Recurse -Filter \"Dockerfile*\")"
     ]
   }
 }

@@ -76,6 +76,8 @@ async function init(): Promise<void> {
   try {
     const SLUG = 'sun-and-drive';
     let company = await master.company.findUnique({ where: { slug: SLUG } });
+    // Date d'expiration trial lointaine (10 ans) pour que le compte soit toujours actif
+    const farFuture = new Date(Date.now() + 10 * 365 * 86_400_000);
     if (!company) {
       const dbPassword = process.env.DB_PASSWORD ?? 'sunanddriveos';
       company = await master.company.create({
@@ -84,14 +86,25 @@ async function init(): Promise<void> {
           slug: SLUG,
           primaryColor: '#01696e',
           secondaryColor: '#04292a',
-          plan: 'pro',
+          plan: 'enterprise',
+          trialEndsAt: farFuture,
           tenantDbUrl: `postgresql://sunanddriveos:${dbPassword}@db-master:5432/sunanddriveos_tenant_sun_and_drive`,
           isActive: true,
         },
       });
-      console.log('[Init] Société créée : Sun and Drive');
+      console.log('[Init] Société créée : Sun and Drive (enterprise, trial 10 ans)');
     } else {
-      console.log('[Init] Société OK : Sun and Drive');
+      // S'assurer que le compte existant n'est pas bloqué (trial expiré ou absent)
+      const needsUpdate = !company.trialEndsAt || company.trialEndsAt < new Date();
+      if (needsUpdate) {
+        await master.company.update({
+          where: { id: company.id },
+          data: { plan: 'enterprise', trialEndsAt: farFuture },
+        });
+        console.log('[Init] Société mise à jour : Sun and Drive → enterprise, trial prolongé');
+      } else {
+        console.log('[Init] Société OK : Sun and Drive');
+      }
     }
     companies = await master.company.findMany({ where: { isActive: true }, select: { slug: true, tenantDbUrl: true } });
   } catch (err: unknown) {

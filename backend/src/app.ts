@@ -72,7 +72,6 @@ import feedbackRoutes from './modules/feedback/feedback.routes';
 import scanRoutes from './modules/ai/scan.routes';
 import billingRoutes from './modules/billing/billing.routes';
 import intelligenceRoutes from './modules/intelligence/intelligence.routes';
-import reportRoutes from './modules/intelligence/report.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -174,7 +173,6 @@ export function createApp(): Express {
   app.use('/api/v1/scan', requirePlan('pro'), scanRoutes);
   app.use('/api/v1/sync', syncStatusRoutes);
   app.use('/api/v1/intelligence', intelligenceRoutes);
-  app.use('/api/v1/intelligence/report', requirePlan('pro'), reportRoutes);
   // Route publique iCal — pas de JWT, compatible abonnement calendriers
   app.use('/ical', icalRoutes);
 

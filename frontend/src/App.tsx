@@ -141,7 +141,7 @@ export default function App(): React.JSX.Element {
               <Route path="/vehicle-checks/new" element={<VehicleCheckFormPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/planning" element={<PlanningPage />} />
-              <Route path="/users" element={<UsersPage />} />
+              <Route path="/users" element={<Navigate to="/settings#users" replace />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/accessories" element={<AccessoriesPage />} />
               <Route path="/export" element={<ExportPage />} />

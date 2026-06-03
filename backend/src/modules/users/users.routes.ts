@@ -142,7 +142,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
   }
 });
 
-const MULTI_ROLES = ['admin', 'carkeeper', 'viewer'] as const;
+const MULTI_ROLES = ['admin', 'exploitation', 'comptable', 'carkeeper', 'third_party_owner'] as const;
 
 router.put('/:id/roles', async (req: Request, res: Response, next: NextFunction) => {
   try {

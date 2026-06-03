@@ -56,10 +56,19 @@ function AccessoriesTab(): React.JSX.Element {
   const [assignVehicleId, setAssignVehicleId] = useState('');
   const [reserveRentalId, setReserveRentalId] = useState<Record<string, string>>({});
 
-  const { data: accessories = [], isLoading } = useQuery({
+  const CAR_SEAT_PATTERN = /si[eè]ge|child.?seat|baby.?seat|car.?seat/i;
+  function isCarSeatAccessory(name: string): boolean { return CAR_SEAT_PATTERN.test(name); }
+
+  const { data: rawAccessories = [], isLoading } = useQuery({
     queryKey: ['accessories'],
     queryFn: () => api.get<{ accessories: Accessory[] }>('/accessories').then(r => r.data.accessories),
     staleTime: 2 * 60_000,
+  });
+  const accessories = [...rawAccessories].sort((a, b) => {
+    const aS = isCarSeatAccessory(a.name) ? 0 : 1;
+    const bS = isCarSeatAccessory(b.name) ? 0 : 1;
+    if (aS !== bS) return aS - bS;
+    return a.name.localeCompare(b.name, 'fr');
   });
 
   const { data: vehiclesData = [] } = useQuery({

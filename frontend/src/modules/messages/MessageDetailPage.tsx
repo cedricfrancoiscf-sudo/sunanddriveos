@@ -111,14 +111,16 @@ export default function MessageDetailPage(): React.JSX.Element {
     if (!message) return;
     setIsGenerating(true);
     try {
-      const lastInbound = message.rental.messages
-        ?.slice()
+      const lastInbound = (message.rental.messages ?? [])
+        .slice()
         .reverse()
         .find((m) => m.direction === 'inbound');
       if (!lastInbound) return;
 
       const { suggestion } = await aiApi.suggest(message.rentalId, lastInbound.content);
       if (suggestion) setReplyContent(suggestion);
+    } catch (e) {
+      console.error('[Suggérer IA] Erreur:', e);
     } finally {
       setIsGenerating(false);
     }

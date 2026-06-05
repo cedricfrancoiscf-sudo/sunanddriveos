@@ -91,7 +91,11 @@ function UsersSection(): React.JSX.Element {
   });
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/users/${id}`),
-    onSuccess: () => { setDeleteError(null); void qc.invalidateQueries({ queryKey: ['users'] }); },
+    onSuccess: (_, deletedId) => {
+      setDeleteError(null);
+      qc.setQueryData<UserItem[]>(['users'], old => (old ?? []).filter(u => u.id !== deletedId));
+      void qc.invalidateQueries({ queryKey: ['users'] });
+    },
     onError: (err: unknown) => { setDeleteError((err as { response?: { data?: { error?: string } } }).response?.data?.error ?? 'Erreur suppression'); },
   });
   function handleSaveRoles(userId: string, roles: string[]): void {

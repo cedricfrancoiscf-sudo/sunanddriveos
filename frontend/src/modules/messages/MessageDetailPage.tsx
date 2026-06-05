@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, differenceInDays } from 'date-fns';
@@ -70,14 +70,26 @@ export default function MessageDetailPage(): React.JSX.Element {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const { data: message, isLoading } = useQuery({
+
     queryKey: ['message', id],
     queryFn: () => messagesApi.get(id!),
     enabled: Boolean(id),
     staleTime: 30_000,
   });
 
+  // Brouillon IA : outbound pending_approval avec aiSuggestion dans le thread
+  const aiDraft = (message?.rental.messages ?? []).find(
+    m => m.direction === 'outbound' && m.status === 'pending_approval' && m.aiSuggestion != null,
+  );
+
+  useEffect(() => {
+    if (aiDraft && !replyContent) setReplyContent(aiDraft.content);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiDraft?.id]);
+
   const approveMutation = useMutation({
-    mutationFn: (content: string) => messagesApi.approve(id!, content || undefined),
+    mutationFn: ({ msgId, content }: { msgId: string; content?: string }) =>
+      messagesApi.approve(msgId, content || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['message', id] });
       void qc.invalidateQueries({ queryKey: ['messages'] });
@@ -249,7 +261,7 @@ export default function MessageDetailPage(): React.JSX.Element {
                   <>
                     <button
                       type="button"
-                      onClick={() => approveMutation.mutate(replyContent || message.content)}
+                      onClick={() => approveMutation.mutate({ msgId: id!, content: replyContent || message.content })}
                       disabled={approveMutation.isPending}
                       className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
                       style={{ backgroundColor: '#01696e' }}
@@ -276,6 +288,12 @@ export default function MessageDetailPage(): React.JSX.Element {
           {/* Réponse libre si le message est entrant et envoyé/aucun brouillon */}
           {message.direction === 'inbound' && message.status === 'sent' && (
             <div className="space-y-2">
+              {aiDraft && (
+                <div className="flex items-center gap-1.5 text-xs font-medium text-[#01696e]">
+                  <span>✨</span>
+                  <span>Brouillon IA — modifiable avant envoi</span>
+                </div>
+              )}
               <textarea
                 value={replyContent}
                 onChange={(e) => setReplyContent(e.target.value)}
@@ -284,33 +302,40 @@ export default function MessageDetailPage(): React.JSX.Element {
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
               />
               <div className="flex gap-2">
-                {aiSuggestDisabled ? (
-                  <p className="py-2 text-xs text-gray-400">Suggestion IA non disponible (location terminée)</p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void handleGenerate()}
-                    disabled={isGenerating}
-                    className="flex items-center gap-1.5 rounded-xl border border-[#01696e]/30 px-3 py-2 text-sm font-medium text-[#01696e] hover:bg-[#01696e]/5 disabled:opacity-60"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    {isGenerating ? 'Génération...' : 'Suggérer avec IA'}
-                  </button>
+                {!aiDraft && (
+                  aiSuggestDisabled ? (
+                    <p className="py-2 text-xs text-gray-400">Suggestion IA non disponible (location terminée)</p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerate()}
+                      disabled={isGenerating}
+                      className="flex items-center gap-1.5 rounded-xl border border-[#01696e]/30 px-3 py-2 text-sm font-medium text-[#01696e] hover:bg-[#01696e]/5 disabled:opacity-60"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      {isGenerating ? 'Génération...' : 'Suggérer avec IA'}
+                    </button>
+                  )
                 )}
                 {replyContent && (
                   <button
                     type="button"
                     onClick={() => {
-                      void messagesApi.create(message.rentalId, replyContent);
+                      if (aiDraft) {
+                        approveMutation.mutate({ msgId: aiDraft.id, content: replyContent });
+                      } else {
+                        void messagesApi.create(message.rentalId, replyContent);
+                        void qc.invalidateQueries({ queryKey: ['message', id] });
+                      }
                       setReplyContent('');
-                      void qc.invalidateQueries({ queryKey: ['message', id] });
                     }}
-                    className="flex-1 rounded-xl py-2 text-sm font-semibold text-white"
+                    disabled={approveMutation.isPending}
+                    className="flex-1 rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-60"
                     style={{ backgroundColor: '#01696e' }}
                   >
-                    Créer le brouillon
+                    {aiDraft ? 'Envoyer' : 'Créer le brouillon'}
                   </button>
                 )}
               </div>

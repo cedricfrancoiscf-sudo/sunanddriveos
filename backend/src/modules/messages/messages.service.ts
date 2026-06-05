@@ -219,5 +219,40 @@ export async function getInboxSummary(db: PrismaClient) {
     createdAt: m.createdAt.toISOString(),
   }));
 
-  return { pendingCount, unansweredRentals, unansweredMessages: unansweredDetails };
+  // Brouillons IA en attente de validation (outbound pending_approval avec aiSuggestion)
+  const pendingApprovalMsgs = await db.message.findMany({
+    where: {
+      direction: 'outbound',
+      status: 'pending_approval',
+      aiSuggestion: { not: null },
+      rental: { status: { in: ['booked', 'active'] } },
+    },
+    select: {
+      id: true,
+      rental: {
+        select: {
+          id: true, driverName: true,
+          vehicle: { select: { make: true, model: true, licensePlate: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+    distinct: ['rentalId'],
+  });
+
+  const pendingApprovalDetails = pendingApprovalMsgs.map(m => ({
+    messageId: m.id,
+    rentalId: m.rental?.id ?? '',
+    driverName: m.rental?.driverName ?? '',
+    vehicleLabel: m.rental
+      ? `${m.rental.vehicle.make} ${m.rental.vehicle.model} (${m.rental.vehicle.licensePlate})`
+      : '',
+  }));
+
+  return {
+    pendingCount, unansweredRentals,
+    unansweredMessages: unansweredDetails,
+    pendingApprovalMessages: pendingApprovalDetails,
+  };
 }

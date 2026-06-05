@@ -223,6 +223,7 @@ cron.schedule('0 * * * *', () => void runRecentWindowSyncForAllTenants());
 async function runProactiveMessaging(): Promise<void> {
   if (isProactiveMessagingRunning) { console.log('[ProactiveMsg] Déjà en cours, skip'); return; }
   isProactiveMessagingRunning = true;
+  console.log('[ProactiveMsg] Démarrage — recherche messages inbound...');
   try {
     const master = getMasterClient();
     const companies = await master.company.findMany({
@@ -275,7 +276,10 @@ async function runProactiveMessaging(): Promise<void> {
           const accountId = msg.rental.vehicle.getaroundAccountId;
           if (!accountId) continue;
           const ga = gaClients.get(accountId);
-          if (!ga) continue;
+          if (!ga) {
+            console.warn('[Messaging] Pas de client Getaround pour account', accountId);
+            continue;
+          }
           try {
             const r = msg.rental;
             const rentalData: RentalForMessaging = {
@@ -289,6 +293,8 @@ async function runProactiveMessaging(): Promise<void> {
         }
         if (processed > 0) {
           console.log(`[ProactiveMsg] ${company.slug} : ${processed} message(s) traité(s)`);
+        } else {
+          console.log(`[ProactiveMsg] ${company.slug} : 0 message à traiter`);
         }
       } catch (e) { console.error(`[ProactiveMsg] Erreur tenant ${company.slug}:`, e); }
     }

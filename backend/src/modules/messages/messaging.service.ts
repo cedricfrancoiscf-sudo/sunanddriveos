@@ -38,6 +38,7 @@ export async function analyzeAndProcessMessage(
   const tone = settings.aiTone === 'tutoiement' ? 'tutoiement' : 'vouvoiement';
   const assistantName = settings.aiName ?? settings.senderName ?? 'Sun and Drive';
 
+  // 1. Analyse Claude
   let analysis: ProactiveAnalysis;
   try {
     const resp = await claude.messages.create({
@@ -58,64 +59,115 @@ Locataire : ${rental.driverName}`,
     });
     const text = resp.content[0]?.type === 'text' ? resp.content[0].text : '{}';
     analysis = JSON.parse(text) as ProactiveAnalysis;
-  } catch {
+  } catch (error) {
+    console.error('[Messaging] Erreur Claude API:', error);
     return;
   }
 
+  // 2. Remerciement → toujours ignorer
+  if (analysis.type === 'remerciement') {
+    console.log(`[Messaging] Remerciement ignoré rental ${rental.id}`);
+    return;
+  }
+
+  // 3. Déterminer le mode selon le type
+  let mode: string;
+  if (analysis.type === 'car_seat') {
+    mode = settings.aiModeCarSeat ?? 'manual';
+  } else if (analysis.type === 'incident') {
+    mode = settings.aiModeIncident ?? 'approval';
+  } else {
+    mode = settings.aiModeGeneral ?? 'manual';
+  }
+
+  // 4. Adapter la réponse selon le type (siège auto + stock)
+  let suggestedReply = analysis.suggestedReply;
   if (analysis.type === 'car_seat') {
     const stockCount = await db.carSeat.count({ where: { isActive: true } });
     const existing = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
     if (!existing) {
-      await db.carSeatRequest.create({
-        data: { vehicleId: rental.vehicleId, rentalId: rental.id },
+      await db.carSeatRequest.create({ data: { vehicleId: rental.vehicleId, rentalId: rental.id } });
+    }
+    if (stockCount === 0) {
+      suggestedReply = `Bonjour ${rental.driverName}, je suis désolé(e), nous n'avons pas de siège auto disponible pour votre location. ${assistantName}`;
+    }
+  }
+
+  const admins = await db.user.findMany({
+    where: { role: 'admin', isActive: true },
+    select: { id: true },
+  });
+
+  // 5. Agir selon le mode
+  if (mode === 'auto') {
+    try {
+      if (rental.getaroundId) {
+        await ga.sendMessage(parseInt(rental.getaroundId, 10), suggestedReply);
+        await db.message.create({
+          data: {
+            rentalId: rental.id,
+            direction: 'outbound',
+            content: suggestedReply,
+            sentAt: new Date(),
+            status: 'sent',
+            aiSuggestion: suggestedReply,
+          },
+        });
+        console.log(`[Messaging] Auto-envoi message rental ${rental.id}`);
+      }
+    } catch (e) { console.error('[Messaging] Erreur envoi auto:', e); }
+    return;
+  }
+
+  if (mode === 'approval') {
+    await db.message.create({
+      data: {
+        rentalId: rental.id,
+        direction: 'outbound',
+        content: suggestedReply,
+        status: 'pending_approval',
+        aiSuggestion: suggestedReply,
+      },
+    });
+    if (admins.length > 0) {
+      await db.notification.createMany({
+        data: admins.map(a => ({
+          userId: a.id,
+          type: 'message_pending_approval',
+          title: `💬 Brouillon à valider — ${rental.driverName}`,
+          body: message.content.slice(0, 80),
+          relatedEntityType: 'rental',
+          relatedEntityId: rental.id,
+        })),
+        skipDuplicates: true,
       });
     }
-    const reply = stockCount > 0
-      ? analysis.suggestedReply
-      : `Bonjour ${rental.driverName}, je suis désolé(e), nous n'avons pas de siège auto disponible pour votre location. ${assistantName}`;
-    await sendOrDraftMessage(reply, settings.aiModeCarSeat ?? 'manual', rental, db, ga);
+    console.log(`[Messaging] Brouillon créé rental ${rental.id}`);
     return;
   }
 
-  if (analysis.type === 'remise' || analysis.type === 'general') {
-    await sendOrDraftMessage(analysis.suggestedReply, settings.aiModeGeneral ?? 'manual', rental, db, ga);
-    return;
-  }
-
-  if (analysis.type === 'incident') {
-    await createDraftMessage(analysis.suggestedReply, rental.id, db);
-    return;
-  }
-  // remerciement → rien
-}
-
-async function sendOrDraftMessage(
-  content: string,
-  mode: string,
-  rental: { id: string; getaroundId: string | null },
-  db: PrismaClient,
-  ga: GetaroundClient,
-): Promise<void> {
-  if (mode === 'auto' && rental.getaroundId) {
-    try {
-      await ga.sendMessage(parseInt(rental.getaroundId, 10), content);
-      await db.message.create({
-        data: { rentalId: rental.id, direction: 'outbound', content, sentAt: new Date(), status: 'sent' },
-      });
-    } catch (e) { console.error('[Messaging] Erreur envoi auto:', e); }
-  } else if (mode === 'approval') {
-    await createDraftMessage(content, rental.id, db);
-  }
-}
-
-async function createDraftMessage(content: string, rentalId: string, db: PrismaClient): Promise<void> {
-  await db.message.create({
-    data: {
-      rentalId,
+  // mode === 'manual'
+  console.log(`[Messaging] Mode manuel — pas de brouillon rental ${rental.id}`);
+  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+  const hasRecentReply = await db.message.count({
+    where: {
+      rentalId: rental.id,
       direction: 'outbound',
-      content,
-      status: 'pending_approval',
-      aiSuggestion: content,
+      status: { in: ['sent', 'approved'] },
+      createdAt: { gte: twoHoursAgo },
     },
   });
+  if (hasRecentReply === 0 && admins.length > 0) {
+    await db.notification.createMany({
+      data: admins.map(a => ({
+        userId: a.id,
+        type: 'message_unanswered',
+        title: `💬 Message sans réponse — ${rental.driverName}`,
+        body: message.content.slice(0, 80),
+        relatedEntityType: 'rental',
+        relatedEntityId: rental.id,
+      })),
+      skipDuplicates: true,
+    });
+  }
 }

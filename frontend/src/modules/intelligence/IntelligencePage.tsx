@@ -262,7 +262,7 @@ export default function IntelligencePage(): React.JSX.Element {
           <div className="p-5">
             {annual.monthlyData.length > 0 ? (
               <ResponsiveContainer width="100%" height={340}>
-                <ComposedChart data={annual.monthlyData} margin={{ top: 24, right: 50, left: 0, bottom: 0 }}>
+                <ComposedChart data={annual.monthlyData} margin={{ top: 24, right: 50, left: 0, bottom: 0 }} allowDataOverflow>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="ca" allowDataOverflow tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
@@ -284,7 +284,7 @@ export default function IntelligencePage(): React.JSX.Element {
                       );
                     }}
                   />
-                  <Bar yAxisId="ca" dataKey="encaisse.getaroundServiceFee" stackId="commission" fill="#38bdf8" name="Commission Getaround" allowDataOverflow />
+                  <Bar yAxisId="ca" dataKey="encaisse.getaroundServiceFee" stackId="commission" fill="#38bdf8" name="Commission Getaround" />
                   <Bar yAxisId="ca" dataKey="previsionnel" stackId="previsionnel" fill="#3b82f6" radius={[3,3,0,0]} name="Prévisionnel" />
                   <Line yAxisId="km" type="monotone" dataKey="km" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} name="Km" />
                 </ComposedChart>

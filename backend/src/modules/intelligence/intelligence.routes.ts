@@ -135,6 +135,9 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
         basePrice: true, insuranceFee: true, driverMessFee: true, damageCompensation: true,
         lateReturnFee: true, gasRefillFee: true, extraDistanceFee: true,
         assistanceFee: true, deliveryFee: true,
+        batteryRechargeFee: true, ownerInfractionFee: true, ownerTowFee: true,
+        guaranteeEarning: true, otherCompensation: true, cancellationFee: true,
+        getaroundServiceFee: true,
       },
     });
 
@@ -154,13 +157,14 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
 
     type MonthBucket = {
       encaisse: { total: number; basePrice: number; insuranceFee: number; driverMessFee: number; damageCompensation: number; autres: number };
+      getaroundServiceFee: number;
       previsionnel: number; rentalCount: number; km: number;
     };
     const months: Record<string, MonthBucket> = {};
     const FR_MONTHS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
     for (let m = 0; m < 12; m++) {
       const key = `${now.getFullYear()}-${String(m + 1).padStart(2, '0')}`;
-      months[key] = { encaisse: { total: 0, basePrice: 0, insuranceFee: 0, driverMessFee: 0, damageCompensation: 0, autres: 0 }, previsionnel: 0, rentalCount: 0, km: 0 };
+      months[key] = { encaisse: { total: 0, basePrice: 0, insuranceFee: 0, driverMessFee: 0, damageCompensation: 0, autres: 0 }, getaroundServiceFee: 0, previsionnel: 0, rentalCount: 0, km: 0 };
     }
     for (const r of valid) {
       const key = new Date(r.startAt).toISOString().slice(0, 7);
@@ -168,13 +172,15 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
       months[key].rentalCount++;
       months[key].km += s(r.kmDriven);
       if (s(r.ownerPayout) > 0) {
-        const autres = s(r.lateReturnFee) + s(r.gasRefillFee) + s(r.extraDistanceFee) + s(r.assistanceFee) + s(r.deliveryFee);
-        months[key].encaisse.total          += s(r.ownerPayout);
-        months[key].encaisse.basePrice      += s(r.basePrice);
-        months[key].encaisse.insuranceFee   += s(r.insuranceFee);
-        months[key].encaisse.driverMessFee  += s(r.driverMessFee);
+        const autres = s(r.lateReturnFee) + s(r.gasRefillFee) + s(r.extraDistanceFee) + s(r.assistanceFee) + s(r.deliveryFee)
+          + s(r.batteryRechargeFee) + s(r.ownerInfractionFee) + s(r.ownerTowFee) + s(r.guaranteeEarning) + s(r.otherCompensation) + s(r.cancellationFee);
+        months[key].encaisse.total              += s(r.ownerPayout);
+        months[key].encaisse.basePrice          += s(r.basePrice);
+        months[key].encaisse.insuranceFee       += s(r.insuranceFee);
+        months[key].encaisse.driverMessFee      += s(r.driverMessFee);
         months[key].encaisse.damageCompensation += s(r.damageCompensation);
-        months[key].encaisse.autres         += autres;
+        months[key].encaisse.autres             += autres;
+        months[key].getaroundServiceFee         += r.getaroundServiceFee ?? 0;
       } else {
         months[key].previsionnel += s(r.grossRevenue);
       }
@@ -192,6 +198,7 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
         damageCompensation: rnd(v.encaisse.damageCompensation),
         autres:             rnd(v.encaisse.autres),
       },
+      getaroundServiceFee: rnd(v.getaroundServiceFee),
       previsionnel: rnd(v.previsionnel),
       total: rnd(v.encaisse.total + v.previsionnel),
       rentalCount: v.rentalCount,

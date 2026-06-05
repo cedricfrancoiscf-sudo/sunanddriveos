@@ -15,6 +15,7 @@ interface EncaisseBreakdown {
 interface MonthData {
   month: string; label: string;
   encaisse: EncaisseBreakdown;
+  getaroundServiceFee: number;
   previsionnel: number; total: number; rentalCount: number; km: number;
 }
 interface AnnualKPIs {
@@ -72,18 +73,26 @@ function CATooltip({ active, payload, label }: { active?: boolean; payload?: Arr
   if (!active || !payload?.length) return null;
   const d: MonthData | undefined = payload[0]?.payload;
   if (!d) return null;
+  const sousTotal = d.encaisse.basePrice + d.encaisse.insuranceFee + d.encaisse.driverMessFee + d.encaisse.damageCompensation + d.encaisse.autres;
+  const commission = Math.abs(d.getaroundServiceFee ?? 0);
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs min-w-[200px]">
+    <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs min-w-[220px]">
       <p className="font-semibold text-gray-900 mb-1">{label} — {d.rentalCount} location{d.rentalCount !== 1 ? 's' : ''}</p>
       <div className="space-y-0.5 border-t border-gray-100 pt-1">
         <p className="flex justify-between"><span className="text-green-700">Location</span><span>{fmtEuro(d.encaisse.basePrice)}</span></p>
         <p className="flex justify-between"><span className="text-emerald-700">Assurance</span><span>{fmtEuro(d.encaisse.insuranceFee)}</span></p>
-        <p className="flex justify-between"><span className="text-yellow-700">Nettoyage</span><span>{fmtEuro(d.encaisse.driverMessFee)}</span></p>
-        <p className="flex justify-between"><span className="text-orange-700">Réparations</span><span>{fmtEuro(d.encaisse.damageCompensation)}</span></p>
-        <p className="flex justify-between"><span className="text-stone-600">Autres</span><span>{fmtEuro(d.encaisse.autres)}</span></p>
-        <p className="flex justify-between font-semibold border-t border-gray-100 pt-0.5 mt-0.5"><span className="text-green-800">Total encaissé</span><span>{fmtEuro(d.encaisse.total)}</span></p>
-        {d.previsionnel > 0 && <p className="flex justify-between text-blue-600"><span>Prévisionnel</span><span>{fmtEuro(d.previsionnel)}</span></p>}
-        <p className="flex justify-between text-gray-400"><span>Km</span><span>{d.km.toLocaleString('fr-FR')} km</span></p>
+        {d.encaisse.driverMessFee > 0 && <p className="flex justify-between"><span className="text-yellow-700">Nettoyage</span><span>{fmtEuro(d.encaisse.driverMessFee)}</span></p>}
+        {d.encaisse.damageCompensation > 0 && <p className="flex justify-between"><span className="text-orange-700">Réparations</span><span>{fmtEuro(d.encaisse.damageCompensation)}</span></p>}
+        {d.encaisse.autres > 0 && <p className="flex justify-between"><span className="text-stone-600">Autres</span><span>{fmtEuro(d.encaisse.autres)}</span></p>}
+        <div className="border-t border-gray-100 pt-0.5 mt-0.5">
+          <p className="flex justify-between font-semibold text-gray-700"><span>Sous-total brut</span><span>{fmtEuro(sousTotal)}</span></p>
+          {commission > 0 && <p className="flex justify-between text-red-600"><span>Commission Getaround</span><span>-{fmtEuro(commission)}</span></p>}
+        </div>
+        <div className="border-t border-gray-100 pt-0.5 mt-0.5">
+          {d.encaisse.total > 0 && <p className="flex justify-between font-bold text-green-700"><span>Votre revenu</span><span>{fmtEuro(d.encaisse.total)}</span></p>}
+          {d.previsionnel > 0 && <p className="flex justify-between text-blue-600"><span>Prévisionnel</span><span>{fmtEuro(d.previsionnel)}</span></p>}
+          <p className="flex justify-between text-gray-400"><span>Km</span><span>{d.km.toLocaleString('fr-FR')} km</span></p>
+        </div>
       </div>
     </div>
   );

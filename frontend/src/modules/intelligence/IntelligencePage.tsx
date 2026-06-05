@@ -262,10 +262,10 @@ export default function IntelligencePage(): React.JSX.Element {
           <div className="p-5">
             {annual.monthlyData.length > 0 ? (
               <ResponsiveContainer width="100%" height={340}>
-                <ComposedChart data={annual.monthlyData} margin={{ top: 24, right: 50, left: 0, bottom: 0 }} allowDataOverflow>
+                <ComposedChart data={annual.monthlyData} margin={{ top: 24, right: 50, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="ca" allowDataOverflow tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
+                  <YAxis yAxisId="ca" domain={['auto', 'auto']} tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
                   <YAxis yAxisId="km" orientation="right" tick={{ fontSize: 10 }} tickFormatter={v => `${v}km`} />
                   <Tooltip content={<CATooltip />} />
                   <Bar yAxisId="ca" dataKey="encaisse.basePrice" stackId="encaisse" fill="#16a34a" name="Location" />

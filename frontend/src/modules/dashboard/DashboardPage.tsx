@@ -60,7 +60,8 @@ export default function DashboardPage(): React.JSX.Element {
   type DocExpiring = { id: string; name: string; expiryDate: string; vehicle: { make: string; model: string; licensePlate: string } };
   type PendingCarSeat = { id: string; rental: { id: string; driverName: string; endAt: string } | null; vehicle: { make: string; model: string; licensePlate: string } };
   type ForecastWeek = { week: string; label: string; rentalCount: number; encaisse: number; previsionnel: number; totalPayout: number };
-  type InboxSummary = { pendingCount: number; unansweredRentals: number };
+  type UnansweredMsg = { rentalId: string; driverName: string; vehicleLabel: string; msgPreview: string; createdAt: string };
+  type InboxSummary = { pendingCount: number; unansweredRentals: number; unansweredMessages: UnansweredMsg[] };
 
   const { data: statsData } = useQuery<RentalStats>({
     queryKey: ['rental-stats'],
@@ -140,6 +141,11 @@ export default function DashboardPage(): React.JSX.Element {
         label: `Siège auto demandé — ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.rental ? ` · ${r.rental.driverName}` : ''}`,
         link: r.rental ? `/messages?rentalId=${r.rental.id}` : '/messages',
       })),
+    ...(pendingMessages?.unansweredMessages ?? []).map(m => ({
+      id: `unread-${m.rentalId}`, type: 'unanswered_message', severity: 'medium' as const,
+      label: `💬 Message en attente — ${m.driverName} · ${m.vehicleLabel} : « ${m.msgPreview}${m.msgPreview.length >= 80 ? '…' : ''} »`,
+      link: `/messages?rentalId=${m.rentalId}`,
+    })),
   ];
 
   const stats = statsData;

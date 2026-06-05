@@ -165,9 +165,10 @@ export async function cancelMessage(db: PrismaClient, id: string) {
 }
 
 export async function getInboxSummary(db: PrismaClient) {
-  const [pendingCount, unansweredRentals] = await Promise.all([
+  const cutoff2h = new Date(Date.now() - 2 * 3_600_000);
+
+  const [pendingCount, unansweredRentals, unansweredRentalIds] = await Promise.all([
     db.message.count({ where: { status: 'pending_approval' } }),
-    // Locations avec message entrant non répondu
     db.rental.count({
       where: {
         messages: {
@@ -177,7 +178,46 @@ export async function getInboxSummary(db: PrismaClient) {
         status: { in: ['booked', 'active'] },
       },
     }),
+    // Locations actives/à venir avec inbound > 2h et aucune réponse outbound
+    db.rental.findMany({
+      where: {
+        status: { in: ['booked', 'active'] },
+        messages: {
+          some: { direction: 'inbound', createdAt: { lt: cutoff2h } },
+          none: { direction: 'outbound', status: { in: ['approved', 'sent'] } },
+        },
+      },
+      select: { id: true },
+    }).then(rows => rows.map(r => r.id)),
   ]);
 
-  return { pendingCount, unansweredRentals };
+  const unansweredMessages = unansweredRentalIds.length > 0
+    ? await db.message.findMany({
+        where: { direction: 'inbound', createdAt: { lt: cutoff2h }, rentalId: { in: unansweredRentalIds } },
+        select: {
+          id: true, content: true, createdAt: true,
+          rental: {
+            select: {
+              id: true, driverName: true,
+              vehicle: { select: { make: true, model: true, licensePlate: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 5,
+        distinct: ['rentalId'],
+      })
+    : [];
+
+  const unansweredDetails = unansweredMessages.map(m => ({
+    rentalId: m.rental?.id ?? '',
+    driverName: m.rental?.driverName ?? '',
+    vehicleLabel: m.rental
+      ? `${m.rental.vehicle.make} ${m.rental.vehicle.model} (${m.rental.vehicle.licensePlate})`
+      : '',
+    msgPreview: m.content.slice(0, 80),
+    createdAt: m.createdAt.toISOString(),
+  }));
+
+  return { pendingCount, unansweredRentals, unansweredMessages: unansweredDetails };
 }

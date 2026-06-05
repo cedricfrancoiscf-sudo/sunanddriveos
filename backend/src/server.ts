@@ -11,6 +11,7 @@ import { createApp } from './app';
 import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client';
 import { executePendingSequences, cleanupObsoleteSequences } from './modules/sequences/sequences.service';
 import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayouts } from './modules/getaround-sync/getaround-sync.service';
+import { analyzeAndProcessMessage, type RentalForMessaging } from './modules/messages/messaging.service';
 import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
 import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
@@ -27,6 +28,8 @@ let isSyncRunning = false;
 let isMorningSummaryRunning = false;
 let isMileageRunning = false;
 let isUnresponsiveRunning = false;
+let isProactiveMessagingRunning = false;
+let isRebalayageRunning = false;
 
 registerSyncTrigger(() => runGetaroundSyncForAllTenants());
 
@@ -215,7 +218,171 @@ async function runRecentWindowSyncForAllTenants(): Promise<void> {
 setTimeout(() => void runRecentWindowSyncForAllTenants(), 120_000);
 cron.schedule('0 * * * *', () => void runRecentWindowSyncForAllTenants());
 
-// ─── 4.6 — Résumé matinal (8h chaque jour) ────────────────────────────────
+// ─── Messagerie proactive (cron 30 min) ──────────────────────────────────────
+
+async function runProactiveMessaging(): Promise<void> {
+  if (isProactiveMessagingRunning) { console.log('[ProactiveMsg] Déjà en cours, skip'); return; }
+  isProactiveMessagingRunning = true;
+  try {
+    const master = getMasterClient();
+    const companies = await master.company.findMany({
+      where: { isActive: true },
+      select: { tenantDbUrl: true, slug: true },
+    });
+    for (const company of companies) {
+      try {
+        const db = getTenantClient(company.tenantDbUrl);
+        const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
+        const cutoff35m = new Date(Date.now() - 35 * 60_000);
+
+        const accounts = await db.getaroundAccount.findMany({
+          where: { isActive: true },
+          select: { id: true, apiKeyHash: true },
+        });
+        const gaClients = new Map(accounts.map(a => [a.id, createGetaroundClient(decrypt(a.apiKeyHash))]));
+
+        const newInbound = await db.message.findMany({
+          where: {
+            direction: 'inbound',
+            createdAt: { gte: cutoff35m },
+            rental: {
+              OR: [
+                { status: { in: ['active', 'booked'] } },
+                { status: 'completed', endAt: { gte: sevenDaysAgo } },
+              ],
+            },
+          },
+          select: {
+            id: true, content: true,
+            rental: {
+              select: {
+                id: true, vehicleId: true, driverName: true,
+                driverGetaroundId: true, getaroundId: true, startAt: true,
+                vehicle: {
+                  select: {
+                    make: true, model: true, licensePlate: true,
+                    parkingZone: true, getaroundAccountId: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        let processed = 0;
+        for (const msg of newInbound) {
+          if (!msg.rental) continue;
+          const accountId = msg.rental.vehicle.getaroundAccountId;
+          if (!accountId) continue;
+          const ga = gaClients.get(accountId);
+          if (!ga) continue;
+          try {
+            const r = msg.rental;
+            const rentalData: RentalForMessaging = {
+              id: r.id, vehicleId: r.vehicleId, driverName: r.driverName,
+              driverGetaroundId: r.driverGetaroundId, getaroundId: r.getaroundId, startAt: r.startAt,
+              vehicle: { make: r.vehicle.make, model: r.vehicle.model, licensePlate: r.vehicle.licensePlate, parkingZone: r.vehicle.parkingZone },
+            };
+            await analyzeAndProcessMessage({ id: msg.id, content: msg.content }, rentalData, db, ga);
+            processed++;
+          } catch (e) { console.error(`[ProactiveMsg] Erreur message ${msg.id}:`, e); }
+        }
+        if (processed > 0) {
+          console.log(`[ProactiveMsg] ${company.slug} : ${processed} message(s) traité(s)`);
+        }
+      } catch (e) { console.error(`[ProactiveMsg] Erreur tenant ${company.slug}:`, e); }
+    }
+  } catch (e) { console.error('[ProactiveMsg] Erreur générale:', e); }
+  finally { isProactiveMessagingRunning = false; }
+}
+
+cron.schedule('*/30 * * * *', () => void runProactiveMessaging());
+
+// ─── Rebalayage 7h — messages inbound sans réponse ────────────────────────────
+
+async function runMorningRebalayage(): Promise<void> {
+  if (isRebalayageRunning) { console.log('[Rebalayage] Déjà en cours, skip'); return; }
+  isRebalayageRunning = true;
+  try {
+    const master = getMasterClient();
+    const companies = await master.company.findMany({
+      where: { isActive: true },
+      select: { tenantDbUrl: true, slug: true },
+    });
+    for (const company of companies) {
+      try {
+        const db = getTenantClient(company.tenantDbUrl);
+        const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
+        const cutoff30m = new Date(Date.now() - 30 * 60_000);
+
+        const accounts = await db.getaroundAccount.findMany({
+          where: { isActive: true },
+          select: { id: true, apiKeyHash: true },
+        });
+        const gaClients = new Map(accounts.map(a => [a.id, createGetaroundClient(decrypt(a.apiKeyHash))]));
+
+        const rentals = await db.rental.findMany({
+          where: {
+            OR: [
+              { status: { in: ['active', 'booked'] } },
+              { status: 'completed', endAt: { gte: sevenDaysAgo } },
+            ],
+          },
+          select: {
+            id: true, vehicleId: true, driverName: true,
+            driverGetaroundId: true, getaroundId: true, startAt: true,
+            vehicle: {
+              select: {
+                make: true, model: true, licensePlate: true,
+                parkingZone: true, getaroundAccountId: true,
+              },
+            },
+            messages: {
+              orderBy: { createdAt: 'asc' },
+              select: { id: true, direction: true, content: true, createdAt: true },
+            },
+          },
+        });
+
+        let locations = 0, msgs = 0;
+        for (const rental of rentals) {
+          const ga = rental.vehicle.getaroundAccountId
+            ? gaClients.get(rental.vehicle.getaroundAccountId)
+            : null;
+          if (!ga) continue;
+
+          const inboundNoReply = rental.messages.filter(m => {
+            if (m.direction !== 'inbound') return false;
+            if (m.createdAt >= cutoff30m) return false; // créé il y a < 30 min → skip
+            return !rental.messages.some(
+              om => om.direction === 'outbound' && om.createdAt > m.createdAt,
+            );
+          });
+          if (inboundNoReply.length === 0) continue;
+          locations++;
+
+          const rentalData: RentalForMessaging = {
+            id: rental.id, vehicleId: rental.vehicleId, driverName: rental.driverName,
+            driverGetaroundId: rental.driverGetaroundId, getaroundId: rental.getaroundId, startAt: rental.startAt,
+            vehicle: { make: rental.vehicle.make, model: rental.vehicle.model, licensePlate: rental.vehicle.licensePlate, parkingZone: rental.vehicle.parkingZone },
+          };
+          for (const msg of inboundNoReply) {
+            try {
+              await analyzeAndProcessMessage({ id: msg.id, content: msg.content }, rentalData, db, ga);
+              msgs++;
+            } catch (e) { console.error(`[Rebalayage] Erreur message ${msg.id}:`, e); }
+          }
+        }
+        console.log(`[Cron 7h] ${company.slug} Rebalayage : ${locations} location(s), ${msgs} message(s) traité(s)`);
+      } catch (e) { console.error(`[Rebalayage] Erreur tenant ${company.slug}:`, e); }
+    }
+  } catch (e) { console.error('[Rebalayage] Erreur générale:', e); }
+  finally { isRebalayageRunning = false; }
+}
+
+cron.schedule('0 7 * * *', () => void runMorningRebalayage());
+
+// ─── Résumé matinal enrichi (8h chaque jour) ─────────────────────────────────
 
 async function runMorningSummary(): Promise<void> {
   if (isMorningSummaryRunning) { console.log('[MorningSummary] Déjà en cours, skip'); return; }
@@ -231,45 +398,151 @@ async function runMorningSummary(): Promise<void> {
       try {
         const db = getTenantClient(company.tenantDbUrl);
         const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const todayEnd = new Date(todayStart.getTime() + 86_400_000);
+        const in24h = new Date(now.getTime() + 86_400_000);
+        const in30d = new Date(now.getTime() + 30 * 86_400_000);
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
         const cutoff12h = new Date(now.getTime() - 12 * 3_600_000);
+        const cutoff2h = new Date(now.getTime() - 2 * 3_600_000);
+        const dateLabel = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-        const [departures, returns, admins, unanswered] = await Promise.all([
-          db.rental.findMany({ where: { startAt: { gte: todayStart, lt: todayEnd } }, select: { driverName: true, vehicle: { select: { make: true, model: true, licensePlate: true } } } }),
-          db.rental.findMany({ where: { endAt: { gte: todayStart, lt: todayEnd } }, select: { driverName: true, vehicle: { select: { make: true, model: true, licensePlate: true } } } }),
-          db.user.findMany({ where: { role: 'admin', isActive: true }, select: { email: true, name: true } }),
+        const [
+          departures, returns, carSeatRequests,
+          expiringCT, expiringMaint,
+          recipients,
+          anomalies,
+        ] = await Promise.all([
           db.rental.findMany({
-            where: { status: { in: ['booked', 'active'] }, messages: { none: { direction: 'inbound', createdAt: { gte: cutoff12h } } } },
-            select: { driverName: true },
-            take: 10,
+            where: { startAt: { gte: now, lte: in24h }, status: { in: ['booked', 'active'] } },
+            select: {
+              driverName: true, startAt: true,
+              vehicle: { select: { make: true, model: true, licensePlate: true, parkingZone: true } },
+            },
+            orderBy: { startAt: 'asc' },
+          }),
+          db.rental.findMany({
+            where: { endAt: { gte: now, lte: in24h }, status: { in: ['active', 'completed'] } },
+            select: {
+              driverName: true, endAt: true,
+              vehicle: { select: { make: true, model: true, licensePlate: true, parkingZone: true } },
+            },
+            orderBy: { endAt: 'asc' },
+          }),
+          db.carSeatRequest.findMany({
+            where: {
+              rental: { status: { in: ['booked', 'active'] } },
+            },
+            select: {
+              id: true,
+              rental: {
+                select: {
+                  driverName: true, startAt: true,
+                  vehicle: { select: { make: true, model: true, licensePlate: true, parkingZone: true } },
+                },
+              },
+            },
+          }),
+          db.technicalControl.findMany({
+            where: { expiryAt: { gte: now, lte: in30d } },
+            select: { expiryAt: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
+            orderBy: { expiryAt: 'asc' },
+          }),
+          db.maintenance.findMany({
+            where: { nextServiceDate: { not: null, lte: in30d } },
+            select: { type: true, nextServiceDate: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
+            orderBy: { nextServiceDate: 'asc' },
+          }),
+          db.user.findMany({
+            where: { role: { in: ['admin', 'exploitant'] }, isActive: true },
+            select: { email: true, name: true },
+          }),
+          // Locations booked dont le startAt est dépassé > 2h (sans check-in)
+          db.rental.findMany({
+            where: { status: 'booked', startAt: { lt: cutoff2h } },
+            select: {
+              driverName: true, startAt: true,
+              vehicle: { select: { make: true, model: true, licensePlate: true } },
+            },
           }),
         ]);
 
-        const lines: string[] = [];
-        lines.push(`<h2>☀️ Résumé du ${todayStart.toLocaleDateString('fr-FR')} — ${company.name}</h2>`);
-        lines.push(`<h3>Départs aujourd'hui (${departures.length})</h3>`);
-        departures.forEach(r => lines.push(`<li>${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})</li>`));
-        lines.push(`<h3>Retours aujourd'hui (${returns.length})</h3>`);
-        returns.forEach(r => lines.push(`<li>${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})</li>`));
-        if (unanswered.length > 0) {
-          lines.push(`<h3>⚠️ Messages sans réponse depuis +12h (${unanswered.length})</h3>`);
-          unanswered.forEach(r => lines.push(`<li>${r.driverName}</li>`));
-        }
+        // CA du jour
+        const todayRentals = await db.rental.findMany({
+          where: {
+            status: { in: ['active', 'completed'] },
+            OR: [{ startAt: { lte: in24h, gte: now } }, { endAt: { lte: in24h, gte: now } }],
+          },
+          select: { ownerPayout: true, grossRevenue: true, status: true },
+        });
+        const caEncaisse = todayRentals.filter(r => r.ownerPayout != null).reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
+        const caPrevisionnel = todayRentals.filter(r => r.ownerPayout == null).reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
 
-        const html = `<ul>${lines.join('')}</ul>`;
-        const summary = lines.map(l => l.replace(/<[^>]+>/g, '')).join('\n');
+        // Messages en attente > 12h
+        const unansweredRentalIds = (await db.rental.findMany({
+          where: {
+            status: { in: ['booked', 'active'] },
+            messages: {
+              some: { direction: 'inbound', createdAt: { lt: cutoff12h } },
+              none: { direction: 'outbound', status: { in: ['approved', 'sent'] } },
+            },
+          },
+          select: { id: true },
+        })).map(r => r.id);
+        const unansweredMessages = unansweredRentalIds.length > 0
+          ? await db.message.findMany({
+              where: { direction: 'inbound', createdAt: { lt: cutoff12h }, rentalId: { in: unansweredRentalIds } },
+              select: {
+                content: true, createdAt: true,
+                rental: { select: { driverName: true, vehicle: { select: { make: true, model: true, licensePlate: true } } } },
+              },
+              orderBy: { createdAt: 'asc' },
+              distinct: ['rentalId'],
+              take: 10,
+            })
+          : [];
 
-        if (admins.length === 0) {
-          console.log(`[MorningSummary] ${company.slug} :\n${summary}`);
+        const fmt = (d: Date) => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        const fmtEur = (v: number) => v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+        const section = (icon: string, title: string, rows: string[], emptyMsg = 'Rien à signaler') =>
+          `<div style="margin:16px 0"><h3 style="font-size:14px;font-weight:bold;margin:0 0 8px;color:#1e293b">${icon} ${title}</h3>${rows.length > 0 ? `<ul style="margin:0;padding-left:20px;color:#374151;font-size:13px">${rows.map(r => `<li style="margin:2px 0">${r}</li>`).join('')}</ul>` : `<p style="color:#94a3b8;font-size:13px;margin:0">${emptyMsg}</p>`}</div>`;
+
+        const html = `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:640px;margin:0 auto;padding:20px;background:#f8fafc">
+<div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
+  <div style="background:#01696e;padding:20px 24px">
+    <h1 style="color:#fff;font-size:18px;margin:0">☀️ Résumé du jour — ${company.name}</h1>
+    <p style="color:#a7f3d0;font-size:12px;margin:4px 0 0">${dateLabel}</p>
+  </div>
+  <div style="padding:20px 24px">
+    ${section('🚗', `Départs du jour (${departures.length})`, departures.map(r => `<b>${fmt(new Date(r.startAt))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
+    ${section('🔄', `Retours du jour (${returns.length})`, returns.map(r => `<b>${fmt(new Date(r.endAt))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
+    ${section('🪑', `Sièges auto à préparer (${carSeatRequests.length})`, carSeatRequests.filter(r => r.rental).map(r => `${r.rental!.driverName} · ${r.rental!.vehicle.make} ${r.rental!.vehicle.model} (${r.rental!.vehicle.licensePlate}) — départ ${new Date(r.rental!.startAt).toLocaleDateString('fr-FR')}`))}
+    ${section('🔧', `CT / Entretiens dans 30 jours`, [
+      ...expiringCT.map(c => `CT — ${c.vehicle.make} ${c.vehicle.model} (${c.vehicle.licensePlate}) — expire le ${new Date(c.expiryAt).toLocaleDateString('fr-FR')}`),
+      ...expiringMaint.filter(m => m.nextServiceDate).map(m => `Entretien ${m.type ?? ''} — ${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate}) — avant le ${new Date(m.nextServiceDate!).toLocaleDateString('fr-FR')}`),
+    ])}
+    ${section('💬', `Messages en attente > 12h (${unansweredMessages.length})`, unansweredMessages.map(m => `${m.rental?.driverName ?? '?'} · ${m.rental?.vehicle.make} ${m.rental?.vehicle.model} — <i>${m.content.slice(0, 60)}…</i>`))}
+    ${section('💶', 'CA du jour', [
+      ...(caEncaisse > 0 ? [`Encaissé : <b>${fmtEur(caEncaisse)}</b>`] : []),
+      ...(caPrevisionnel > 0 ? [`Prévisionnel : ${fmtEur(caPrevisionnel)}`] : []),
+    ], 'Aucune location encaissée aujourd\'hui')}
+    ${section('⚠️', `Anomalies (${anomalies.length})`, anomalies.map(r => `Départ prévu ${fmt(new Date(r.startAt))} non confirmé — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})`))}
+  </div>
+  <div style="background:#f1f5f9;padding:12px 24px;font-size:11px;color:#94a3b8">SunanddriveOS — rapport automatique quotidien</div>
+</div></body></html>`;
+
+        if (recipients.length === 0) {
+          console.log(`[MorningSummary] ${company.slug} : aucun destinataire`);
           continue;
         }
-
-        for (const admin of admins) {
+        for (const r of recipients) {
           if (process.env.RESEND_API_KEY) {
-            await sendEmail({ to: admin.email, subject: `☀️ Résumé matinal — ${company.name}`, html });
+            await sendEmail({
+              from: 'appli@sunanddrive.com',
+              to: r.email,
+              subject: `☀️ Résumé du jour — Sun and Drive — ${now.toLocaleDateString('fr-FR')}`,
+              html,
+            });
           } else {
-            console.log(`[MorningSummary] ${company.slug} → ${admin.email} :\n${summary}`);
+            console.log(`[MorningSummary] ${company.slug} → ${r.email} : ${departures.length} départs, ${returns.length} retours`);
           }
         }
       } catch (err: unknown) {

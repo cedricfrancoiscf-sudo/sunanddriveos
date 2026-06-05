@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -16,6 +16,7 @@ interface VehicleStat {
 }
 
 interface ReportData {
+  status: 'ready';
   generatedAt: string;
   theme: { primaryColor: string; fontFamily: string; logoUrl: string | null; companyName: string };
   internalData: {
@@ -37,18 +38,11 @@ interface ReportData {
       demandes_par_zone: Array<{ zone: string; demandes_siege: number; stock_estime: string }>;
       recommandations: string[];
     } | null;
-    error?: string;
-    _timeout?: boolean;
   };
 }
 
-const LOADING_MESSAGES = [
-  'Analyse des données de la flotte...',
-  'Recherche des tendances du marché...',
-  'Analyse des zones de livraison...',
-  'Veille réglementaire en cours...',
-  'Rédaction des recommandations...',
-];
+type StatusResponse = { status: 'generating' | 'error' | 'absent' };
+type ReportResponse = StatusResponse | ReportData;
 
 const HEALTH_COLOR = (score: number) =>
   score >= 80 ? 'bg-green-100 text-green-700' :
@@ -65,62 +59,62 @@ const STOCK_COLOR = (s: string) =>
   s === 'insuffisant' ? 'bg-red-100 text-red-700' :
   'bg-yellow-100 text-yellow-700';
 
-// ─── Composant principal ─────────────────────────────────────────────────────
+// ─── Utilitaires mois ─────────────────────────────────────────────────────────
+
+const FR_MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+function shiftMonth(m: string, delta: number): string {
+  const [y, mo] = m.split('-').map(Number);
+  const d = new Date(y, mo - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function fmtMonth(m: string): string {
+  const [y, mo] = m.split('-').map(Number);
+  return `${FR_MONTHS[mo - 1]} ${y}`;
+}
+
+// ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function ReportPage(): React.JSX.Element {
-  const [msgIdx, setMsgIdx] = useState(0);
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [perfView, setPerfView] = useState<'chart' | 'table'>('chart');
-  const [generated, setGenerated] = useState(false);
-  const [retryIn, setRetryIn] = useState<number | null>(null);
-  const navRef = useRef<HTMLDivElement>(null);
 
-  const { data, isFetching, isError, error, refetch } = useQuery<ReportData>({
-    queryKey: ['ceo-report'],
-    queryFn: () => api.get<ReportData>('/intelligence/report').then(r => r.data),
-    staleTime: 60 * 60 * 1000,
-    enabled: false,
-    retry: 1,
+  const { data, isFetching, isError, refetch } = useQuery<ReportResponse>({
+    queryKey: ['ceo-report', selectedMonth],
+    queryFn: () =>
+      api.get<ReportResponse>('/intelligence/report', { params: { month: selectedMonth } })
+         .then(r => r.data),
+    staleTime: 30_000,
+    retry: 0,
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      if (!d || ('status' in d && d.status === 'generating')) return 5_000;
+      return false;
+    },
   });
 
-  useEffect(() => {
-    if (!isFetching) return;
-    const timer = setInterval(() => setMsgIdx(i => (i + 1) % LOADING_MESSAGES.length), 3000);
-    return () => clearInterval(timer);
-  }, [isFetching]);
+  const generateMutation = useMutation({
+    mutationFn: (month: string) =>
+      api.post<StatusResponse>('/intelligence/report/generate', { month }).then(r => r.data),
+    onSuccess: () => void refetch(),
+  });
 
-  useEffect(() => {
-    if (!data?.report._timeout) { setRetryIn(null); return; }
-    let t = 10;
-    setRetryIn(t);
-    const interval = setInterval(() => {
-      t -= 1;
-      if (t <= 0) { clearInterval(interval); setRetryIn(null); void refetch(); }
-      else setRetryIn(t);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [data?.report._timeout]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function handleGenerate(): void {
-    setGenerated(true);
-    void refetch();
-  }
-
-  const theme = data?.theme ?? { primaryColor: '#01696e', fontFamily: 'Montserrat', logoUrl: null, companyName: 'Sun and Drive' };
-  const report = data?.report;
-  const internal = data?.internalData;
-  const vehicleStats = data?.vehicleStats ?? [];
+  const statusStr = !data ? null : ('status' in data ? data.status : 'ready');
+  const isGenerating = isFetching || statusStr === 'generating' || generateMutation.isPending;
+  const reportData = data && !('status' in data) ? data as ReportData : null;
+  const theme = reportData?.theme ?? { primaryColor: '#01696e', fontFamily: 'Montserrat', logoUrl: null, companyName: 'Sun and Drive' };
+  const report = reportData?.report;
+  const internal = reportData?.internalData;
+  const vehicleStats = reportData?.vehicleStats ?? [];
 
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-
   const SECTIONS = [
-    { id: 'resume', label: 'Résumé' },
-    { id: 'performance', label: 'Performance' },
-    { id: 'flotte', label: 'Flotte' },
-    { id: 'swot', label: 'SWOT' },
-    { id: 'pestel', label: 'PESTEL' },
-    { id: 'zones', label: 'Zones' },
-    { id: 'veille', label: 'Veille' },
-    { id: 'reco', label: 'Recommandations' },
+    { id: 'resume', label: 'Résumé' }, { id: 'performance', label: 'Performance' },
+    { id: 'flotte', label: 'Flotte' }, { id: 'swot', label: 'SWOT' },
+    { id: 'pestel', label: 'PESTEL' }, { id: 'zones', label: 'Zones' },
+    { id: 'veille', label: 'Veille' }, { id: 'reco', label: 'Recommandations' },
   ];
 
   return (
@@ -135,7 +129,7 @@ export default function ReportPage(): React.JSX.Element {
       `}</style>
 
       {/* Header sticky */}
-      <header ref={navRef} className="no-print sticky top-0 z-40 border-b border-gray-200 bg-white shadow-sm">
+      <header className="no-print sticky top-0 z-40 border-b border-gray-200 bg-white shadow-sm">
         <div className="flex h-14 items-center justify-between px-6">
           <div className="flex items-center gap-4">
             {theme.logoUrl && (
@@ -143,13 +137,13 @@ export default function ReportPage(): React.JSX.Element {
             )}
             <div>
               <h1 className="text-sm font-bold text-gray-900">Rapport CEO</h1>
-              {data && (
+              {reportData && (
                 <p className="text-[10px] text-gray-400">
-                  Généré le {format(new Date(data.generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}
+                  Généré le {format(new Date(reportData.generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}
                 </p>
               )}
             </div>
-            {data && (
+            {reportData && (
               <nav className="hidden md:flex items-center gap-0.5 ml-4">
                 {SECTIONS.map(s => (
                   <button key={s.id} type="button" onClick={() => scrollTo(s.id)}
@@ -161,15 +155,29 @@ export default function ReportPage(): React.JSX.Element {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={handleGenerate} disabled={isFetching}
+            {/* Sélecteur de mois */}
+            <div className="no-print flex items-center gap-1 rounded-xl border border-gray-200 bg-gray-50 px-2 py-1">
+              <button type="button" onClick={() => setSelectedMonth(m => shiftMonth(m, -1))}
+                className="rounded p-0.5 text-gray-400 hover:text-gray-700 transition">‹</button>
+              <span className="text-xs font-medium text-gray-700 min-w-[100px] text-center">
+                {fmtMonth(selectedMonth)}
+              </span>
+              <button type="button"
+                onClick={() => setSelectedMonth(m => shiftMonth(m, 1))}
+                disabled={selectedMonth >= currentMonth}
+                className="rounded p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 transition">›</button>
+            </div>
+            <button type="button"
+              onClick={() => generateMutation.mutate(selectedMonth)}
+              disabled={isGenerating}
               className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition-opacity"
               style={{ backgroundColor: theme.primaryColor }}>
-              {isFetching ? (
+              {isGenerating ? (
                 <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
               ) : '✨'}
-              {isFetching ? 'Génération...' : 'Générer'}
+              {isGenerating ? 'Génération...' : reportData ? 'Régénérer' : 'Générer'}
             </button>
-            {data && (
+            {reportData && (
               <button type="button" onClick={() => window.print()}
                 className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 📄 PDF
@@ -180,76 +188,53 @@ export default function ReportPage(): React.JSX.Element {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-8 space-y-8">
-        {/* État initial */}
-        {!generated && !isFetching && !data && !isError && (
+
+        {/* État : absent */}
+        {!isGenerating && !reportData && statusStr !== 'error' && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="text-6xl mb-6">📊</div>
             <h2 className="text-2xl font-bold text-gray-900 mb-3">Rapport CEO</h2>
             <p className="text-gray-500 max-w-md mb-2">
-              Analyse complète de la flotte, SWOT, PESTEL et recommandations stratégiques
-              enrichies d'une veille externe en temps réel.
+              Analyse complète de la flotte, SWOT, PESTEL et recommandations stratégiques.
             </p>
-            <button type="button" onClick={handleGenerate}
+            <button type="button" onClick={() => generateMutation.mutate(selectedMonth)}
               className="mt-6 rounded-2xl px-8 py-3 text-base font-semibold text-white shadow-lg transition-transform hover:scale-105"
               style={{ backgroundColor: theme.primaryColor }}>
-              ✨ Générer le rapport
+              ✨ Générer le rapport {fmtMonth(selectedMonth)}
             </button>
-            <p className="mt-3 text-xs text-gray-400">30 à 60 secondes — recherche de données externes en cours</p>
+            <p className="mt-3 text-xs text-gray-400">60 à 120 secondes — génération par IA</p>
           </div>
         )}
 
-        {/* État erreur */}
-        {isError && !isFetching && (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="text-5xl mb-4">⚠️</div>
-            <h2 className="text-lg font-bold text-gray-900 mb-2">Erreur de génération</h2>
-            <p className="text-sm text-gray-500 max-w-md mb-1">
-              {(error as { response?: { data?: { error?: string } } })?.response?.data?.error
-                ?? (error instanceof Error ? error.message : 'Erreur inconnue')}
-            </p>
-            <p className="text-xs text-gray-400 mb-6">
-              Vérifiez que la clé ANTHROPIC_API_KEY est configurée et que le tenant est actif.
-            </p>
-            <button type="button" onClick={handleGenerate}
-              className="rounded-2xl px-6 py-2.5 text-sm font-semibold text-white"
-              style={{ backgroundColor: theme.primaryColor }}>
-              ↺ Réessayer
-            </button>
-          </div>
-        )}
-
-        {/* État loading */}
-        {isFetching && (
+        {/* État : génération en cours */}
+        {isGenerating && !reportData && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="mb-6 h-12 w-12 animate-spin rounded-full border-4 border-t-transparent"
               style={{ borderColor: theme.primaryColor, borderTopColor: 'transparent' }} />
-            <p className="text-base font-medium text-gray-700 transition-all">{LOADING_MESSAGES[msgIdx]}</p>
-            <p className="mt-2 text-xs text-gray-400">30 à 60 secondes — recherche de données externes en cours</p>
+            <p className="text-base font-medium text-gray-700">Génération en cours...</p>
+            <p className="mt-2 text-xs text-gray-400">L'analyse IA peut prendre 60 à 120 secondes</p>
           </div>
         )}
 
-        {/* Rapport généré */}
-        {data && report && internal && (
-          <>
-            {/* Banner timeout */}
-            {report._timeout && (
-              <div className="no-print flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">Données partielles — cliquez sur Régénérer</p>
-                  <p className="text-xs text-amber-600 mt-0.5">
-                    La recherche IA a dépassé le délai. Les données internes sont disponibles.
-                    {retryIn !== null && ` Nouvelle tentative dans ${retryIn}s…`}
-                  </p>
-                </div>
-                <button type="button" onClick={() => { void refetch(); }}
-                  disabled={isFetching}
-                  className="shrink-0 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                  style={{ backgroundColor: '#01696e' }}>
-                  Régénérer
-                </button>
-              </div>
-            )}
+        {/* État : erreur */}
+        {statusStr === 'error' && !isGenerating && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="text-5xl mb-4">⚠️</div>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Erreur de génération</h2>
+            <p className="text-sm text-gray-500 max-w-md mb-6">
+              {isError ? 'Erreur réseau ou serveur.' : 'La génération IA a échoué. Vérifiez la clé ANTHROPIC_API_KEY.'}
+            </p>
+            <button type="button" onClick={() => generateMutation.mutate(selectedMonth)}
+              className="rounded-2xl px-6 py-2.5 text-sm font-semibold text-white"
+              style={{ backgroundColor: theme.primaryColor }}>
+              ↺ Régénérer
+            </button>
+          </div>
+        )}
 
+        {/* ── Rapport affiché ── */}
+        {reportData && report && internal && (
+          <>
             {/* RÉSUMÉ EXÉCUTIF */}
             <section id="resume" className="page-break rounded-2xl p-8 text-white"
               style={{ backgroundColor: theme.primaryColor }}>
@@ -268,8 +253,6 @@ export default function ReportPage(): React.JSX.Element {
             {/* PERFORMANCE */}
             <section id="performance" className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900">Performance</h2>
-
-              {/* KPI cards */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
                   { label: 'CA net', value: `${internal.caNet.toLocaleString('fr-FR')} €` },
@@ -283,8 +266,6 @@ export default function ReportPage(): React.JSX.Element {
                   </div>
                 ))}
               </div>
-
-              {/* Switch chart/table */}
               <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold text-gray-700">CA mensuel net (12 mois)</h3>
@@ -299,7 +280,6 @@ export default function ReportPage(): React.JSX.Element {
                     </button>
                   </div>
                 </div>
-
                 {perfView === 'chart' ? (
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={internal.evolutionMensuelle} margin={{ top: 4, right: 4, left: 0, bottom: 4 }}>
@@ -342,8 +322,7 @@ export default function ReportPage(): React.JSX.Element {
 
             {/* FLOTTE & INTERVENTIONS */}
             <section id="flotte" className="space-y-4 page-break">
-              <h2 className="text-lg font-bold text-gray-900">Flotte & Interventions</h2>
-
+              <h2 className="text-lg font-bold text-gray-900">Flotte &amp; Interventions</h2>
               <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
                 <table className="w-full text-sm">
                   <thead>
@@ -380,7 +359,6 @@ export default function ReportPage(): React.JSX.Element {
                   </tbody>
                 </table>
               </div>
-
               {internal.interventionsAVenir.length > 0 && (
                 <div className="rounded-2xl border border-orange-200 bg-orange-50 p-5">
                   <h3 className="text-sm font-semibold text-orange-800 mb-3">🔧 Interventions à venir</h3>
@@ -396,7 +374,6 @@ export default function ReportPage(): React.JSX.Element {
                   </div>
                 </div>
               )}
-
               {internal.ctExpiration.length > 0 && (
                 <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
                   <h3 className="text-sm font-semibold text-red-800 mb-3">⚠️ CT à renouveler</h3>
@@ -413,52 +390,54 @@ export default function ReportPage(): React.JSX.Element {
             </section>
 
             {/* SWOT */}
-            {report.swot && <section id="swot" className="page-break">
-              <h2 className="mb-4 text-lg font-bold text-gray-900">Analyse SWOT</h2>
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { key: 'forces', label: 'Forces', cls: 'border-green-200 bg-green-50', hdg: 'text-green-800', dot: 'text-green-500' },
-                  { key: 'faiblesses', label: 'Faiblesses', cls: 'border-orange-200 bg-orange-50', hdg: 'text-orange-800', dot: 'text-orange-500' },
-                  { key: 'opportunites', label: 'Opportunités', cls: 'border-blue-200 bg-blue-50', hdg: 'text-blue-800', dot: 'text-blue-500' },
-                  { key: 'menaces', label: 'Menaces', cls: 'border-red-200 bg-red-50', hdg: 'text-red-800', dot: 'text-red-500' },
-                ].map(({ key, label, cls, hdg, dot }) => (
-                  <div key={key} className={`rounded-2xl border p-5 ${cls}`}>
-                    <h3 className={`mb-3 text-sm font-bold ${hdg}`}>{label}</h3>
-                    <ul className="space-y-1.5">
-                      {((report.swot?.[key as keyof typeof report.swot]) as string[] ?? []).map((item, i) => (
-                        <li key={i} className={`text-sm ${dot.replace('text-', 'text-gray-')}`}>
-                          <span className={dot}>• </span>{item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </section>}
+            {report.swot && (
+              <section id="swot" className="page-break">
+                <h2 className="mb-4 text-lg font-bold text-gray-900">Analyse SWOT</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    { key: 'forces', label: 'Forces', cls: 'border-green-200 bg-green-50', hdg: 'text-green-800', dot: 'text-green-500' },
+                    { key: 'faiblesses', label: 'Faiblesses', cls: 'border-orange-200 bg-orange-50', hdg: 'text-orange-800', dot: 'text-orange-500' },
+                    { key: 'opportunites', label: 'Opportunités', cls: 'border-blue-200 bg-blue-50', hdg: 'text-blue-800', dot: 'text-blue-500' },
+                    { key: 'menaces', label: 'Menaces', cls: 'border-red-200 bg-red-50', hdg: 'text-red-800', dot: 'text-red-500' },
+                  ].map(({ key, label, cls, hdg, dot }) => (
+                    <div key={key} className={`rounded-2xl border p-5 ${cls}`}>
+                      <h3 className={`mb-3 text-sm font-bold ${hdg}`}>{label}</h3>
+                      <ul className="space-y-1.5">
+                        {((report.swot?.[key as keyof typeof report.swot]) as string[] ?? []).map((item, i) => (
+                          <li key={i} className="text-sm text-gray-700">
+                            <span className={dot}>• </span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* PESTEL */}
-            {report.pestel && <section id="pestel" className="page-break">
-              <h2 className="mb-4 text-lg font-bold text-gray-900">Analyse PESTEL</h2>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {[
-                  { key: 'politique', label: 'Politique', icon: '🏛️' },
-                  { key: 'economique', label: 'Économique', icon: '💰' },
-                  { key: 'sociologique', label: 'Sociologique', icon: '👥' },
-                  { key: 'technologique', label: 'Technologique', icon: '💻' },
-                  { key: 'environnemental', label: 'Environnemental', icon: '🌱' },
-                  { key: 'legal', label: 'Légal', icon: '⚖️' },
-                ].map(({ key, label, icon }) => (
-                  <div key={key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <h3 className="mb-2 text-sm font-semibold text-gray-900">
-                      {icon} {label}
-                    </h3>
-                    <p className="text-sm text-gray-600 leading-relaxed">
-                      {report.pestel?.[key as keyof typeof report.pestel] ?? ''}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>}
+            {report.pestel && (
+              <section id="pestel" className="page-break">
+                <h2 className="mb-4 text-lg font-bold text-gray-900">Analyse PESTEL</h2>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {[
+                    { key: 'politique', label: 'Politique', icon: '🏛️' },
+                    { key: 'economique', label: 'Économique', icon: '💰' },
+                    { key: 'sociologique', label: 'Sociologique', icon: '👥' },
+                    { key: 'technologique', label: 'Technologique', icon: '💻' },
+                    { key: 'environnemental', label: 'Environnemental', icon: '🌱' },
+                    { key: 'legal', label: 'Légal', icon: '⚖️' },
+                  ].map(({ key, label, icon }) => (
+                    <div key={key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                      <h3 className="mb-2 text-sm font-semibold text-gray-900">{icon} {label}</h3>
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        {report.pestel?.[key as keyof typeof report.pestel] ?? ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* ZONES */}
             <section id="zones" className="page-break">
@@ -491,24 +470,26 @@ export default function ReportPage(): React.JSX.Element {
             </section>
 
             {/* VEILLE SECTORIELLE */}
-            {report.veille_sectorielle && <section id="veille" className="page-break">
-              <h2 className="mb-4 text-lg font-bold text-gray-900">Veille sectorielle</h2>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {[
-                  { key: 'autopartage', label: 'Autopartage', icon: '🚗' },
-                  { key: 'ademe', label: 'ADEME', icon: '🌿' },
-                  { key: 'fiscalite', label: 'Fiscalité', icon: '💶' },
-                  { key: 'marche', label: 'Marché', icon: '📊' },
-                ].map(({ key, label, icon }) => (
-                  <div key={key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <h3 className="mb-2 text-sm font-semibold text-gray-900">{icon} {label}</h3>
-                    <p className="text-sm text-gray-600 leading-relaxed">
-                      {report.veille_sectorielle?.[key as keyof typeof report.veille_sectorielle] ?? ''}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>}
+            {report.veille_sectorielle && (
+              <section id="veille" className="page-break">
+                <h2 className="mb-4 text-lg font-bold text-gray-900">Veille sectorielle</h2>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {[
+                    { key: 'autopartage', label: 'Autopartage', icon: '🚗' },
+                    { key: 'ademe', label: 'ADEME', icon: '🌿' },
+                    { key: 'fiscalite', label: 'Fiscalité', icon: '💶' },
+                    { key: 'marche', label: 'Marché', icon: '📊' },
+                  ].map(({ key, label, icon }) => (
+                    <div key={key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                      <h3 className="mb-2 text-sm font-semibold text-gray-900">{icon} {label}</h3>
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        {report.veille_sectorielle?.[key as keyof typeof report.veille_sectorielle] ?? ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* RECOMMANDATIONS */}
             <section id="reco" className="page-break">
@@ -577,7 +558,7 @@ export default function ReportPage(): React.JSX.Element {
             {/* Pied de page */}
             <footer className="border-t border-gray-200 pt-4 text-center text-xs text-gray-400">
               Rapport généré par SunanddriveOS le{' '}
-              {format(new Date(data.generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}
+              {format(new Date(reportData.generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}
             </footer>
           </>
         )}

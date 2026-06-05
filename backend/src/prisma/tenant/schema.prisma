@@ -614,3 +614,15 @@ model CompanySettings {
 
   @@map("company_settings")
 }
+model CeoReport {
+  id          String    @id @default(cuid())
+  companyId   String
+  month       String
+  status      String    @default("generating")
+  content     Json?
+  generatedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([companyId, month])
+  @@map("ceo_reports")
+}

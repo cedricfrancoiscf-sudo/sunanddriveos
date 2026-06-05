@@ -11,6 +11,7 @@ import { createApp } from './app';
 import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client';
 import { executePendingSequences, cleanupObsoleteSequences } from './modules/sequences/sequences.service';
 import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayouts } from './modules/getaround-sync/getaround-sync.service';
+import { generateCeoReportAsync } from './modules/intelligence/report.routes';
 import { analyzeAndProcessMessage, type RentalForMessaging } from './modules/messages/messaging.service';
 import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
@@ -829,6 +830,47 @@ cron.schedule('0 6 5 * *', () => {
     } catch (err: unknown) {
       console.error('[Cron Mensuel] Erreur recalcul payouts:', err);
     }
+  })();
+});
+
+// ─── Rapport CEO mensuel automatique (le 6 de chaque mois à 6h) ─────────────
+
+cron.schedule('0 6 6 * *', () => {
+  console.log('[CeoReport] Cron mensuel — génération rapport mois précédent');
+  void (async () => {
+    try {
+      const master = getMasterClient();
+      const companies = await master.company.findMany({
+        where: { isActive: true },
+        select: { tenantDbUrl: true, slug: true },
+      });
+      const prev = new Date();
+      prev.setMonth(prev.getMonth() - 1);
+      const monthKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+
+      for (const company of companies) {
+        try {
+          const db = getTenantClient(company.tenantDbUrl);
+          const existing = await db.ceoReport.findFirst({
+            where: { companyId: company.slug, month: monthKey },
+          });
+          if (existing?.status === 'ready' || existing?.status === 'generating') continue;
+          let report;
+          if (existing) {
+            report = await db.ceoReport.update({
+              where: { id: existing.id },
+              data: { status: 'generating', generatedAt: null },
+            });
+          } else {
+            report = await db.ceoReport.create({
+              data: { companyId: company.slug, month: monthKey, status: 'generating' },
+            });
+          }
+          void generateCeoReportAsync(company.tenantDbUrl, report.id, company.slug, monthKey);
+          console.log(`[CeoReport] Génération lancée ${company.slug} — ${monthKey}`);
+        } catch (e) { console.error(`[CeoReport] Erreur cron ${company.slug}:`, e); }
+      }
+    } catch (e) { console.error('[CeoReport] Erreur cron mensuel:', e); }
   })();
 });
 

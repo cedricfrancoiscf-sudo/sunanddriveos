@@ -65,13 +65,13 @@ const FR_MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','A
 
 function shiftMonth(m: string, delta: number): string {
   const [y, mo] = m.split('-').map(Number);
-  const d = new Date(y, mo - 1 + delta, 1);
+  const d = new Date(y!, mo! - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function fmtMonth(m: string): string {
   const [y, mo] = m.split('-').map(Number);
-  return `${FR_MONTHS[mo - 1]} ${y}`;
+  return `${FR_MONTHS[mo! - 1]} ${y}`;
 }
 
 // ─── Composant principal ──────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ import cron from 'node-cron';
 import { createApp } from './app';
 import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client';
 import { executePendingSequences, cleanupObsoleteSequences } from './modules/sequences/sequences.service';
-import { syncAllAccounts, syncRecentWindowForAccount } from './modules/getaround-sync/getaround-sync.service';
+import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayouts } from './modules/getaround-sync/getaround-sync.service';
 import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
 import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
@@ -531,6 +531,27 @@ async function runMonthlyRatingReminder(): Promise<void> {
 }
 
 cron.schedule('0 9 25 * *', () => void runMonthlyRatingReminder());
+
+// ─── Recalcul mensuel des payouts (le 5 de chaque mois à 6h) ─────────────────
+
+cron.schedule('0 6 5 * *', () => {
+  console.log('[Cron Mensuel] Recalcul payouts automatique');
+  void (async () => {
+    try {
+      const master = getMasterClient();
+      const companies = await master.company.findMany({
+        where: { isActive: true },
+        select: { tenantDbUrl: true, slug: true },
+      });
+      for (const company of companies) {
+        const db = getTenantClient(company.tenantDbUrl);
+        await recalculateHistoricalPayouts(db, company.slug);
+      }
+    } catch (err: unknown) {
+      console.error('[Cron Mensuel] Erreur recalcul payouts:', err);
+    }
+  })();
+});
 
 // ─── CT / Révision — alerte Telegram J-30 (quotidien 9h) ────────────────────
 

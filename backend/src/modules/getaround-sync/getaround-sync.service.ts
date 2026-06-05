@@ -259,7 +259,6 @@ export async function syncRecentWindowForAccount(
 
     try {
       const windowRentals = await ga.getRentals(windowStart, windowEnd);
-      const apiIds = new Set(windowRentals.map(r => String(r.id)));
 
       for (const r of windowRentals) {
         await processRental(db, ga, r, result, tenantSlug, userCache);
@@ -268,23 +267,6 @@ export async function syncRecentWindowForAccount(
 
       // Messages
       await syncMessagesForWindow(db, ga, accountId, windowStart, windowEnd, tenantSlug);
-
-      // Payouts
-      const payoutStart = new Date(Date.UTC(windowStart.getUTCFullYear(), windowStart.getUTCMonth(), 1));
-      const payoutEnd   = new Date(Date.UTC(windowStart.getUTCFullYear(), windowStart.getUTCMonth() + 1, 1));
-      await syncPayoutsForWindow(db, ga, payoutStart, payoutEnd, tenantSlug);
-
-      // Détection annulations : booked en base absent de l'API
-      const bookedInWindow = await db.rental.findMany({
-        where: { status: 'booked', startAt: { gte: windowStart, lte: windowEnd } },
-        select: { id: true, getaroundId: true },
-      });
-      for (const rental of bookedInWindow) {
-        if (rental.getaroundId && !apiIds.has(rental.getaroundId)) {
-          await db.rental.update({ where: { id: rental.id }, data: { status: 'cancelled' } });
-          console.log(`[Cron] Annulation détectée : ${rental.getaroundId}`);
-        }
-      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[Cron] Erreur fenêtre ${winLabel} : ${msg}`);
@@ -713,8 +695,6 @@ export async function syncAccountRentals(
       updateSyncState(tenantSlug, { totalItems: windowRentals.length, processedItems: 0 });
 
       // 2. Traiter chaque location séquentiellement
-      const apiIds = new Set(windowRentals.map(r => String(r.id)));
-
       for (let i = 0; i < windowRentals.length; i++) {
         const r = windowRentals[i];
         await processRental(db, ga, r, result, tenantSlug, userCache);
@@ -725,24 +705,6 @@ export async function syncAccountRentals(
           progress: Math.round(15 + ((i + 1) / Math.max(windowRentals.length, 1)) * 65),
         });
         await sleep(2_000);
-      }
-
-      // Détection annulations : locations booked en base absentes de la réponse API
-      const bookedInWindow = await db.rental.findMany({
-        where: {
-          status: 'booked',
-          startAt: { gte: windowStart, lte: windowEnd },
-        },
-        select: { id: true, getaroundId: true },
-      });
-      for (const rental of bookedInWindow) {
-        if (rental.getaroundId && !apiIds.has(rental.getaroundId)) {
-          await db.rental.update({
-            where: { id: rental.id },
-            data: { status: 'cancelled' },
-          });
-          console.log(`[Sync][${tenantSlug}] Annulation détectée : ${rental.getaroundId}`);
-        }
       }
 
       // 3. Messages de la fenêtre

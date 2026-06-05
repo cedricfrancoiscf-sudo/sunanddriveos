@@ -9,13 +9,18 @@ import { api } from '../../utils/api';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface EncaisseBreakdown {
-  total: number; basePrice: number; insuranceFee: number;
-  driverMessFee: number; damageCompensation: number; autres: number;
+  total: number;
+  basePrice: number; insuranceFee: number; driverMessFee: number; damageCompensation: number;
+  lateReturnFee: number; gasRefillFee: number; extraDistanceFee: number;
+  assistanceFee: number; deliveryFee: number; batteryRechargeFee: number;
+  ownerInfractionFee: number; ownerTowFee: number; guaranteeEarning: number;
+  otherCompensation: number; cancellationFee: number;
+  autres: number;
+  getaroundServiceFee: number;
 }
 interface MonthData {
   month: string; label: string;
   encaisse: EncaisseBreakdown;
-  getaroundServiceFee: number;
   previsionnel: number; total: number; rentalCount: number; km: number;
 }
 interface AnnualKPIs {
@@ -73,24 +78,39 @@ function CATooltip({ active, payload, label }: { active?: boolean; payload?: Arr
   if (!active || !payload?.length) return null;
   const d: MonthData | undefined = payload[0]?.payload;
   if (!d) return null;
-  const sousTotal = d.encaisse.basePrice + d.encaisse.insuranceFee + d.encaisse.driverMessFee + d.encaisse.damageCompensation + d.encaisse.autres;
-  const commission = Math.abs(d.getaroundServiceFee ?? 0);
+  const e = d.encaisse;
+  const sousTotal = e.basePrice + e.insuranceFee + e.driverMessFee + e.damageCompensation
+    + e.lateReturnFee + e.gasRefillFee + e.extraDistanceFee + e.assistanceFee + e.deliveryFee
+    + e.batteryRechargeFee + e.ownerInfractionFee + e.ownerTowFee + e.guaranteeEarning
+    + e.otherCompensation + e.cancellationFee;
+  const commission = Math.abs(e.getaroundServiceFee ?? 0);
+  const fmt = fmtEuro;
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs min-w-[220px]">
+    <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs min-w-[240px]">
       <p className="font-semibold text-gray-900 mb-1">{label} — {d.rentalCount} location{d.rentalCount !== 1 ? 's' : ''}</p>
       <div className="space-y-0.5 border-t border-gray-100 pt-1">
-        <p className="flex justify-between"><span className="text-green-700">Location</span><span>{fmtEuro(d.encaisse.basePrice)}</span></p>
-        <p className="flex justify-between"><span className="text-emerald-700">Assurance</span><span>{fmtEuro(d.encaisse.insuranceFee)}</span></p>
-        {d.encaisse.driverMessFee > 0 && <p className="flex justify-between"><span className="text-yellow-700">Nettoyage</span><span>{fmtEuro(d.encaisse.driverMessFee)}</span></p>}
-        {d.encaisse.damageCompensation > 0 && <p className="flex justify-between"><span className="text-orange-700">Réparations</span><span>{fmtEuro(d.encaisse.damageCompensation)}</span></p>}
-        {d.encaisse.autres > 0 && <p className="flex justify-between"><span className="text-stone-600">Autres</span><span>{fmtEuro(d.encaisse.autres)}</span></p>}
+        <p className="flex justify-between"><span className="text-green-700">Location</span><span>{fmt(e.basePrice)}</span></p>
+        <p className="flex justify-between"><span className="text-emerald-700">Assurance</span><span>{fmt(e.insuranceFee)}</span></p>
+        <p className="flex justify-between"><span className="text-yellow-700">Nettoyage</span><span>{fmt(e.driverMessFee)}</span></p>
+        <p className="flex justify-between"><span className="text-orange-700">Réparations</span><span>{fmt(e.damageCompensation)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Km supplémentaires</span><span>{fmt(e.extraDistanceFee)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Carburant</span><span>{fmt(e.gasRefillFee)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Retard</span><span>{fmt(e.lateReturnFee)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Assistance</span><span>{fmt(e.assistanceFee)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Livraison</span><span>{fmt(e.deliveryFee)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Recharge batterie</span><span>{fmt(e.batteryRechargeFee)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Infractions</span><span>{fmt(e.ownerInfractionFee)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Remorquage</span><span>{fmt(e.ownerTowFee)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Garantie</span><span>{fmt(e.guaranteeEarning)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Autres compensations</span><span>{fmt(e.otherCompensation)}</span></p>
+        <p className="flex justify-between text-gray-600"><span>Annulations</span><span>{fmt(e.cancellationFee)}</span></p>
         <div className="border-t border-gray-100 pt-0.5 mt-0.5">
-          <p className="flex justify-between font-semibold text-gray-700"><span>Sous-total brut</span><span>{fmtEuro(sousTotal)}</span></p>
-          {commission > 0 && <p className="flex justify-between text-red-600"><span>Commission Getaround</span><span>-{fmtEuro(commission)}</span></p>}
+          <p className="flex justify-between font-semibold text-gray-700"><span>Sous-total brut</span><span>{fmt(sousTotal)}</span></p>
+          {commission > 0 && <p className="flex justify-between font-medium" style={{ color: '#0ea5e9' }}><span>Commission Getaround</span><span>-{fmt(commission)}</span></p>}
         </div>
         <div className="border-t border-gray-100 pt-0.5 mt-0.5">
-          {d.encaisse.total > 0 && <p className="flex justify-between font-bold text-green-700"><span>Votre revenu</span><span>{fmtEuro(d.encaisse.total)}</span></p>}
-          {d.previsionnel > 0 && <p className="flex justify-between text-blue-600"><span>Prévisionnel</span><span>{fmtEuro(d.previsionnel)}</span></p>}
+          {e.total > 0 && <p className="flex justify-between font-bold text-green-700"><span>Votre revenu</span><span>{fmt(e.total)}</span></p>}
+          {d.previsionnel > 0 && <p className="flex justify-between text-blue-600"><span>Prévisionnel</span><span>{fmt(d.previsionnel)}</span></p>}
           <p className="flex justify-between text-gray-400"><span>Km</span><span>{d.km.toLocaleString('fr-FR')} km</span></p>
         </div>
       </div>
@@ -234,25 +254,38 @@ export default function IntelligencePage(): React.JSX.Element {
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-yellow-400 inline-block" /> Nettoyage</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-orange-400 inline-block" /> Réparations</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-stone-400 inline-block" /> Autres</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400 inline-block" /> Prévisionnel</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-500 inline-block" /> Prévisionnel</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#38bdf8' }} /> Commission (↓)</span>
               <span className="flex items-center gap-1"><span className="h-0.5 w-4 bg-orange-400 inline-block" /> Km</span>
             </div>
           </div>
           <div className="p-5">
             {annual.monthlyData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={320}>
-                <ComposedChart data={annual.monthlyData} margin={{ top: 10, right: 50, left: 0, bottom: 0 }}>
+              <ResponsiveContainer width="100%" height={340}>
+                <ComposedChart data={annual.monthlyData} margin={{ top: 24, right: 50, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="ca" tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
+                  <YAxis yAxisId="ca" allowDataOverflow tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
                   <YAxis yAxisId="km" orientation="right" tick={{ fontSize: 10 }} tickFormatter={v => `${v}km`} />
                   <Tooltip content={<CATooltip />} />
-                  <Bar yAxisId="ca" dataKey="encaisse.basePrice" stackId="ca" fill="#16a34a" name="Location" />
-                  <Bar yAxisId="ca" dataKey="encaisse.insuranceFee" stackId="ca" fill="#10b981" name="Assurance" />
-                  <Bar yAxisId="ca" dataKey="encaisse.driverMessFee" stackId="ca" fill="#eab308" name="Nettoyage" />
-                  <Bar yAxisId="ca" dataKey="encaisse.damageCompensation" stackId="ca" fill="#f97316" name="Réparations" />
-                  <Bar yAxisId="ca" dataKey="encaisse.autres" stackId="ca" fill="#a8a29e" name="Autres" />
-                  <Bar yAxisId="ca" dataKey="previsionnel" stackId="ca" fill="#60a5fa" radius={[3,3,0,0]} name="Prévisionnel" />
+                  <Bar yAxisId="ca" dataKey="encaisse.basePrice" stackId="encaisse" fill="#16a34a" name="Location" />
+                  <Bar yAxisId="ca" dataKey="encaisse.insuranceFee" stackId="encaisse" fill="#10b981" name="Assurance" />
+                  <Bar yAxisId="ca" dataKey="encaisse.driverMessFee" stackId="encaisse" fill="#eab308" name="Nettoyage" />
+                  <Bar yAxisId="ca" dataKey="encaisse.damageCompensation" stackId="encaisse" fill="#f97316" name="Réparations" />
+                  <Bar yAxisId="ca" dataKey="encaisse.autres" stackId="encaisse" fill="#a8a29e" name="Autres"
+                    label={(props: Record<string, unknown>) => {
+                      const { x, y, width, index } = props as { x: number; y: number; width: number; index: number };
+                      const d = annual.monthlyData[index];
+                      if (!d || d.encaisse.total === 0) return <g />;
+                      return (
+                        <text x={x + width / 2} y={y - 5} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#1e293b">
+                          {fmtEuro(d.encaisse.total)}
+                        </text>
+                      );
+                    }}
+                  />
+                  <Bar yAxisId="ca" dataKey="encaisse.getaroundServiceFee" stackId="commission" fill="#38bdf8" name="Commission Getaround" allowDataOverflow />
+                  <Bar yAxisId="ca" dataKey="previsionnel" stackId="previsionnel" fill="#3b82f6" radius={[3,3,0,0]} name="Prévisionnel" />
                   <Line yAxisId="km" type="monotone" dataKey="km" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} name="Km" />
                 </ComposedChart>
               </ResponsiveContainer>

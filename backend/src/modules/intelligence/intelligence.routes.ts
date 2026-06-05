@@ -156,15 +156,32 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
     const totalKm = valid.reduce((acc, r) => acc + s(r.kmDriven), 0);
 
     type MonthBucket = {
-      encaisse: { total: number; basePrice: number; insuranceFee: number; driverMessFee: number; damageCompensation: number; autres: number };
-      getaroundServiceFee: number;
+      encaisse: {
+        total: number;
+        basePrice: number; insuranceFee: number; driverMessFee: number; damageCompensation: number;
+        lateReturnFee: number; gasRefillFee: number; extraDistanceFee: number;
+        assistanceFee: number; deliveryFee: number; batteryRechargeFee: number;
+        ownerInfractionFee: number; ownerTowFee: number; guaranteeEarning: number;
+        otherCompensation: number; cancellationFee: number;
+        getaroundServiceFee: number;
+      };
       previsionnel: number; rentalCount: number; km: number;
     };
     const months: Record<string, MonthBucket> = {};
     const FR_MONTHS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
     for (let m = 0; m < 12; m++) {
       const key = `${now.getFullYear()}-${String(m + 1).padStart(2, '0')}`;
-      months[key] = { encaisse: { total: 0, basePrice: 0, insuranceFee: 0, driverMessFee: 0, damageCompensation: 0, autres: 0 }, getaroundServiceFee: 0, previsionnel: 0, rentalCount: 0, km: 0 };
+      months[key] = {
+        encaisse: {
+          total: 0, basePrice: 0, insuranceFee: 0, driverMessFee: 0, damageCompensation: 0,
+          lateReturnFee: 0, gasRefillFee: 0, extraDistanceFee: 0,
+          assistanceFee: 0, deliveryFee: 0, batteryRechargeFee: 0,
+          ownerInfractionFee: 0, ownerTowFee: 0, guaranteeEarning: 0,
+          otherCompensation: 0, cancellationFee: 0,
+          getaroundServiceFee: 0,
+        },
+        previsionnel: 0, rentalCount: 0, km: 0,
+      };
     }
     for (const r of valid) {
       const key = new Date(r.startAt).toISOString().slice(0, 7);
@@ -172,38 +189,65 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
       months[key].rentalCount++;
       months[key].km += s(r.kmDriven);
       if (s(r.ownerPayout) > 0) {
-        const autres = s(r.lateReturnFee) + s(r.gasRefillFee) + s(r.extraDistanceFee) + s(r.assistanceFee) + s(r.deliveryFee)
-          + s(r.batteryRechargeFee) + s(r.ownerInfractionFee) + s(r.ownerTowFee) + s(r.guaranteeEarning) + s(r.otherCompensation) + s(r.cancellationFee);
-        months[key].encaisse.total              += s(r.ownerPayout);
-        months[key].encaisse.basePrice          += s(r.basePrice);
-        months[key].encaisse.insuranceFee       += s(r.insuranceFee);
-        months[key].encaisse.driverMessFee      += s(r.driverMessFee);
-        months[key].encaisse.damageCompensation += s(r.damageCompensation);
-        months[key].encaisse.autres             += autres;
-        months[key].getaroundServiceFee         += r.getaroundServiceFee ?? 0;
+        const e = months[key].encaisse;
+        e.total              += s(r.ownerPayout);
+        e.basePrice          += s(r.basePrice);
+        e.insuranceFee       += s(r.insuranceFee);
+        e.driverMessFee      += s(r.driverMessFee);
+        e.damageCompensation += s(r.damageCompensation);
+        e.lateReturnFee      += s(r.lateReturnFee);
+        e.gasRefillFee       += s(r.gasRefillFee);
+        e.extraDistanceFee   += s(r.extraDistanceFee);
+        e.assistanceFee      += s(r.assistanceFee);
+        e.deliveryFee        += s(r.deliveryFee);
+        e.batteryRechargeFee += s(r.batteryRechargeFee);
+        e.ownerInfractionFee += s(r.ownerInfractionFee);
+        e.ownerTowFee        += s(r.ownerTowFee);
+        e.guaranteeEarning   += s(r.guaranteeEarning);
+        e.otherCompensation  += s(r.otherCompensation);
+        e.cancellationFee    += s(r.cancellationFee);
+        e.getaroundServiceFee += r.getaroundServiceFee ?? 0;
       } else {
         months[key].previsionnel += s(r.grossRevenue);
       }
     }
 
     const rnd = (v: number) => Math.round(v * 100) / 100;
-    const monthlyData = Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([key, v], i) => ({
-      month: key,
-      label: FR_MONTHS[i] ?? key,
-      encaisse: {
-        total:              rnd(v.encaisse.total),
-        basePrice:          rnd(v.encaisse.basePrice),
-        insuranceFee:       rnd(v.encaisse.insuranceFee),
-        driverMessFee:      rnd(v.encaisse.driverMessFee),
-        damageCompensation: rnd(v.encaisse.damageCompensation),
-        autres:             rnd(v.encaisse.autres),
-      },
-      getaroundServiceFee: rnd(v.getaroundServiceFee),
-      previsionnel: rnd(v.previsionnel),
-      total: rnd(v.encaisse.total + v.previsionnel),
-      rentalCount: v.rentalCount,
-      km: v.km,
-    }));
+    const monthlyData = Object.entries(months).sort(([a], [b]) => a.localeCompare(b)).map(([key, v], i) => {
+      const e = v.encaisse;
+      const autres = rnd(e.lateReturnFee + e.gasRefillFee + e.extraDistanceFee
+        + e.assistanceFee + e.deliveryFee + e.batteryRechargeFee
+        + e.ownerInfractionFee + e.ownerTowFee + e.guaranteeEarning
+        + e.otherCompensation + e.cancellationFee);
+      return {
+        month: key,
+        label: FR_MONTHS[i] ?? key,
+        encaisse: {
+          total:              rnd(e.total),
+          basePrice:          rnd(e.basePrice),
+          insuranceFee:       rnd(e.insuranceFee),
+          driverMessFee:      rnd(e.driverMessFee),
+          damageCompensation: rnd(e.damageCompensation),
+          lateReturnFee:      rnd(e.lateReturnFee),
+          gasRefillFee:       rnd(e.gasRefillFee),
+          extraDistanceFee:   rnd(e.extraDistanceFee),
+          assistanceFee:      rnd(e.assistanceFee),
+          deliveryFee:        rnd(e.deliveryFee),
+          batteryRechargeFee: rnd(e.batteryRechargeFee),
+          ownerInfractionFee: rnd(e.ownerInfractionFee),
+          ownerTowFee:        rnd(e.ownerTowFee),
+          guaranteeEarning:   rnd(e.guaranteeEarning),
+          otherCompensation:  rnd(e.otherCompensation),
+          cancellationFee:    rnd(e.cancellationFee),
+          getaroundServiceFee: rnd(e.getaroundServiceFee),
+          autres,
+        },
+        previsionnel: rnd(v.previsionnel),
+        total: rnd(e.total + v.previsionnel),
+        rentalCount: v.rentalCount,
+        km: v.km,
+      };
+    });
 
     res.json({
       totalEncaisse: rnd(totalEncaisse), totalPrevisionnel: rnd(totalPrevisionnel),

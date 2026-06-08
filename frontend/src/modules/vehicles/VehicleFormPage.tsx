@@ -68,7 +68,7 @@ export default function VehicleFormPage(): React.JSX.Element {
         deliveryPostalCode: (vehicle as { deliveryPostalCode?: string | null }).deliveryPostalCode ?? '',
         pickupInstructions: vehicle.pickupInstructions ?? '',
         returnInstructions: vehicle.returnInstructions ?? '',
-        carekeeperUserId: (vehicle as { carekeeperUserId?: string | null }).carekeeperUserId ?? '',
+        carekeeperUserId: vehicle.carekeeperUserId ?? '',
       });
       setHealthScore(vehicle.healthScore);
     }

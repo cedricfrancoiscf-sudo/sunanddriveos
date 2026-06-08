@@ -16,6 +16,7 @@ export interface Vehicle {
   deliveryPostalCode: string | null;
   pickupInstructions: string | null;
   returnInstructions: string | null;
+  carekeeperUserId: string | null;
   currentMileage: number;
   healthScore: number;
   isActive: boolean;

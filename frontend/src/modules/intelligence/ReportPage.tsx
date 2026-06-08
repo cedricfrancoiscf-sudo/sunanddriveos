@@ -103,7 +103,7 @@ export default function ReportPage(): React.JSX.Element {
 
   const statusStr = !data ? null : ('status' in data ? data.status : 'ready');
   const isGenerating = isFetching || statusStr === 'generating' || generateMutation.isPending;
-  const reportData = data && !('status' in data) ? data as ReportData : null;
+  const reportData = data && data.status === 'ready' ? data as ReportData : null;
   const theme = reportData?.theme ?? { primaryColor: '#01696e', fontFamily: 'Montserrat', logoUrl: null, companyName: 'Sun and Drive' };
   const report = reportData?.report;
   const internal = reportData?.internalData;

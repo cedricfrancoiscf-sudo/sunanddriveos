@@ -7,7 +7,7 @@ import { api } from '../../utils/api';
 
 const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Annual Types ─────────────────────────────────────────────────────────────
 
 interface VehicleStat {
   vehicule: string; zone: string; annee: number; km: number; scoreSante: number;
@@ -17,6 +17,7 @@ interface VehicleStat {
 
 interface ReportData {
   status: 'ready';
+  mode?: 'annual';
   generatedAt: string;
   theme: { primaryColor: string; fontFamily: string; logoUrl: string | null; companyName: string };
   internalData: {
@@ -41,8 +42,46 @@ interface ReportData {
   };
 }
 
+// ─── Monthly Types ────────────────────────────────────────────────────────────
+
+interface ComparaisonMetric {
+  mois_courant: { label: string; valeur: number; evolution_pct_m1: number; evolution_pct_n1: number };
+  m_moins_1: { label: string; valeur: number };
+  m_moins_2: { label: string; valeur: number };
+  n_moins_1: { label: string; valeur: number };
+}
+
+interface MonthlyReportData {
+  status: 'ready';
+  mode: 'monthly';
+  generatedAt: string;
+  theme: { primaryColor: string; fontFamily: string; logoUrl: string | null; companyName: string };
+  resume_mensuel: { titre: string; synthese: string; points_forts: string[]; points_attention: string[] };
+  comparaison: { ca: ComparaisonMetric; taux_occupation: ComparaisonMetric; locations: ComparaisonMetric; km: ComparaisonMetric };
+  analyse_vehicules: Array<{ vehicule: string; ca_mois: number; evolution_vs_m1: number; taux_occupation: number; tendance: 'hausse' | 'stable' | 'baisse'; commentaire: string }>;
+  alertes_operationnelles: Array<{ type: 'ct' | 'siege_auto' | 'message' | 'anomalie'; priorite: 'haute' | 'moyenne' | 'basse'; titre: string; detail: string }>;
+  previsionnel_mois_suivant: { ca_estime: number; nb_reservations_confirmees: number; commentaire: string };
+  recommandations: Array<{ priorite: 'haute' | 'moyenne' | 'basse'; titre: string; detail: string; echeance: string }>;
+}
+
 type StatusResponse = { status: 'generating' | 'error' | 'absent' };
-type ReportResponse = StatusResponse | ReportData;
+type AnnualResponse = StatusResponse | ReportData;
+type MonthlyResponse = StatusResponse | MonthlyReportData;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const FR_MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+function shiftMonth(m: string, delta: number): string {
+  const [y, mo] = m.split('-').map(Number);
+  const d = new Date(y!, mo! - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function fmtMonth(m: string): string {
+  const [y, mo] = m.split('-').map(Number);
+  return `${FR_MONTHS[mo! - 1]} ${y}`;
+}
 
 const HEALTH_COLOR = (score: number) =>
   score >= 80 ? 'bg-green-100 text-green-700' :
@@ -59,19 +98,219 @@ const STOCK_COLOR = (s: string) =>
   s === 'insuffisant' ? 'bg-red-100 text-red-700' :
   'bg-yellow-100 text-yellow-700';
 
-// ─── Utilitaires mois ─────────────────────────────────────────────────────────
+const ALERT_TYPE_ICON: Record<string, string> = {
+  ct: '🔧', siege_auto: '🪑', message: '💬', anomalie: '⚠️',
+};
 
-const FR_MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const TENDANCE_ICON = (t: string) => t === 'hausse' ? '↑' : t === 'baisse' ? '↓' : '→';
+const TENDANCE_COLOR = (t: string) =>
+  t === 'hausse' ? 'text-green-600' : t === 'baisse' ? 'text-red-500' : 'text-gray-400';
 
-function shiftMonth(m: string, delta: number): string {
-  const [y, mo] = m.split('-').map(Number);
-  const d = new Date(y!, mo! - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+function EvolBadge({ pct, unit = '%' }: { pct: number; unit?: string }) {
+  const positive = pct >= 0;
+  return (
+    <span className={`text-xs font-medium ${positive ? 'text-green-600' : 'text-red-500'}`}>
+      {positive ? '+' : ''}{pct}{unit}
+    </span>
+  );
 }
 
-function fmtMonth(m: string): string {
-  const [y, mo] = m.split('-').map(Number);
-  return `${FR_MONTHS[mo! - 1]} ${y}`;
+// ─── Monthly View ─────────────────────────────────────────────────────────────
+
+function ComparaisonRow({ label, metric, unit = '€', isPoints = false }: {
+  label: string;
+  metric: ComparaisonMetric;
+  unit?: string;
+  isPoints?: boolean;
+}) {
+  const fmt = (v: number) => unit === '€'
+    ? `${v.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`
+    : unit === '%' ? `${v} %` : v.toLocaleString('fr-FR');
+
+  return (
+    <tr className="border-b border-gray-50">
+      <td className="px-4 py-3 text-sm font-medium text-gray-700">{label}</td>
+      <td className="px-4 py-3 text-right">
+        <div className="text-sm font-bold text-gray-900">{fmt(metric.mois_courant.valeur)}</div>
+        <div className="flex justify-end gap-2 mt-0.5">
+          <EvolBadge pct={metric.mois_courant.evolution_pct_m1} unit={isPoints ? 'pt' : '%'} />
+          <span className="text-xs text-gray-300">|</span>
+          <EvolBadge pct={metric.mois_courant.evolution_pct_n1} unit={isPoints ? 'pt' : '%'} />
+        </div>
+      </td>
+      <td className="px-4 py-3 text-right text-sm text-gray-500">{fmt(metric.m_moins_1.valeur)}</td>
+      <td className="px-4 py-3 text-right text-sm text-gray-500">{fmt(metric.m_moins_2.valeur)}</td>
+      <td className="px-4 py-3 text-right text-sm text-gray-500">{fmt(metric.n_moins_1.valeur)}</td>
+    </tr>
+  );
+}
+
+function MonthlyReportView({ data, theme }: { data: MonthlyReportData; theme: { primaryColor: string } }) {
+  const { resume_mensuel, comparaison, analyse_vehicules, alertes_operationnelles, previsionnel_mois_suivant, recommandations } = data;
+  const col = comparaison.ca;
+
+  return (
+    <div className="space-y-8">
+      {/* RÉSUMÉ MENSUEL */}
+      <section className="page-break rounded-2xl p-8 text-white" style={{ backgroundColor: theme.primaryColor }}>
+        <p className="text-xs font-semibold uppercase tracking-widest opacity-70 mb-1">{resume_mensuel.titre}</p>
+        <h2 className="text-2xl font-bold mb-4">Bilan mensuel</h2>
+        <p className="text-base leading-relaxed opacity-95 mb-6">{resume_mensuel.synthese}</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="rounded-xl bg-white/10 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider opacity-70 mb-2">Points forts</p>
+            <ul className="space-y-1.5">
+              {resume_mensuel.points_forts.map((p, i) => (
+                <li key={i} className="text-sm opacity-90 flex gap-2"><span className="opacity-60">✓</span>{p}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-xl bg-white/10 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider opacity-70 mb-2">Points d'attention</p>
+            <ul className="space-y-1.5">
+              {resume_mensuel.points_attention.map((p, i) => (
+                <li key={i} className="text-sm opacity-90 flex gap-2"><span className="opacity-60">!</span>{p}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* COMPARAISON */}
+      <section className="page-break">
+        <h2 className="text-lg font-bold text-gray-900 mb-4">Comparaison périodes</h2>
+        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Indicateur</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">
+                  {col.mois_courant.label}
+                  <div className="text-[10px] font-normal text-gray-400">vs M-1 | vs N-1</div>
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-400">{col.m_moins_1.label}</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-400">{col.m_moins_2.label}</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-400">{col.n_moins_1.label}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <ComparaisonRow label="CA net" metric={comparaison.ca} unit="€" />
+              <ComparaisonRow label="Taux occupation" metric={comparaison.taux_occupation} unit="%" isPoints />
+              <ComparaisonRow label="Locations" metric={comparaison.locations} unit="nb" />
+              <ComparaisonRow label="Km parcourus" metric={comparaison.km} unit="km" />
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* ANALYSE VÉHICULES */}
+      {analyse_vehicules.length > 0 && (
+        <section className="page-break">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Analyse par véhicule</h2>
+          <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {['Véhicule', 'CA mois', 'Évol. M-1', 'Taux occ.', 'Tendance', 'Commentaire'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {analyse_vehicules.map((v, i) => (
+                  <tr key={i} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{v.vehicule}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{v.ca_mois.toFixed(0)} €</td>
+                    <td className="px-4 py-3"><EvolBadge pct={v.evolution_vs_m1} /></td>
+                    <td className="px-4 py-3 text-gray-600">{v.taux_occupation} %</td>
+                    <td className={`px-4 py-3 font-semibold ${TENDANCE_COLOR(v.tendance)}`}>
+                      {TENDANCE_ICON(v.tendance)} {v.tendance}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500 max-w-[200px]">{v.commentaire}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* ALERTES */}
+      {alertes_operationnelles.length > 0 && (
+        <section className="page-break">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Alertes opérationnelles</h2>
+          <div className="space-y-3">
+            {alertes_operationnelles.map((a, i) => (
+              <div key={i} className={`rounded-2xl border p-4 ${
+                a.priorite === 'haute' ? 'border-red-200 bg-red-50' :
+                a.priorite === 'moyenne' ? 'border-orange-200 bg-orange-50' :
+                'border-gray-200 bg-gray-50'
+              }`}>
+                <div className="flex items-start gap-3">
+                  <span className="text-xl">{ALERT_TYPE_ICON[a.type] ?? '⚠️'}</span>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_COLOR(a.priorite)}`}>
+                        {a.priorite}
+                      </span>
+                      <p className="font-semibold text-gray-900 text-sm">{a.titre}</p>
+                    </div>
+                    <p className="text-sm text-gray-600">{a.detail}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* PRÉVISIONNEL */}
+      <section className="page-break">
+        <h2 className="text-lg font-bold text-gray-900 mb-4">Prévisionnel mois suivant</h2>
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-6">
+          <div className="flex flex-wrap gap-6 mb-4">
+            <div>
+              <p className="text-xs font-medium text-blue-400 mb-0.5">CA estimé</p>
+              <p className="text-2xl font-bold text-blue-900">
+                {previsionnel_mois_suivant.ca_estime.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-blue-400 mb-0.5">Réservations confirmées</p>
+              <p className="text-2xl font-bold text-blue-900">{previsionnel_mois_suivant.nb_reservations_confirmees}</p>
+            </div>
+          </div>
+          <p className="text-sm text-blue-800">{previsionnel_mois_suivant.commentaire}</p>
+        </div>
+      </section>
+
+      {/* RECOMMANDATIONS */}
+      {recommandations.length > 0 && (
+        <section className="page-break">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Recommandations</h2>
+          <div className="space-y-3">
+            {recommandations.map((r, i) => (
+              <div key={i} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <span className="shrink-0 text-lg font-bold text-gray-300">{String(i + 1).padStart(2, '0')}</span>
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_COLOR(r.priorite)}`}>
+                        {r.priorite}
+                      </span>
+                      <p className="font-semibold text-gray-900">{r.titre}</p>
+                    </div>
+                    <p className="text-sm text-gray-600">{r.detail}</p>
+                    <p className="mt-1 text-xs text-gray-400">⏱ {r.echeance}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
 }
 
 // ─── Composant principal ──────────────────────────────────────────────────────
@@ -79,12 +318,13 @@ function fmtMonth(m: string): string {
 export default function ReportPage(): React.JSX.Element {
   const currentMonth = new Date().toISOString().slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [mode, setMode] = useState<'annual' | 'monthly'>('annual');
   const [perfView, setPerfView] = useState<'chart' | 'table'>('chart');
 
-  const { data, isFetching, isError, refetch } = useQuery<ReportResponse>({
-    queryKey: ['ceo-report', selectedMonth],
+  const { data, isFetching, isError, refetch } = useQuery<AnnualResponse | MonthlyResponse>({
+    queryKey: ['ceo-report', selectedMonth, mode],
     queryFn: () =>
-      api.get<ReportResponse>('/intelligence/report', { params: { month: selectedMonth } })
+      api.get<AnnualResponse | MonthlyResponse>('/intelligence/report', { params: { month: selectedMonth, mode } })
          .then(r => r.data),
     staleTime: 30_000,
     retry: 0,
@@ -96,21 +336,30 @@ export default function ReportPage(): React.JSX.Element {
   });
 
   const generateMutation = useMutation({
-    mutationFn: (month: string) =>
-      api.post<StatusResponse>('/intelligence/report/generate', { month }).then(r => r.data),
+    mutationFn: (params: { month: string; mode: string }) =>
+      api.post<StatusResponse>('/intelligence/report/generate', params).then(r => r.data),
     onSuccess: () => void refetch(),
   });
 
-  const statusStr = !data ? null : ('status' in data ? data.status : 'ready');
+  const statusStr = !data ? null : ('status' in data && data.status !== 'ready' ? data.status : 'ready');
   const isGenerating = isFetching || statusStr === 'generating' || generateMutation.isPending;
-  const reportData = data && data.status === 'ready' ? data as ReportData : null;
-  const theme = reportData?.theme ?? { primaryColor: '#01696e', fontFamily: 'Montserrat', logoUrl: null, companyName: 'Sun and Drive' };
+
+  const isMonthly = data && 'mode' in data && data.mode === 'monthly' && data.status === 'ready';
+  const isAnnual  = data && data.status === 'ready' && !isMonthly;
+
+  const reportData = isAnnual ? data as ReportData : null;
+  const monthlyData = isMonthly ? data as MonthlyReportData : null;
+
+  const theme = (reportData ?? monthlyData)?.theme
+    ?? { primaryColor: '#01696e', fontFamily: 'Montserrat', logoUrl: null, companyName: 'Sun and Drive' };
   const report = reportData?.report;
   const internal = reportData?.internalData;
   const vehicleStats = reportData?.vehicleStats ?? [];
 
+  const generatedAt = (reportData ?? monthlyData)?.generatedAt;
+
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  const SECTIONS = [
+  const ANNUAL_SECTIONS = [
     { id: 'resume', label: 'Résumé' }, { id: 'performance', label: 'Performance' },
     { id: 'flotte', label: 'Flotte' }, { id: 'swot', label: 'SWOT' },
     { id: 'pestel', label: 'PESTEL' }, { id: 'zones', label: 'Zones' },
@@ -137,15 +386,15 @@ export default function ReportPage(): React.JSX.Element {
             )}
             <div>
               <h1 className="text-sm font-bold text-gray-900">Rapport CEO</h1>
-              {reportData && (
+              {generatedAt && (
                 <p className="text-[10px] text-gray-400">
-                  Généré le {format(new Date(reportData.generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}
+                  Généré le {format(new Date(generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}
                 </p>
               )}
             </div>
             {reportData && (
               <nav className="hidden md:flex items-center gap-0.5 ml-4">
-                {SECTIONS.map(s => (
+                {ANNUAL_SECTIONS.map(s => (
                   <button key={s.id} type="button" onClick={() => scrollTo(s.id)}
                     className="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors">
                     {s.label}
@@ -155,6 +404,21 @@ export default function ReportPage(): React.JSX.Element {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {/* Toggle mode */}
+            <div className="no-print flex rounded-xl border border-gray-200 overflow-hidden text-xs font-medium">
+              <button type="button"
+                onClick={() => setMode('annual')}
+                className={`px-3 py-2 transition ${mode === 'annual' ? 'text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                style={mode === 'annual' ? { backgroundColor: theme.primaryColor } : {}}>
+                📋 Annuel
+              </button>
+              <button type="button"
+                onClick={() => setMode('monthly')}
+                className={`px-3 py-2 transition ${mode === 'monthly' ? 'text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                style={mode === 'monthly' ? { backgroundColor: theme.primaryColor } : {}}>
+                📊 Mensuel
+              </button>
+            </div>
             {/* Sélecteur de mois */}
             <div className="no-print flex items-center gap-1 rounded-xl border border-gray-200 bg-gray-50 px-2 py-1">
               <button type="button" onClick={() => setSelectedMonth(m => shiftMonth(m, -1))}
@@ -168,16 +432,16 @@ export default function ReportPage(): React.JSX.Element {
                 className="rounded p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 transition">›</button>
             </div>
             <button type="button"
-              onClick={() => generateMutation.mutate(selectedMonth)}
+              onClick={() => generateMutation.mutate({ month: selectedMonth, mode })}
               disabled={isGenerating}
               className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition-opacity"
               style={{ backgroundColor: theme.primaryColor }}>
               {isGenerating ? (
                 <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
               ) : '✨'}
-              {isGenerating ? 'Génération...' : reportData ? 'Régénérer' : 'Générer'}
+              {isGenerating ? 'Génération...' : (reportData || monthlyData) ? 'Régénérer' : 'Générer'}
             </button>
-            {reportData && (
+            {(reportData || monthlyData) && (
               <button type="button" onClick={() => window.print()}
                 className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 📄 PDF
@@ -190,24 +454,28 @@ export default function ReportPage(): React.JSX.Element {
       <main className="mx-auto max-w-5xl px-4 py-8 space-y-8">
 
         {/* État : absent */}
-        {!isGenerating && !reportData && statusStr !== 'error' && (
+        {!isGenerating && !reportData && !monthlyData && statusStr !== 'error' && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="text-6xl mb-6">📊</div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">Rapport CEO</h2>
+            <div className="text-6xl mb-6">{mode === 'monthly' ? '📊' : '📋'}</div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">
+              {mode === 'monthly' ? 'Bilan mensuel' : 'Rapport CEO'}
+            </h2>
             <p className="text-gray-500 max-w-md mb-2">
-              Analyse complète de la flotte, SWOT, PESTEL et recommandations stratégiques.
+              {mode === 'monthly'
+                ? 'Comparaison M / M-1 / M-2 / N-1, analyse par véhicule, alertes et prévisionnel.'
+                : 'Analyse complète de la flotte, SWOT, PESTEL et recommandations stratégiques.'}
             </p>
-            <button type="button" onClick={() => generateMutation.mutate(selectedMonth)}
+            <button type="button" onClick={() => generateMutation.mutate({ month: selectedMonth, mode })}
               className="mt-6 rounded-2xl px-8 py-3 text-base font-semibold text-white shadow-lg transition-transform hover:scale-105"
               style={{ backgroundColor: theme.primaryColor }}>
-              ✨ Générer le rapport {fmtMonth(selectedMonth)}
+              ✨ Générer le {mode === 'monthly' ? 'bilan' : 'rapport'} {fmtMonth(selectedMonth)}
             </button>
             <p className="mt-3 text-xs text-gray-400">60 à 120 secondes — génération par IA</p>
           </div>
         )}
 
         {/* État : génération en cours */}
-        {isGenerating && !reportData && (
+        {isGenerating && !reportData && !monthlyData && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="mb-6 h-12 w-12 animate-spin rounded-full border-4 border-t-transparent"
               style={{ borderColor: theme.primaryColor, borderTopColor: 'transparent' }} />
@@ -224,7 +492,7 @@ export default function ReportPage(): React.JSX.Element {
             <p className="text-sm text-gray-500 max-w-md mb-6">
               {isError ? 'Erreur réseau ou serveur.' : 'La génération IA a échoué. Vérifiez la clé ANTHROPIC_API_KEY.'}
             </p>
-            <button type="button" onClick={() => generateMutation.mutate(selectedMonth)}
+            <button type="button" onClick={() => generateMutation.mutate({ month: selectedMonth, mode })}
               className="rounded-2xl px-6 py-2.5 text-sm font-semibold text-white"
               style={{ backgroundColor: theme.primaryColor }}>
               ↺ Régénérer
@@ -232,7 +500,12 @@ export default function ReportPage(): React.JSX.Element {
           </div>
         )}
 
-        {/* ── Rapport affiché ── */}
+        {/* ── Rapport mensuel ── */}
+        {monthlyData && (
+          <MonthlyReportView data={monthlyData} theme={theme} />
+        )}
+
+        {/* ── Rapport annuel ── */}
         {reportData && report && internal && (
           <>
             {/* RÉSUMÉ EXÉCUTIF */}
@@ -561,6 +834,14 @@ export default function ReportPage(): React.JSX.Element {
               {format(new Date(reportData.generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}
             </footer>
           </>
+        )}
+
+        {/* Pied de page mensuel */}
+        {monthlyData && (
+          <footer className="border-t border-gray-200 pt-4 text-center text-xs text-gray-400">
+            Bilan mensuel généré par SunanddriveOS le{' '}
+            {format(new Date(monthlyData.generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}
+          </footer>
         )}
       </main>
     </div>

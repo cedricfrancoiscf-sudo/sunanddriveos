@@ -855,7 +855,7 @@ cron.schedule('0 6 6 * *', () => {
         try {
           const db = getTenantClient(company.tenantDbUrl);
           const existing = await db.ceoReport.findFirst({
-            where: { companyId: company.slug, month: monthKey },
+            where: { companyId: company.slug, month: monthKey, mode: 'annual' },
           });
           if (existing?.status === 'ready' || existing?.status === 'generating') continue;
           let report;
@@ -866,7 +866,7 @@ cron.schedule('0 6 6 * *', () => {
             });
           } else {
             report = await db.ceoReport.create({
-              data: { companyId: company.slug, month: monthKey, status: 'generating' },
+              data: { companyId: company.slug, month: monthKey, mode: 'annual', status: 'generating' },
             });
           }
           void generateCeoReportAsync(company.tenantDbUrl, report.id, company.slug, monthKey);

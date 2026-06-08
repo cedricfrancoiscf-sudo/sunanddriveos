@@ -618,11 +618,12 @@ model CeoReport {
   id          String    @id @default(cuid())
   companyId   String
   month       String
+  mode        String    @default("annual")
   status      String    @default("generating")
   content     Json?
   generatedAt DateTime?
   createdAt   DateTime  @default(now())
 
-  @@unique([companyId, month])
+  @@unique([companyId, month, mode])
   @@map("ceo_reports")
 }

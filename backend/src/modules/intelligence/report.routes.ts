@@ -9,7 +9,25 @@ router.use(requireAuth, resolveTenant);
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// ── Collecte des données internes du tenant ──────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const FR_MONTHS_DATA = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+function getMonthPeriod(monthStr: string, delta: number): { label: string; start: Date; end: Date } {
+  const [y, mo] = monthStr.split('-').map(Number);
+  const d = new Date(y!, mo! - 1 + delta, 1);
+  return {
+    label: `${FR_MONTHS_DATA[d.getMonth()]} ${d.getFullYear()}`,
+    start: new Date(d.getFullYear(), d.getMonth(), 1),
+    end:   new Date(d.getFullYear(), d.getMonth() + 1, 1),
+  };
+}
+
+function evolPct(current: number, prev: number): number {
+  return prev > 0 ? Math.round((current - prev) / prev * 100) : 0;
+}
+
+// ── Collecte données annuelles ────────────────────────────────────────────────
 
 async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
   const now = new Date();
@@ -144,7 +162,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
   return { settings, vehicleStats, zones, internalContext };
 }
 
-// ── Génération asynchrone (exportée pour le cron) ────────────────────────────
+// ── Génération annuelle asynchrone (exportée pour le cron) ───────────────────
 
 export async function generateCeoReportAsync(
   tenantDbUrl: string,
@@ -232,6 +250,7 @@ Retourne exactement ce JSON (sans markdown, sans backticks) :
 
     const content = {
       status: 'ready',
+      mode: 'annual',
       generatedAt: now.toISOString(),
       theme: {
         primaryColor: settings?.primaryColor ?? '#01696e',
@@ -261,17 +280,262 @@ Retourne exactement ce JSON (sans markdown, sans backticks) :
   }
 }
 
-// ── GET /intelligence/report?month=YYYY-MM ───────────────────────────────────
+// ── Collecte données mensuelles ───────────────────────────────────────────────
+
+async function collectMonthlyData(db: ReturnType<typeof getTenantClient>, monthStr: string) {
+  const M  = getMonthPeriod(monthStr,  0);
+  const M1 = getMonthPeriod(monthStr, -1);
+  const M2 = getMonthPeriod(monthStr, -2);
+  const N1 = getMonthPeriod(monthStr, -12);
+  const nextM = getMonthPeriod(monthStr, 1);
+
+  const [settings, vehicles, allRentals, ctAlerts, carSeatAlerts, pendingMessages] = await Promise.all([
+    db.companySettings.findFirst({
+      select: { senderName: true, primaryColor: true, fontFamily: true, logoUrl: true },
+    }),
+    db.vehicle.findMany({
+      where: { isActive: true },
+      select: { id: true, make: true, model: true, licensePlate: true },
+    }),
+    db.rental.findMany({
+      where: { status: { notIn: ['cancelled'] }, startAt: { gte: N1.start } },
+      select: {
+        vehicleId: true, startAt: true, endAt: true,
+        ownerPayout: true, grossRevenue: true, kmDriven: true,
+      },
+    }),
+    db.technicalControl.findMany({
+      where: { expiryAt: { lte: new Date(Date.now() + 90 * 86_400_000) } },
+      select: { expiryAt: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
+    }),
+    db.carSeatRequest.findMany({
+      where: { status: { in: ['pending', 'unavailable'] } },
+      select: { id: true },
+    }),
+    db.message.findMany({
+      where: { status: 'pending_approval', direction: 'outbound' },
+      select: { id: true },
+    }),
+  ]);
+
+  const nbVehicles = vehicles.length;
+
+  function rentalsInPeriod(start: Date, end: Date) {
+    return allRentals.filter(r => { const s = new Date(r.startAt); return s >= start && s < end; });
+  }
+
+  function periodStats(period: { label: string; start: Date; end: Date }) {
+    const rs = rentalsInPeriod(period.start, period.end);
+    const ca = rs.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
+    const nbLocations = rs.length;
+    const km = rs.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
+    const daysInPeriod = Math.ceil((period.end.getTime() - period.start.getTime()) / 86_400_000);
+    const bookedDays = rs.reduce((s, r) => {
+      const dur = Math.ceil((new Date(r.endAt).getTime() - new Date(r.startAt).getTime()) / 86_400_000);
+      return s + Math.min(dur, daysInPeriod);
+    }, 0);
+    const tauxOccupation = nbVehicles > 0 ? Math.round(bookedDays / (nbVehicles * daysInPeriod) * 100) : 0;
+    return { label: period.label, ca: Math.round(ca * 100) / 100, nbLocations, km, tauxOccupation };
+  }
+
+  const mStats  = periodStats(M);
+  const m1Stats = periodStats(M1);
+  const m2Stats = periodStats(M2);
+  const n1Stats = periodStats(N1);
+
+  const mRentals  = rentalsInPeriod(M.start, M.end);
+  const m1Rentals = rentalsInPeriod(M1.start, M1.end);
+  const daysInM = Math.ceil((M.end.getTime() - M.start.getTime()) / 86_400_000);
+
+  const caParVehicule = vehicles.map(v => {
+    const vM  = mRentals.filter(r => r.vehicleId === v.id);
+    const vM1 = m1Rentals.filter(r => r.vehicleId === v.id);
+    const caM  = vM.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
+    const caM1 = vM1.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
+    const bookedDays = vM.reduce((s, r) => {
+      const dur = Math.ceil((new Date(r.endAt).getTime() - new Date(r.startAt).getTime()) / 86_400_000);
+      return s + Math.min(dur, daysInM);
+    }, 0);
+    return {
+      vehicule: `${v.make} ${v.model} (${v.licensePlate})`,
+      ca_mois: Math.round(caM * 100) / 100,
+      evolution_vs_m1: evolPct(caM, caM1),
+      taux_occupation: daysInM > 0 ? Math.round(bookedDays / daysInM * 100) : 0,
+    };
+  });
+
+  return {
+    settings,
+    societe: settings?.senderName ?? 'Sun and Drive',
+    mois_courant: { ...mStats, evolution_pct_m1: evolPct(mStats.ca, m1Stats.ca), evolution_pct_n1: evolPct(mStats.ca, n1Stats.ca) },
+    m_moins_1: m1Stats,
+    m_moins_2: m2Stats,
+    n_moins_1: n1Stats,
+    caParVehicule,
+    nextMonthLabel: nextM.label,
+    nbReservationsNextMonth: rentalsInPeriod(nextM.start, nextM.end).length,
+    alertes_ct: ctAlerts.map(ct => ({
+      vehicule: `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`,
+      expiration: ct.expiryAt,
+    })),
+    siege_auto_alerts: carSeatAlerts.length,
+    messages_en_attente: pendingMessages.length,
+  };
+}
+
+// ── Génération mensuelle asynchrone ──────────────────────────────────────────
+
+export async function generateMonthlyReportAsync(
+  tenantDbUrl: string,
+  reportId: string,
+  companyId: string,
+  month: string,
+): Promise<void> {
+  console.log(`[CeoReport Monthly] ▶ Génération — companyId=${companyId} month=${month}`);
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('[CeoReport Monthly] ✗ ANTHROPIC_API_KEY non définie');
+    return;
+  }
+  const db = getTenantClient(tenantDbUrl);
+  try {
+    const data = await collectMonthlyData(db, month);
+    const { settings } = data;
+    const now = new Date();
+
+    const ctLines = data.alertes_ct.map(ct => `- ${ct.vehicule}: expire le ${new Date(ct.expiration).toLocaleDateString('fr-FR')}`).join('\n') || 'Aucun';
+
+    const response = await claude.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 6000,
+      system: `Tu es un analyste stratégique expert en mobilité et location de véhicules.
+Tu génères des bilans mensuels professionnels, concis et actionnables en français pour un CEO.
+IMPORTANT : retourne UNIQUEMENT du JSON valide, sans markdown, sans backticks.`,
+      messages: [{
+        role: 'user',
+        content: `Génère le bilan mensuel ${data.mois_courant.label} pour ${data.societe}.
+
+PERFORMANCES DU MOIS :
+- CA net : ${data.mois_courant.ca} € (M-1: ${data.m_moins_1.ca} €, N-1: ${data.n_moins_1.ca} €)
+- Taux occupation : ${data.mois_courant.tauxOccupation}% (M-1: ${data.m_moins_1.tauxOccupation}%, N-1: ${data.n_moins_1.tauxOccupation}%)
+- Locations : ${data.mois_courant.nbLocations} (M-1: ${data.m_moins_1.nbLocations}, N-1: ${data.n_moins_1.nbLocations})
+- Km : ${data.mois_courant.km} (M-1: ${data.m_moins_1.km}, N-1: ${data.n_moins_1.km})
+
+DONNÉES M-2 (${data.m_moins_2.label}) : CA=${data.m_moins_2.ca}€, taux=${data.m_moins_2.tauxOccupation}%, locations=${data.m_moins_2.nbLocations}
+
+CA PAR VÉHICULE :
+${data.caParVehicule.map(v => `- ${v.vehicule}: ${v.ca_mois}€ (évol. M-1: ${v.evolution_vs_m1}%), taux: ${v.taux_occupation}%`).join('\n')}
+
+ALERTES OPÉRATIONNELLES :
+- CT à renouveler (90j) : ${ctLines}
+- Demandes siège auto en attente/rupture : ${data.siege_auto_alerts}
+- Messages en attente d'approbation : ${data.messages_en_attente}
+
+PRÉVISIONNEL MOIS SUIVANT (${data.nextMonthLabel}) :
+- Réservations déjà confirmées : ${data.nbReservationsNextMonth}
+
+Retourne exactement ce JSON (sans markdown) :
+{
+  "resume_mensuel": {
+    "titre": "Bilan ${data.mois_courant.label}",
+    "synthese": "3-4 phrases synthétisant les performances réelles avec les chiffres exacts",
+    "points_forts": ["point fort 1 avec chiffre", "point fort 2", "point fort 3"],
+    "points_attention": ["point d'attention 1 avec chiffre", "point d'attention 2"]
+  },
+  "analyse_vehicules": [
+    ${data.caParVehicule.map(v => `{ "vehicule": "${v.vehicule}", "ca_mois": ${v.ca_mois}, "evolution_vs_m1": ${v.evolution_vs_m1}, "taux_occupation": ${v.taux_occupation}, "tendance": "hausse|stable|baisse", "commentaire": "1 phrase analyse" }`).join(',\n    ')}
+  ],
+  "alertes_operationnelles": [
+    ${data.alertes_ct.length > 0 ? `{ "type": "ct", "priorite": "haute", "titre": "CT à renouveler", "detail": "${data.alertes_ct.map(c => c.vehicule).join(', ')}" }` : ''}
+    ${data.siege_auto_alerts > 0 ? `${data.alertes_ct.length > 0 ? ',' : ''}{ "type": "siege_auto", "priorite": "moyenne", "titre": "${data.siege_auto_alerts} siège(s) auto en attente/rupture", "detail": "Traiter les demandes en attente" }` : ''}
+    ${data.messages_en_attente > 0 ? `${(data.alertes_ct.length > 0 || data.siege_auto_alerts > 0) ? ',' : ''}{ "type": "message", "priorite": "moyenne", "titre": "${data.messages_en_attente} message(s) en attente de validation", "detail": "Valider ou rejeter les brouillons IA" }` : ''}
+  ],
+  "previsionnel_mois_suivant": {
+    "ca_estime": <estimation numérique basée sur la tendance>,
+    "nb_reservations_confirmees": ${data.nbReservationsNextMonth},
+    "commentaire": "1-2 phrases analyse des perspectives"
+  },
+  "recommandations": [
+    { "priorite": "haute|moyenne|basse", "titre": "titre court", "detail": "explication actionnable", "echeance": "délai concret" }
+  ]
+}`,
+      }],
+    });
+
+    console.log(`[CeoReport Monthly] ✓ Claude — stop_reason=${response.stop_reason}`);
+    const textContent = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('');
+    const jsonMatch = textContent.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Réponse Claude non parseable');
+    const aiData = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+
+    const content = {
+      status: 'ready',
+      mode: 'monthly',
+      generatedAt: now.toISOString(),
+      theme: {
+        primaryColor: settings?.primaryColor ?? '#01696e',
+        fontFamily: settings?.fontFamily ?? 'Montserrat',
+        logoUrl: settings?.logoUrl ?? null,
+        companyName: settings?.senderName ?? 'Sun and Drive',
+      },
+      resume_mensuel: aiData.resume_mensuel,
+      comparaison: {
+        ca: {
+          mois_courant: { label: data.mois_courant.label, valeur: data.mois_courant.ca, evolution_pct_m1: data.mois_courant.evolution_pct_m1, evolution_pct_n1: data.mois_courant.evolution_pct_n1 },
+          m_moins_1: { label: data.m_moins_1.label, valeur: data.m_moins_1.ca },
+          m_moins_2: { label: data.m_moins_2.label, valeur: data.m_moins_2.ca },
+          n_moins_1: { label: data.n_moins_1.label, valeur: data.n_moins_1.ca },
+        },
+        taux_occupation: {
+          mois_courant: { label: data.mois_courant.label, valeur: data.mois_courant.tauxOccupation, evolution_pct_m1: data.mois_courant.tauxOccupation - data.m_moins_1.tauxOccupation, evolution_pct_n1: data.mois_courant.tauxOccupation - data.n_moins_1.tauxOccupation },
+          m_moins_1: { label: data.m_moins_1.label, valeur: data.m_moins_1.tauxOccupation },
+          m_moins_2: { label: data.m_moins_2.label, valeur: data.m_moins_2.tauxOccupation },
+          n_moins_1: { label: data.n_moins_1.label, valeur: data.n_moins_1.tauxOccupation },
+        },
+        locations: {
+          mois_courant: { label: data.mois_courant.label, valeur: data.mois_courant.nbLocations, evolution_pct_m1: evolPct(data.mois_courant.nbLocations, data.m_moins_1.nbLocations), evolution_pct_n1: evolPct(data.mois_courant.nbLocations, data.n_moins_1.nbLocations) },
+          m_moins_1: { label: data.m_moins_1.label, valeur: data.m_moins_1.nbLocations },
+          m_moins_2: { label: data.m_moins_2.label, valeur: data.m_moins_2.nbLocations },
+          n_moins_1: { label: data.n_moins_1.label, valeur: data.n_moins_1.nbLocations },
+        },
+        km: {
+          mois_courant: { label: data.mois_courant.label, valeur: data.mois_courant.km, evolution_pct_m1: evolPct(data.mois_courant.km, data.m_moins_1.km), evolution_pct_n1: evolPct(data.mois_courant.km, data.n_moins_1.km) },
+          m_moins_1: { label: data.m_moins_1.label, valeur: data.m_moins_1.km },
+          m_moins_2: { label: data.m_moins_2.label, valeur: data.m_moins_2.km },
+          n_moins_1: { label: data.n_moins_1.label, valeur: data.n_moins_1.km },
+        },
+      },
+      analyse_vehicules: aiData.analyse_vehicules,
+      alertes_operationnelles: aiData.alertes_operationnelles,
+      previsionnel_mois_suivant: aiData.previsionnel_mois_suivant,
+      recommandations: aiData.recommandations,
+    };
+
+    await db.ceoReport.update({
+      where: { id: reportId },
+      data: { status: 'ready', content: content as never, generatedAt: now },
+    });
+    console.log(`[CeoReport Monthly] ✓ Terminé — ${month} companyId=${companyId}`);
+  } catch (err) {
+    console.error(`[CeoReport Monthly] ✗ Erreur:`, err);
+    try { await db.ceoReport.update({ where: { id: reportId }, data: { status: 'error' } }); } catch {}
+  }
+}
+
+// ── GET /intelligence/report?month=YYYY-MM&mode=annual|monthly ────────────────
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const month = typeof req.query.month === 'string' && req.query.month
       ? req.query.month
       : new Date().toISOString().slice(0, 7);
-    const companyId = req.auth!.tenantSlug;
+    const mode = req.query.mode === 'monthly' ? 'monthly' : 'annual';
+    const companyId = req.auth!.tenantSlug as string;
     const db = getTenantClient(req.tenantDbUrl!);
 
-    const existing = await db.ceoReport.findFirst({ where: { companyId, month } });
+    const existing = await db.ceoReport.findFirst({ where: { companyId, month, mode } });
 
     if (existing?.status === 'ready' && existing.content) {
       return res.json(existing.content);
@@ -282,16 +546,17 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   } catch (err) { next(err); }
 });
 
-// ── POST /intelligence/report/generate ──────────────────────────────────────
+// ── POST /intelligence/report/generate ───────────────────────────────────────
 
 router.post('/generate', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { month } = req.body as { month?: string };
+    const { month, mode: bodyMode } = req.body as { month?: string; mode?: string };
     const monthKey = typeof month === 'string' && month ? month : new Date().toISOString().slice(0, 7);
-    const companyId = req.auth!.tenantSlug;
+    const mode = bodyMode === 'monthly' ? 'monthly' : 'annual';
+    const companyId = req.auth!.tenantSlug as string;
     const db = getTenantClient(req.tenantDbUrl!);
 
-    const existing = await db.ceoReport.findFirst({ where: { companyId, month: monthKey } });
+    const existing = await db.ceoReport.findFirst({ where: { companyId, month: monthKey, mode } });
     let report;
     if (existing) {
       report = await db.ceoReport.update({
@@ -300,11 +565,15 @@ router.post('/generate', async (req: Request, res: Response, next: NextFunction)
       });
     } else {
       report = await db.ceoReport.create({
-        data: { companyId, month: monthKey, status: 'generating' },
+        data: { companyId, month: monthKey, mode, status: 'generating' },
       });
     }
 
-    void generateCeoReportAsync(req.tenantDbUrl!, report.id, companyId, monthKey);
+    if (mode === 'monthly') {
+      void generateMonthlyReportAsync(req.tenantDbUrl!, report.id, companyId, monthKey);
+    } else {
+      void generateCeoReportAsync(req.tenantDbUrl!, report.id, companyId, monthKey);
+    }
     return res.json({ status: 'generating' });
   } catch (err) { next(err); }
 });

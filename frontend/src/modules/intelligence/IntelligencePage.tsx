@@ -86,24 +86,24 @@ function CATooltip({ active, payload, label }: { active?: boolean; payload?: Arr
   const commission = Math.abs(e.getaroundServiceFee ?? 0);
   const fmt = fmtEuro;
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-lg text-[13px] min-w-[320px]">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-lg text-[13px] overflow-y-auto" style={{ width: 360, maxHeight: 500 }}>
       <p className="font-semibold text-gray-900 mb-1">{label} — {d.rentalCount} location{d.rentalCount !== 1 ? 's' : ''}</p>
       <div className="space-y-0.5 border-t border-gray-100 pt-1">
-        <p className="flex justify-between"><span style={{ color: '#15803d' }}>Location</span><span>{fmt(e.basePrice)}</span></p>
-        <p className="flex justify-between"><span style={{ color: '#0891b2' }}>Assurance</span><span>{fmt(e.insuranceFee)}</span></p>
-        <p className="flex justify-between"><span style={{ color: '#d97706' }}>Nettoyage</span><span>{fmt(e.driverMessFee)}</span></p>
-        <p className="flex justify-between"><span style={{ color: '#dc2626' }}>Réparations</span><span>{fmt(e.damageCompensation)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Km supplémentaires</span><span>{fmt(e.extraDistanceFee)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Carburant</span><span>{fmt(e.gasRefillFee)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Retard</span><span>{fmt(e.lateReturnFee)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Assistance</span><span>{fmt(e.assistanceFee)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Livraison</span><span>{fmt(e.deliveryFee)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Recharge batterie</span><span>{fmt(e.batteryRechargeFee)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Infractions</span><span>{fmt(e.ownerInfractionFee)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Remorquage</span><span>{fmt(e.ownerTowFee)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Garantie</span><span>{fmt(e.guaranteeEarning)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Autres compensations</span><span>{fmt(e.otherCompensation)}</span></p>
-        <p className="flex justify-between text-gray-600"><span>Annulations</span><span>{fmt(e.cancellationFee)}</span></p>
+        {e.basePrice > 0 && <p className="flex justify-between"><span style={{ color: '#15803d' }}>Location</span><span>{fmt(e.basePrice)}</span></p>}
+        {e.insuranceFee > 0 && <p className="flex justify-between"><span style={{ color: '#0891b2' }}>Assurance</span><span>{fmt(e.insuranceFee)}</span></p>}
+        {e.driverMessFee > 0 && <p className="flex justify-between"><span style={{ color: '#d97706' }}>Nettoyage</span><span>{fmt(e.driverMessFee)}</span></p>}
+        {e.damageCompensation > 0 && <p className="flex justify-between"><span style={{ color: '#dc2626' }}>Réparations</span><span>{fmt(e.damageCompensation)}</span></p>}
+        {e.extraDistanceFee > 0 && <p className="flex justify-between text-gray-600"><span>Km supplémentaires</span><span>{fmt(e.extraDistanceFee)}</span></p>}
+        {e.gasRefillFee > 0 && <p className="flex justify-between text-gray-600"><span>Carburant</span><span>{fmt(e.gasRefillFee)}</span></p>}
+        {e.lateReturnFee > 0 && <p className="flex justify-between text-gray-600"><span>Retard</span><span>{fmt(e.lateReturnFee)}</span></p>}
+        {e.assistanceFee > 0 && <p className="flex justify-between text-gray-600"><span>Assistance</span><span>{fmt(e.assistanceFee)}</span></p>}
+        {e.deliveryFee > 0 && <p className="flex justify-between text-gray-600"><span>Livraison</span><span>{fmt(e.deliveryFee)}</span></p>}
+        {e.batteryRechargeFee > 0 && <p className="flex justify-between text-gray-600"><span>Recharge batterie</span><span>{fmt(e.batteryRechargeFee)}</span></p>}
+        {e.ownerInfractionFee > 0 && <p className="flex justify-between text-gray-600"><span>Infractions</span><span>{fmt(e.ownerInfractionFee)}</span></p>}
+        {e.ownerTowFee > 0 && <p className="flex justify-between text-gray-600"><span>Remorquage</span><span>{fmt(e.ownerTowFee)}</span></p>}
+        {e.guaranteeEarning > 0 && <p className="flex justify-between text-gray-600"><span>Garantie</span><span>{fmt(e.guaranteeEarning)}</span></p>}
+        {e.otherCompensation > 0 && <p className="flex justify-between text-gray-600"><span>Autres compensations</span><span>{fmt(e.otherCompensation)}</span></p>}
+        {e.cancellationFee > 0 && <p className="flex justify-between text-gray-600"><span>Annulations</span><span>{fmt(e.cancellationFee)}</span></p>}
         <div className="border-t border-gray-100 pt-0.5 mt-0.5">
           <p className="flex justify-between font-semibold text-gray-700"><span>Sous-total brut</span><span>{fmt(sousTotal)}</span></p>
           {commission > 0 && <p className="flex justify-between font-medium" style={{ color: '#0ea5e9' }}><span>Commission Getaround</span><span>-{fmt(commission)}</span></p>}

@@ -498,7 +498,7 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
 
     const db = getTenantClient(req.tenantDbUrl!);
     const now = new Date();
-    const oneYearAgo = new Date(Date.now() - 365 * 86_400_000);
+    const twoYearsAgo = new Date(Date.now() - 24 * 30 * 86_400_000);
 
     const [vehicles, rentals, incidents, maintenances] = await Promise.all([
       db.vehicle.findMany({
@@ -507,7 +507,7 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
                   parkingZone: true, currentMileage: true, year: true, healthScore: true },
       }),
       db.rental.findMany({
-        where: { startAt: { gte: oneYearAgo } },
+        where: { startAt: { gte: twoYearsAgo } },
         select: {
           vehicleId: true, startAt: true, endAt: true, status: true,
           grossRevenue: true, ownerPayout: true, insuranceFee: true,
@@ -566,10 +566,44 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
       zoneData[zone].count++;
     });
 
+    // Per-vehicle per-month breakdown
+    const vehicleMonthlyMap: Record<string, Record<string, { gross: number; payout: number; count: number; km: number; daysBooked: number }>> = {};
+    rentals.filter(r => r.status !== 'cancelled').forEach(r => {
+      const vId = r.vehicleId;
+      const month = new Date(r.startAt).toISOString().slice(0, 7);
+      if (!vehicleMonthlyMap[vId]) vehicleMonthlyMap[vId] = {};
+      if (!vehicleMonthlyMap[vId][month]) vehicleMonthlyMap[vId][month] = { gross: 0, payout: 0, count: 0, km: 0, daysBooked: 0 };
+      vehicleMonthlyMap[vId][month].gross += r.grossRevenue ?? 0;
+      vehicleMonthlyMap[vId][month].payout += (r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0);
+      vehicleMonthlyMap[vId][month].count++;
+      vehicleMonthlyMap[vId][month].km += r.kmDriven ?? 0;
+      const days = Math.ceil((new Date(r.endAt).getTime() - new Date(r.startAt).getTime()) / 86_400_000);
+      vehicleMonthlyMap[vId][month].daysBooked += days;
+    });
+
+    const parVehiculeParMois = vehicles.map(v => {
+      const mois = vehicleMonthlyMap[v.id] ?? {};
+      return {
+        vehicule: `${v.make} ${v.model} (${v.licensePlate})`,
+        mois: Object.entries(mois).sort(([a], [b]) => a.localeCompare(b)).map(([m, d]) => {
+          const daysInMonth = new Date(parseInt(m.slice(0, 4)), parseInt(m.slice(5, 7)), 0).getDate();
+          return {
+            mois: m,
+            caNet: Math.round(d.payout * 100) / 100,
+            caBrut: Math.round(d.gross * 100) / 100,
+            nbLocations: d.count,
+            km: d.km,
+            tauxOccupation: Math.round(Math.min(d.daysBooked, daysInMonth) / daysInMonth * 100),
+          };
+        }),
+      };
+    });
+
     const dataContext = JSON.stringify({
       dateAnalyse: now.toLocaleDateString('fr-FR'),
-      periodeAnalyse: '12 derniers mois',
+      periodeAnalyse: '24 derniers mois',
       vehicules: vehicleStats,
+      parVehiculeParMois,
       parMois: Object.entries(monthlyData)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([mois, d]) => ({
@@ -590,13 +624,15 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: `Tu es l'assistant analytique de Sun and Drive, service de location de voitures.
-Tu as accès aux données réelles de la flotte sur les 12 derniers mois.
+Tu as accès aux données réelles de la flotte sur les 24 derniers mois.
 Tu réponds en français, de façon concise, factuelle et précise.
 Tu cites toujours les chiffres exacts issus des données.
 Tu ne fais JAMAIS de suppositions ou d'estimations — uniquement des données réelles.
 Si la donnée demandée n'est pas disponible, tu le dis clairement.
 Tes réponses font 2-5 phrases maximum, sauf si un tableau est demandé.
 Tu peux utiliser des listes courtes si nécessaire pour la lisibilité.
+
+Données détaillées par véhicule disponibles dans parVehiculeParMois : CA net, CA brut, nombre de locations, km parcourus et taux d'occupation pour chaque véhicule et chaque mois. Tu peux répondre à des questions sur n'importe quelle période, n'importe quel véhicule, et comparer des périodes entre elles.
 
 Données de la flotte :
 ${dataContext}`,

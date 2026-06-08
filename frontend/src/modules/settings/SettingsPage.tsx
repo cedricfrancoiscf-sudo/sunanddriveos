@@ -1302,15 +1302,15 @@ export default function SettingsPage(): React.JSX.Element {
 
             <ModeSelector label="Demandes de siège auto"
               value={form.aiModeCarSeat}
-              onChange={v => setForm(f => ({ ...f, aiModeCarSeat: v }))} />
+              onChange={v => { const u = { ...form, aiModeCarSeat: v }; setForm(u); saveMutation.mutate(u); }} />
 
             <ModeSelector label="Signalements d'incidents"
               value={form.aiModeIncident}
-              onChange={v => setForm(f => ({ ...f, aiModeIncident: v }))} />
+              onChange={v => { const u = { ...form, aiModeIncident: v }; setForm(u); saveMutation.mutate(u); }} />
 
             <ModeSelector label="Messages généraux"
               value={form.aiModeGeneral}
-              onChange={v => setForm(f => ({ ...f, aiModeGeneral: v }))} />
+              onChange={v => { const u = { ...form, aiModeGeneral: v }; setForm(u); saveMutation.mutate(u); }} />
 
             <div>
               <p className="mb-2 text-xs font-semibold text-gray-700">Ton des réponses</p>
@@ -1319,7 +1319,7 @@ export default function SettingsPage(): React.JSX.Element {
                   { value: 'vouvoiement', label: 'Vouvoiement', desc: 'Ton formel et professionnel' },
                   { value: 'tutoiement', label: 'Tutoiement', desc: 'Ton plus proche et détendu' },
                 ].map(t => (
-                  <button key={t.value} type="button" onClick={() => setForm(f => ({ ...f, aiTone: t.value }))}
+                  <button key={t.value} type="button" onClick={() => { const u = { ...form, aiTone: t.value }; setForm(u); saveMutation.mutate(u); }}
                     className={`rounded-xl border p-4 text-left transition ${form.aiTone === t.value ? 'border-[#01696e] bg-[#01696e]/5' : 'border-gray-200 hover:border-gray-300'}`}>
                     <p className={`text-sm font-semibold ${form.aiTone === t.value ? 'text-[#01696e]' : 'text-gray-800'}`}>{t.label}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{t.desc}</p>

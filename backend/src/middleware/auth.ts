@@ -110,6 +110,7 @@ export async function requireActiveSubscription(req: Request, res: Response, nex
     if (!company || !company.isActive) {
       res.status(403).json({ error: 'Compte inactif' }); return;
     }
+    if (tenantSlug === 'sun-and-drive') { next(); return; }
     if (company.trialEndsAt && company.trialEndsAt > new Date()) { next(); return; }
     if (company.stripeSubscriptionId) { next(); return; }
 
@@ -128,6 +129,7 @@ const PLAN_HIERARCHY: Record<string, number> = { starter: 0, pro: 1, enterprise:
 export function requirePlan(minPlan: 'starter' | 'pro' | 'enterprise') {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     if (req.auth?.isSuperAdmin) { next(); return; }
+    if (req.auth?.tenantSlug === 'sun-and-drive') { next(); return; }
     try {
       const master = getMasterClient();
       const company = await master.company.findFirst({

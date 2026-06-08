@@ -276,11 +276,11 @@ export default function DashboardPage(): React.JSX.Element {
                 <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Chiffre d'affaires</p>
                   <p className="mt-2 text-2xl font-bold text-green-700">
-                    {stats.totalEncaisse.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                    {stats.totalPrevisionnel.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
                   </p>
-                  {stats.totalPrevisionnel > 0 && (
-                    <p className="text-xs font-medium text-blue-600 mt-0.5">
-                      + {stats.totalPrevisionnel.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} prévu
+                  {stats.totalEncaisse > 0 && (
+                    <p className="text-xs font-medium text-gray-500 mt-0.5">
+                      {stats.totalEncaisse.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} encaissé
                     </p>
                   )}
                   <p className="text-xs text-gray-400 mt-1 border-t border-gray-100 pt-1">
@@ -301,10 +301,9 @@ export default function DashboardPage(): React.JSX.Element {
               <Link to="/rentals" className="block hover:opacity-90 transition">
                 <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Locations</p>
-                  <p className="mt-2 text-2xl font-bold text-gray-900">{stats.countDone}</p>
-                  <p className="text-xs text-gray-400">réalisées</p>
+                  <p className="mt-2 text-2xl font-bold text-gray-900">{stats.countDone} réalisées</p>
                   {stats.countUpcoming > 0 && (
-                    <p className="mt-0.5 text-xs font-medium text-blue-600">+ {stats.countUpcoming} à venir</p>
+                    <p className="text-2xl font-bold text-blue-600">+ {stats.countUpcoming} à venir</p>
                   )}
                 </div>
               </Link>

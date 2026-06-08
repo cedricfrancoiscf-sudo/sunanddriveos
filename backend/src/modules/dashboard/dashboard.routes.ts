@@ -24,24 +24,34 @@ function weekStart(d: Date): Date {
   return monday;
 }
 
+const MONTHS_FR = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
+
+function weekLabel(start: Date, end: Date): string {
+  const last = new Date(end);
+  last.setDate(end.getDate() - 1); // end is exclusive
+  if (start.getMonth() === last.getMonth()) {
+    return `${start.getDate()}-${last.getDate()} ${MONTHS_FR[last.getMonth()]}`;
+  }
+  return `${start.getDate()} ${MONTHS_FR[start.getMonth()]}-${last.getDate()} ${MONTHS_FR[last.getMonth()]}`;
+}
+
 // GET /api/v1/dashboard/occupancy
-// 4 rolling weeks of per-vehicle occupancy rate
+// 4 forward-looking weeks: current week + 3 next weeks
 router.get('/occupancy', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const now = new Date();
 
-    // Build 4 week windows: currentWeek-3 ... currentWeek
+    // Build 4 week windows starting from current week (Monday of today)
     const weeks: Array<{ weekKey: string; label: string; start: Date; end: Date }> = [];
-    for (let delta = 3; delta >= 0; delta--) {
-      const anchor = new Date(now);
-      anchor.setDate(now.getDate() - delta * 7);
-      const start = weekStart(anchor);
+    const baseMonday = weekStart(now);
+    for (let delta = 0; delta < 4; delta++) {
+      const start = new Date(baseMonday);
+      start.setDate(baseMonday.getDate() + delta * 7);
       const end = new Date(start);
       end.setDate(start.getDate() + 7);
-      const weekKey = isoWeek(anchor);
-      const weekNum = weekKey.split('-W')[1] ?? '';
-      weeks.push({ weekKey, label: `S${weekNum}`, start, end });
+      const weekKey = isoWeek(start);
+      weeks.push({ weekKey, label: weekLabel(start, end), start, end });
     }
 
     const rangeStart = weeks[0]!.start;
@@ -55,7 +65,7 @@ router.get('/occupancy', async (req: Request, res: Response, next: NextFunction)
       }),
       db.rental.findMany({
         where: {
-          status: { in: ['booked', 'active', 'completed'] },
+          status: { in: ['booked', 'active'] },
           startAt: { lt: rangeEnd },
           endAt: { gt: rangeStart },
         },

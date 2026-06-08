@@ -94,17 +94,12 @@ async function init(): Promise<void> {
       });
       console.log('[Init] Société créée : Sun and Drive (enterprise, trial 10 ans)');
     } else {
-      // S'assurer que le compte existant n'est pas bloqué (trial expiré ou absent)
-      const needsUpdate = !company.trialEndsAt || company.trialEndsAt < new Date();
-      if (needsUpdate) {
-        await master.company.update({
-          where: { id: company.id },
-          data: { plan: 'enterprise', trialEndsAt: farFuture },
-        });
-        console.log('[Init] Société mise à jour : Sun and Drive → enterprise, trial prolongé');
-      } else {
-        console.log('[Init] Société OK : Sun and Drive');
-      }
+      // Toujours forcer enterprise permanent, sans trial
+      await master.company.update({
+        where: { id: company.id },
+        data: { plan: 'enterprise', trialEndsAt: null, isActive: true },
+      });
+      console.log('[Init] Société mise à jour : Sun and Drive → enterprise permanent (trialEndsAt: null)');
     }
     companies = await master.company.findMany({ where: { isActive: true }, select: { slug: true, tenantDbUrl: true } });
   } catch (err: unknown) {

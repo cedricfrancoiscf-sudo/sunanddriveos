@@ -15,6 +15,7 @@ interface Vehicle {
   licensePlate: string;
   photoUrl: string | null;
   parkingZone: string | null;
+  deliveryPointName: string | null;
 }
 interface PlanningRental {
   id: string;
@@ -211,11 +212,11 @@ export default function PlanningPage(): React.JSX.Element {
   const rentals = data?.rentals ?? [];
   const blockings = data?.blockings ?? [];
 
-  // Groupement des véhicules par zone
+  // Groupement des véhicules par point de livraison
   const vehiclesByZone = useMemo(() => {
     const map: Record<string, Vehicle[]> = {};
     for (const v of vehicles) {
-      const zone = v.parkingZone ?? 'Sans zone assignée';
+      const zone = v.deliveryPointName ?? 'Sans point de livraison';
       if (!map[zone]) map[zone] = [];
       map[zone].push(v);
     }
@@ -283,7 +284,7 @@ export default function PlanningPage(): React.JSX.Element {
           onChange={e => handleZoneFilter(e.target.value)}
           className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-[#01696e]"
         >
-          <option value="">Toutes les zones</option>
+          <option value="">Tous les points</option>
           {zones.map(z => <option key={z} value={z}>{z}</option>)}
         </select>
 

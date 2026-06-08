@@ -14,6 +14,7 @@ interface Conversation {
   lastMessage: Message;
   messageCount: number;
   hasPending: boolean;
+  isUnanswered: boolean;
 }
 
 const RENTAL_STATUS_OPTIONS = [
@@ -91,6 +92,7 @@ export default function MessageListPage(): React.JSX.Element {
           lastMessage: msg,
           messageCount: 1,
           hasPending: msg.status === 'pending_approval',
+          isUnanswered: false,
         });
       } else {
         existing.messageCount++;
@@ -99,6 +101,14 @@ export default function MessageListPage(): React.JSX.Element {
         }
         if (msg.status === 'pending_approval') existing.hasPending = true;
       }
+    }
+
+    const TWO_HOURS = 2 * 3_600_000;
+    for (const conv of map.values()) {
+      const last = conv.lastMessage;
+      conv.isUnanswered =
+        last.direction === 'inbound' &&
+        Date.now() - new Date(last.createdAt).getTime() > TWO_HOURS;
     }
 
     // L'ordre vient du backend (groupBy _max createdAt desc)
@@ -219,6 +229,11 @@ export default function MessageListPage(): React.JSX.Element {
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="font-semibold text-gray-900 truncate">{conv.driverName}</span>
+                    {conv.isUnanswered && (
+                      <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                        Sans réponse
+                      </span>
+                    )}
                     {conv.hasPending && (
                       <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
                         En attente

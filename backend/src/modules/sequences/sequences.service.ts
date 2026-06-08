@@ -96,10 +96,14 @@ export async function scheduleSequencesForRental(
       }
 
       if (scheduledAt <= now) {
-        console.log(`[Séquences] Skip ${seq.name} — sendAt ${scheduledAt.toISOString()} déjà passé`);
-        continue;
+        if (t === 'rental.before_checkin' || t === 'rental.before_checkout') {
+          console.log(`[Séquences] Skip ${seq.name} — sendAt ${scheduledAt.toISOString()} déjà passé`);
+          continue;
+        }
+        scheduledAt = now;
       }
 
+      console.log(`[Sequence] Envoi prévu le ${scheduledAt.toISOString()} pour location ${rentalId}`);
       await db.sequenceExecution.create({
         data: { rentalId, sequenceId: seq.id, scheduledAt, status: 'pending' },
       });

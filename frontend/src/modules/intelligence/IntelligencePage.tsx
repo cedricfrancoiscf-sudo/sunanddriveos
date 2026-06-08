@@ -86,13 +86,13 @@ function CATooltip({ active, payload, label }: { active?: boolean; payload?: Arr
   const commission = Math.abs(e.getaroundServiceFee ?? 0);
   const fmt = fmtEuro;
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs min-w-[240px]">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-lg text-[13px] min-w-[320px]">
       <p className="font-semibold text-gray-900 mb-1">{label} — {d.rentalCount} location{d.rentalCount !== 1 ? 's' : ''}</p>
       <div className="space-y-0.5 border-t border-gray-100 pt-1">
-        <p className="flex justify-between"><span className="text-green-700">Location</span><span>{fmt(e.basePrice)}</span></p>
-        <p className="flex justify-between"><span className="text-emerald-700">Assurance</span><span>{fmt(e.insuranceFee)}</span></p>
-        <p className="flex justify-between"><span className="text-yellow-700">Nettoyage</span><span>{fmt(e.driverMessFee)}</span></p>
-        <p className="flex justify-between"><span className="text-orange-700">Réparations</span><span>{fmt(e.damageCompensation)}</span></p>
+        <p className="flex justify-between"><span style={{ color: '#15803d' }}>Location</span><span>{fmt(e.basePrice)}</span></p>
+        <p className="flex justify-between"><span style={{ color: '#0891b2' }}>Assurance</span><span>{fmt(e.insuranceFee)}</span></p>
+        <p className="flex justify-between"><span style={{ color: '#d97706' }}>Nettoyage</span><span>{fmt(e.driverMessFee)}</span></p>
+        <p className="flex justify-between"><span style={{ color: '#dc2626' }}>Réparations</span><span>{fmt(e.damageCompensation)}</span></p>
         <p className="flex justify-between text-gray-600"><span>Km supplémentaires</span><span>{fmt(e.extraDistanceFee)}</span></p>
         <p className="flex justify-between text-gray-600"><span>Carburant</span><span>{fmt(e.gasRefillFee)}</span></p>
         <p className="flex justify-between text-gray-600"><span>Retard</span><span>{fmt(e.lateReturnFee)}</span></p>
@@ -249,12 +249,12 @@ export default function IntelligencePage(): React.JSX.Element {
           <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
             <h2 className="text-sm font-semibold text-gray-900">CA mensuel — {new Date().getFullYear()}</h2>
             <div className="flex flex-wrap items-center gap-3 text-[10px] text-gray-400">
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-green-600 inline-block" /> Location</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500 inline-block" /> Assurance</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-yellow-400 inline-block" /> Nettoyage</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-orange-400 inline-block" /> Réparations</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-stone-400 inline-block" /> Autres</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-500 inline-block" /> Prévisionnel</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#15803d' }} /> Location</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#0891b2' }} /> Assurance</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#d97706' }} /> Nettoyage</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#dc2626' }} /> Réparations</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#7c3aed' }} /> Autres</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#3b82f6' }} /> Prévisionnel</span>
               <span className="flex items-center gap-1"><span className="h-0.5 w-4 bg-orange-400 inline-block" /> Km</span>
             </div>
           </div>
@@ -267,11 +267,11 @@ export default function IntelligencePage(): React.JSX.Element {
                   <YAxis yAxisId="ca" tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
                   <YAxis yAxisId="km" orientation="right" tick={{ fontSize: 10 }} tickFormatter={v => `${v}km`} />
                   <Tooltip content={<CATooltip />} />
-                  <Bar yAxisId="ca" dataKey="encaisse.basePrice" stackId="monthly" fill="#16a34a" name="Location" />
-                  <Bar yAxisId="ca" dataKey="encaisse.insuranceFee" stackId="monthly" fill="#10b981" name="Assurance" />
-                  <Bar yAxisId="ca" dataKey="encaisse.driverMessFee" stackId="monthly" fill="#eab308" name="Nettoyage" />
-                  <Bar yAxisId="ca" dataKey="encaisse.damageCompensation" stackId="monthly" fill="#f97316" name="Réparations" />
-                  <Bar yAxisId="ca" dataKey="encaisse.autres" stackId="monthly" fill="#a8a29e" name="Autres"
+                  <Bar yAxisId="ca" dataKey="encaisse.basePrice" stackId="monthly" fill="#15803d" name="Location" />
+                  <Bar yAxisId="ca" dataKey="encaisse.insuranceFee" stackId="monthly" fill="#0891b2" name="Assurance" />
+                  <Bar yAxisId="ca" dataKey="encaisse.driverMessFee" stackId="monthly" fill="#d97706" name="Nettoyage" />
+                  <Bar yAxisId="ca" dataKey="encaisse.damageCompensation" stackId="monthly" fill="#dc2626" name="Réparations" />
+                  <Bar yAxisId="ca" dataKey="encaisse.autres" stackId="monthly" fill="#7c3aed" name="Autres"
                     label={(props: Record<string, unknown>) => {
                       const { x, y, width, index } = props as { x: number; y: number; width: number; index: number };
                       const d = annual.monthlyData[index];

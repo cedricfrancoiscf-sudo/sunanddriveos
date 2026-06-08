@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { vehiclesApi } from './vehiclesApi';
 import { DocumentScanner } from '../../components/ui/DocumentScanner';
+import { api } from '../../utils/api';
 
 const FUEL_TYPES = [
   { value: '', label: 'Non renseigné' },
@@ -27,6 +28,7 @@ const EMPTY_FORM = {
   deliveryPostalCode: '',
   pickupInstructions: '',
   returnInstructions: '',
+  carekeeperUserId: '',
 };
 
 export default function VehicleFormPage(): React.JSX.Element {
@@ -42,6 +44,12 @@ export default function VehicleFormPage(): React.JSX.Element {
     queryKey: ['vehicle', id],
     queryFn: () => vehiclesApi.get(id!),
     enabled: isEdit,
+  });
+
+  const { data: carkeepers = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['users', 'carkeeper'],
+    queryFn: () => api.get<{ users: Array<{ id: string; name: string }> }>('/users', { params: { role: 'carkeeper' } }).then(r => r.data.users),
+    staleTime: 5 * 60_000,
   });
 
   useEffect(() => {
@@ -60,6 +68,7 @@ export default function VehicleFormPage(): React.JSX.Element {
         deliveryPostalCode: (vehicle as { deliveryPostalCode?: string | null }).deliveryPostalCode ?? '',
         pickupInstructions: vehicle.pickupInstructions ?? '',
         returnInstructions: vehicle.returnInstructions ?? '',
+        carekeeperUserId: (vehicle as { carekeeperUserId?: string | null }).carekeeperUserId ?? '',
       });
       setHealthScore(vehicle.healthScore);
     }
@@ -78,6 +87,7 @@ export default function VehicleFormPage(): React.JSX.Element {
       deliveryPostalCode: data.deliveryPostalCode || null,
       pickupInstructions: data.pickupInstructions || null,
       returnInstructions: data.returnInstructions || null,
+      carekeeperUserId: data.carekeeperUserId || null,
     }),
     onSuccess: (v) => {
       void qc.invalidateQueries({ queryKey: ['vehicles'] });
@@ -99,6 +109,7 @@ export default function VehicleFormPage(): React.JSX.Element {
         deliveryPostalCode: data.deliveryPostalCode || null,
         pickupInstructions: data.pickupInstructions || null,
         returnInstructions: data.returnInstructions || null,
+        carekeeperUserId: data.carekeeperUserId || null,
         healthScore: Number(data.healthScore),
       }),
     onSuccess: () => {
@@ -237,6 +248,22 @@ export default function VehicleFormPage(): React.JSX.Element {
                 placeholder="ex: 75015" maxLength={10} />
             </div>
           </div>
+
+          {carkeepers.length > 0 && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Car Keeper</label>
+              <select
+                value={form.carekeeperUserId}
+                onChange={e => setForm(f => ({ ...f, carekeeperUserId: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+              >
+                <option value="">— Aucun —</option>
+                {carkeepers.map(u => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-600">Instructions de départ</label>

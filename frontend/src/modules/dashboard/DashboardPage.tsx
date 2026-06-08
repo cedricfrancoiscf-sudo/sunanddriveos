@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, differenceInDays, isPast } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { api } from '../../utils/api';
 
 const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
@@ -60,6 +60,8 @@ export default function DashboardPage(): React.JSX.Element {
   type DocExpiring = { id: string; name: string; expiryDate: string; vehicle: { make: string; model: string; licensePlate: string } };
   type PendingCarSeat = { id: string; rental: { id: string; driverName: string; endAt: string } | null; vehicle: { make: string; model: string; licensePlate: string } };
   type ForecastWeek = { week: string; label: string; rentalCount: number; encaisse: number; previsionnel: number; totalPayout: number };
+  type OccupancyVehicle = { id: string; name: string; occupancy: number };
+  type OccupancyWeek = { week: string; label: string; vehicles: OccupancyVehicle[]; globalOccupancy: number };
   type UnansweredMsg = { rentalId: string; driverName: string; vehicleLabel: string; msgPreview: string; createdAt: string };
   type PendingApprovalMsg = { messageId: string; rentalId: string; driverName: string; vehicleLabel: string };
   type InboxSummary = { pendingCount: number; unansweredRentals: number; unansweredMessages: UnansweredMsg[]; pendingApprovalMessages: PendingApprovalMsg[] };
@@ -104,6 +106,13 @@ export default function DashboardPage(): React.JSX.Element {
   const { data: forecastData } = useQuery<{ forecasts: ForecastWeek[]; totalForecast: number }>({
     queryKey: ['dashboard-forecasts'],
     queryFn: () => api.get<{ forecasts: ForecastWeek[]; totalForecast: number }>('/intelligence/forecasts').then(r => r.data),
+    staleTime: 5 * 60_000,
+    enabled: user?.role !== 'carkeeper',
+  });
+
+  const { data: occupancyData } = useQuery<OccupancyWeek[]>({
+    queryKey: ['dashboard-occupancy'],
+    queryFn: () => api.get<OccupancyWeek[]>('/dashboard/occupancy').then(r => r.data),
     staleTime: 5 * 60_000,
     enabled: user?.role !== 'carkeeper',
   });
@@ -312,40 +321,36 @@ export default function DashboardPage(): React.JSX.Element {
         </div>
       )}
 
-      {/* CA — 4 semaines glissantes — barres empilées vert/bleu */}
-      {user?.role !== 'carkeeper' && forecastData && forecastData.forecasts.some(w => w.rentalCount > 0) && (
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">CA — 4 semaines</h2>
-            <div className="flex items-center gap-3 text-[11px] text-gray-400">
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-green-500 inline-block" /> Encaissé</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400 inline-block" /> Prévisionnel</span>
+      {/* Occupation par véhicule — 4 semaines glissantes */}
+      {user?.role !== 'carkeeper' && occupancyData && occupancyData.length > 0 && (() => {
+        const vehicleList = occupancyData[0]?.vehicles ?? [];
+        const chartData = occupancyData.map(w => {
+          const row: Record<string, string | number> = { label: w.label, globalOccupancy: w.globalOccupancy };
+          for (const v of w.vehicles) row[v.id] = v.occupancy;
+          return row;
+        });
+        return (
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Occupation par véhicule — 4 semaines</h2>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]} />
+                  <Tooltip formatter={(v: number, name: string) => [`${v}%`, name]} />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  {vehicleList.map((v, i) => (
+                    <Bar key={v.id} dataKey={v.id} name={v.name} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[3, 3, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
-              <span>{forecastData.forecasts.reduce((s, w) => s + w.rentalCount, 0)} locations</span>
-              <span className="font-semibold text-gray-700">
-                {forecastData.totalForecast.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} total
-              </span>
-            </div>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={forecastData.forecasts} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}€`} />
-                <Tooltip
-                  formatter={(v: number, name: string) => [
-                    v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }),
-                    name === 'encaisse' ? 'Encaissé' : 'Prévisionnel',
-                  ]}
-                />
-                <Bar dataKey="encaisse" stackId="a" fill="#16a34a" name="encaisse" />
-                <Bar dataKey="previsionnel" stackId="a" fill="#60a5fa" radius={[3, 3, 0, 0]} name="previsionnel" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Locations en cours */}

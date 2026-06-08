@@ -6,6 +6,7 @@ import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
 import { sendInvitationEmail } from '../../utils/mailer';
+import type { UserRole } from '../../generated/tenant';
 
 const router: Router = Router();
 
@@ -52,8 +53,12 @@ router.use(requireAuth, resolveTenant, requireActiveUser, requireRole('admin'));
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
+    const roleFilter = req.query.role as string | undefined;
+    const where = roleFilter
+      ? { isActive: true, OR: [{ role: roleFilter as UserRole }, { roles: { has: roleFilter } }] }
+      : { isActive: true };
     const users = await db.user.findMany({
-      where: { isActive: true },
+      where,
       select: { id: true, name: true, email: true, role: true, roles: true, isActive: true, lastLoginAt: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     });

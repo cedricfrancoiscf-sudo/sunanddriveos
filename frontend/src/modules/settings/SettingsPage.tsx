@@ -1267,10 +1267,7 @@ export default function SettingsPage(): React.JSX.Element {
         {/* 3. Utilisateurs & rôles */}
         <UsersSection />
 
-        {/* 4. Abonnement */}
-        <BillingSection />
-
-        {/* 5. Notifications */}
+        {/* 4. Notifications */}
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-gray-900">Notifications</h2>
           <p className="mt-0.5 text-xs text-gray-400">Alertes automatiques et intégrations</p>
@@ -1295,10 +1292,7 @@ export default function SettingsPage(): React.JSX.Element {
           <AlertEmailsSection />
         </section>
 
-        {/* 6. Intégrations */}
-        <ICalSection />
-
-        {/* 7. Messagerie automatique */}
+        {/* 5. Messagerie automatique */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
             <div>
@@ -1349,7 +1343,7 @@ export default function SettingsPage(): React.JSX.Element {
             </div>
           </section>
 
-          {/* 8. Export & comptabilité */}
+          {/* 7. Export & comptabilité */}
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -1368,7 +1362,10 @@ export default function SettingsPage(): React.JSX.Element {
             </div>
           </section>
 
-          {/* 9. Apparence */}
+          {/* Intégrations iCal */}
+          <ICalSection />
+
+          {/* 8. Apparence */}
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
             <h2 className="text-sm font-semibold text-gray-900">Apparence</h2>
 
@@ -1466,6 +1463,10 @@ export default function SettingsPage(): React.JSX.Element {
             {saveMutation.isError && <p className="text-sm text-red-600">Erreur lors de la sauvegarde</p>}
           </div>
         </form>
+
+        {/* Abonnement */}
+        <BillingSection />
+
       </div>
     </div>
   );

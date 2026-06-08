@@ -65,6 +65,7 @@ const createSchema = z.object({
 const updateSchema = createSchema.partial().extend({
   isActive: z.boolean().optional(),
   healthScore: z.number().int().min(0).max(100).optional(),
+  carekeeperUserId: z.string().nullable().optional(),
 });
 
 // GET /api/v1/vehicles

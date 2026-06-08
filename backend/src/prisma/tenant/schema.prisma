@@ -100,6 +100,7 @@ model User {
   vehicleChecks    VehicleCheck[]
   approvedMessages Message[]           @relation("ApprovedBy")
   vehicleCarkeepers VehicleCarkeeper[]
+  vehiclesAsCarkeeper    Vehicle[]     @relation("VehiclePrimaryCarkeeper")
   accessoriesAsCarkeeper Accessory[]   @relation("AccessoryCarkeeper")
   carSeatsAsCarkeeper    CarSeat[]     @relation("CarSeatCarkeeper")
 
@@ -142,6 +143,8 @@ model Vehicle {
   currentMileage     Int               @default(0)
   healthScore        Int               @default(100)
   isActive           Boolean           @default(true)
+  carekeeperUserId   String?
+  carekeeperUser     User?             @relation("VehiclePrimaryCarkeeper", fields: [carekeeperUserId], references: [id])
   thirdPartyOwnerId  String?
   thirdPartyOwner    ThirdPartyOwner?  @relation(fields: [thirdPartyOwnerId], references: [id])
   createdAt          DateTime          @default(now())

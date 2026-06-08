@@ -20,6 +20,7 @@ export type VehicleCreateInput = {
 export type VehicleUpdateInput = Partial<VehicleCreateInput> & {
   isActive?: boolean;
   healthScore?: number;
+  carekeeperUserId?: string | null;
 };
 
 export async function listVehicles(db: PrismaClient, includeInactive = false) {

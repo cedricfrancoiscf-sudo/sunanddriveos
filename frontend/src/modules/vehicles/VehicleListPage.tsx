@@ -338,36 +338,76 @@ export default function VehicleListPage(): React.JSX.Element {
       )}
 
       {/* Vignettes */}
-      {!isLoading && filtered.length > 0 && fleetView === 'grid' && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((v) => (
-            <VehicleCard key={v.id} vehicle={v} />
-          ))}
-        </div>
-      )}
+      {!isLoading && filtered.length > 0 && fleetView === 'grid' && (() => {
+        const groups = new Map<string, typeof filtered>();
+        for (const v of filtered) {
+          const key = v.deliveryPointName ?? '';
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key)!.push(v);
+        }
+        const sorted = [...groups.entries()].sort(([a], [b]) => {
+          if (!a) return 1;
+          if (!b) return -1;
+          return a.localeCompare(b);
+        });
+        return (
+          <div className="space-y-6">
+            {sorted.map(([point, list]) => (
+              <div key={point || '_none'}>
+                {point && (
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{point}</p>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {list.map((v) => <VehicleCard key={v.id} vehicle={v} />)}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Liste (tableau) */}
-      {!isLoading && filtered.length > 0 && fleetView === 'list' && (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full text-left">
-            <thead className="border-b border-gray-200 bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Immatriculation</th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Marque / Modèle</th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Année</th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Kilométrage</th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Statut</th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((v) => (
-                <VehicleTableRow key={v.id} vehicle={v} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {!isLoading && filtered.length > 0 && fleetView === 'list' && (() => {
+        const groups = new Map<string, typeof filtered>();
+        for (const v of filtered) {
+          const key = v.deliveryPointName ?? '';
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key)!.push(v);
+        }
+        const sorted = [...groups.entries()].sort(([a], [b]) => {
+          if (!a) return 1;
+          if (!b) return -1;
+          return a.localeCompare(b);
+        });
+        return (
+          <div className="space-y-4">
+            {sorted.map(([point, list]) => (
+              <div key={point || '_none'}>
+                {point && (
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{point}</p>
+                )}
+                <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                  <table className="w-full text-left">
+                    <thead className="border-b border-gray-200 bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Immatriculation</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Marque / Modèle</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Année</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Kilométrage</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Statut</th>
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {list.map((v) => <VehicleTableRow key={v.id} vehicle={v} />)}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {showSync && <SyncModal onClose={() => setShowSync(false)} />}
     </div>

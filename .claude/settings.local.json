@@ -71,7 +71,13 @@
       "Bash(dir frontend\\\\src\\\\modules\\\\settings /b)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\" -Recurse -Filter \"Dockerfile*\")",
       "Bash(npx tsx *)",
-      "Bash(npx --prefix backend tsx backend/src/scripts/test-invoices.ts)"
+      "Bash(npx --prefix backend tsx backend/src/scripts/test-invoices.ts)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\" -Recurse -Include \"*.ts\",\"*.tsx\",\"*.js\")",
+      "Bash(Select-String -Pattern \"unavailabilit\")",
+      "Bash(Select-Object -First 30)",
+      "Bash(xargs cat)",
+      "Bash(node_modules\\\\.bin\\\\tsc --noEmit)",
+      "PowerShell(git *)"
     ]
   }
 }

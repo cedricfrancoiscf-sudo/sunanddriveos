@@ -353,10 +353,11 @@ export function createGetaroundClient(apiKey: string) {
     },
 
     async getUnavailabilities(carId: number, startDate: Date, endDate: Date): Promise<Array<{ id: number; starts_at: string; ends_at: string }>> {
-      const res = await withRetry(() => client.get<Array<{ id: number; starts_at: string; ends_at: string }>>(
-        `/cars/${carId}/unavailabilities.json`,
-        { params: { start_date: toGetaroundDate(startDate), end_date: toGetaroundDate(endDate), per_page: '100' } },
-      ));
+      const startStr = toGetaroundDate(startDate);
+      const endStr = toGetaroundDate(endDate);
+      const url = `/cars/${carId}/unavailabilities.json?start_date=${startStr}&end_date=${endStr}&per_page=100`;
+      console.log(`[API] GET unavailabilities URL: ${url}`);
+      const res = await withRetry(() => client.get<Array<{ id: number; starts_at: string; ends_at: string }>>(url));
       return Array.isArray(res.data) ? res.data : [];
     },
 

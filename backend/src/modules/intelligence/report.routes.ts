@@ -152,11 +152,19 @@ export async function generateCeoReportAsync(
   companyId: string,
   month: string,
 ): Promise<void> {
+  console.log(`[CeoReport] ▶ Début génération — companyId=${companyId} month=${month} reportId=${reportId}`);
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('[CeoReport] ✗ ANTHROPIC_API_KEY non définie — génération impossible');
+    return;
+  }
   const db = getTenantClient(tenantDbUrl);
   try {
+    console.log(`[CeoReport] → collectTenantData...`);
     const { settings, vehicleStats, zones, internalContext } = await collectTenantData(db);
+    console.log(`[CeoReport] ✓ collectTenantData OK — ${internalContext.flotte} véhicule(s), ${internalContext.nbLocations} location(s), CA net=${internalContext.caNet}`);
     const now = new Date();
 
+    console.log(`[CeoReport] → Appel Claude API (model=claude-sonnet-4-6, max_tokens=8000)...`);
     const response = await claude.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
@@ -210,12 +218,16 @@ Retourne exactement ce JSON (sans markdown, sans backticks) :
       }],
     });
 
+    console.log(`[CeoReport] ✓ Réponse Claude reçue — stop_reason=${response.stop_reason} tokens_in=${response.usage.input_tokens} tokens_out=${response.usage.output_tokens}`);
     const textContent = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map(b => b.text)
       .join('');
     const jsonMatch = textContent.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Réponse Claude non parseable (pas de JSON détecté)');
+    if (!jsonMatch) {
+      console.error('[CeoReport] ✗ Réponse Claude non parseable. Extrait (500 chars):', textContent.slice(0, 500));
+      throw new Error('Réponse Claude non parseable (pas de JSON détecté)');
+    }
     const reportData = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
 
     const content = {
@@ -232,16 +244,20 @@ Retourne exactement ce JSON (sans markdown, sans backticks) :
       report: reportData,
     };
 
+    console.log(`[CeoReport] → Mise à jour status='ready' en DB (reportId=${reportId})...`);
     await db.ceoReport.update({
       where: { id: reportId },
       data: { status: 'ready', content: content as never, generatedAt: now },
     });
-    console.log(`[CeoReport] Génération terminée mois ${month} (${companyId})`);
+    console.log(`[CeoReport] ✓ Génération terminée — mois ${month} companyId=${companyId}`);
   } catch (err) {
-    console.error(`[CeoReport] Erreur génération ${month} (${companyId}):`, err instanceof Error ? err.message : err);
+    console.error(`[CeoReport] ✗ Erreur génération ${month} (${companyId}):`, err);
     try {
       await db.ceoReport.update({ where: { id: reportId }, data: { status: 'error' } });
-    } catch { /* ignore secondary error */ }
+      console.log(`[CeoReport] → status mis à 'error' en DB`);
+    } catch (dbErr) {
+      console.error(`[CeoReport] ✗ Impossible de mettre à jour le statut en DB:`, dbErr);
+    }
   }
 }
 

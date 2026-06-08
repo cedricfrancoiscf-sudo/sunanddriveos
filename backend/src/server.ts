@@ -10,7 +10,7 @@ import cron from 'node-cron';
 import { createApp } from './app';
 import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client';
 import { executePendingSequences, cleanupObsoleteSequences } from './modules/sequences/sequences.service';
-import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayouts } from './modules/getaround-sync/getaround-sync.service';
+import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayouts, syncUnavailabilitiesForTenant } from './modules/getaround-sync/getaround-sync.service';
 import { generateCeoReportAsync } from './modules/intelligence/report.routes';
 import { analyzeAndProcessMessage, type RentalForMessaging } from './modules/messages/messaging.service';
 import { decrypt } from './utils/crypto';
@@ -207,6 +207,9 @@ async function runRecentWindowSyncForAllTenants(): Promise<void> {
         if (expired.count > 0) console.log(`[RecentSync] ${company.slug} : ${expired.count} expirée(s) → completed`);
       } catch (e) { console.error(`[RecentSync] Rattrapage ${company.slug}:`, e); }
       void cleanupObsoleteSequences(db).catch(e => console.error('[RecentSync] cleanup séquences:', e));
+      try {
+        await syncUnavailabilitiesForTenant(db, company.slug);
+      } catch (e) { console.error(`[RecentSync] Unavailabilities ${company.slug}:`, e); }
     }
   } catch (err: unknown) {
     console.error('[RecentSync] Erreur générale :', err);
@@ -259,11 +262,11 @@ async function runProactiveMessaging(): Promise<void> {
             rental: {
               select: {
                 id: true, vehicleId: true, driverName: true,
-                driverGetaroundId: true, getaroundId: true, startAt: true,
+                driverGetaroundId: true, getaroundId: true, startAt: true, endAt: true,
                 vehicle: {
                   select: {
                     make: true, model: true, licensePlate: true,
-                    parkingZone: true, getaroundAccountId: true,
+                    parkingZone: true, deliveryPointName: true, getaroundAccountId: true,
                   },
                 },
               },
@@ -285,8 +288,8 @@ async function runProactiveMessaging(): Promise<void> {
             const r = msg.rental;
             const rentalData: RentalForMessaging = {
               id: r.id, vehicleId: r.vehicleId, driverName: r.driverName,
-              driverGetaroundId: r.driverGetaroundId, getaroundId: r.getaroundId, startAt: r.startAt,
-              vehicle: { make: r.vehicle.make, model: r.vehicle.model, licensePlate: r.vehicle.licensePlate, parkingZone: r.vehicle.parkingZone },
+              driverGetaroundId: r.driverGetaroundId, getaroundId: r.getaroundId, startAt: r.startAt, endAt: r.endAt,
+              vehicle: { make: r.vehicle.make, model: r.vehicle.model, licensePlate: r.vehicle.licensePlate, parkingZone: r.vehicle.parkingZone, deliveryPointName: r.vehicle.deliveryPointName },
             };
             await analyzeAndProcessMessage({ id: msg.id, content: msg.content }, rentalData, db, ga);
             processed++;
@@ -337,11 +340,11 @@ async function runMorningRebalayage(): Promise<void> {
           },
           select: {
             id: true, vehicleId: true, driverName: true,
-            driverGetaroundId: true, getaroundId: true, startAt: true,
+            driverGetaroundId: true, getaroundId: true, startAt: true, endAt: true,
             vehicle: {
               select: {
                 make: true, model: true, licensePlate: true,
-                parkingZone: true, getaroundAccountId: true,
+                parkingZone: true, deliveryPointName: true, getaroundAccountId: true,
               },
             },
             messages: {
@@ -370,8 +373,8 @@ async function runMorningRebalayage(): Promise<void> {
 
           const rentalData: RentalForMessaging = {
             id: rental.id, vehicleId: rental.vehicleId, driverName: rental.driverName,
-            driverGetaroundId: rental.driverGetaroundId, getaroundId: rental.getaroundId, startAt: rental.startAt,
-            vehicle: { make: rental.vehicle.make, model: rental.vehicle.model, licensePlate: rental.vehicle.licensePlate, parkingZone: rental.vehicle.parkingZone },
+            driverGetaroundId: rental.driverGetaroundId, getaroundId: rental.getaroundId, startAt: rental.startAt, endAt: rental.endAt,
+            vehicle: { make: rental.vehicle.make, model: rental.vehicle.model, licensePlate: rental.vehicle.licensePlate, parkingZone: rental.vehicle.parkingZone, deliveryPointName: rental.vehicle.deliveryPointName },
           };
           for (const msg of inboundNoReply) {
             try {

@@ -8,14 +8,15 @@ import {
   TRIGGER_LABELS,
   DELAY_LABELS,
   TEMPLATE_VARS,
-  BEFORE_TRIGGERS,
 } from './sequencesApi';
 
 function delayLabel(minutes: number): string {
   if (minutes === 0) return 'Immédiatement';
-  if (minutes < 60) return `${minutes} min après`;
-  if (minutes < 1440) return `${Math.round(minutes / 60)} h après`;
-  return `${Math.round(minutes / 1440)} j après`;
+  const abs = Math.abs(minutes);
+  const dir = minutes < 0 ? ' avant' : ' après';
+  if (abs < 60) return `${abs} min${dir}`;
+  if (abs < 1440) return `${Math.round(abs / 60)} h${dir}`;
+  return `${Math.round(abs / 1440)} j${dir}`;
 }
 
 const TRIGGER_OPTIONS: TriggerEvent[] = [
@@ -54,8 +55,10 @@ function SequenceForm({
     set('content', form.content + varKey);
   }
 
-  const delayHours = Math.floor(form.delayMinutes / 60);
-  const delayMins = form.delayMinutes % 60;
+  const isBefore = form.delayMinutes < 0;
+  const absDelay = Math.abs(form.delayMinutes);
+  const delayHours = Math.floor(absDelay / 60);
+  const delayMins = absDelay % 60;
 
   return (
     <div className="space-y-4">
@@ -90,14 +93,14 @@ function SequenceForm({
         <label className="mb-1 block text-sm font-medium text-gray-700">
           {DELAY_LABELS[form.triggerEvent]}
         </label>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-end">
           <div className="flex-1">
             <input
               type="number"
               min={0}
               max={72}
               value={delayHours}
-              onChange={(e) => set('delayMinutes', parseInt(e.target.value || '0', 10) * 60 + delayMins)}
+              onChange={(e) => set('delayMinutes', (isBefore ? -1 : 1) * (parseInt(e.target.value || '0', 10) * 60 + delayMins))}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
             />
             <p className="mt-0.5 text-xs text-gray-400">heures</p>
@@ -109,21 +112,28 @@ function SequenceForm({
               max={59}
               step={5}
               value={delayMins}
-              onChange={(e) => set('delayMinutes', delayHours * 60 + parseInt(e.target.value || '0', 10))}
+              onChange={(e) => set('delayMinutes', (isBefore ? -1 : 1) * (delayHours * 60 + parseInt(e.target.value || '0', 10)))}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
             />
             <p className="mt-0.5 text-xs text-gray-400">minutes</p>
           </div>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium mb-0.5">
+            <button
+              type="button"
+              onClick={() => { if (!isBefore && form.delayMinutes !== 0) set('delayMinutes', -form.delayMinutes); }}
+              className={`px-3 py-2 transition ${isBefore ? 'bg-[#01696e] text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >avant</button>
+            <button
+              type="button"
+              onClick={() => { if (isBefore) set('delayMinutes', -form.delayMinutes); }}
+              className={`px-3 py-2 transition ${!isBefore ? 'bg-[#01696e] text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >après</button>
+          </div>
         </div>
-        {BEFORE_TRIGGERS.includes(form.triggerEvent) && form.delayMinutes === 0 && (
-          <p className="mt-1 text-xs text-red-500">Le délai doit être supérieur à 0</p>
+        {form.delayMinutes === 0 && (
+          <p className="mt-1 text-xs text-red-500">Le délai doit être non nul</p>
         )}
-        {BEFORE_TRIGGERS.includes(form.triggerEvent) && form.delayMinutes > 0 && (
-          <p className="mt-1 text-xs font-medium text-orange-600">
-            Le message sera envoyé {delayLabel(form.delayMinutes).replace(' après', '')} avant l&apos;événement
-          </p>
-        )}
-        {!BEFORE_TRIGGERS.includes(form.triggerEvent) && form.delayMinutes > 0 && (
+        {form.delayMinutes !== 0 && (
           <p className="mt-1 text-xs text-[#01696e]">{delayLabel(form.delayMinutes)}</p>
         )}
       </div>

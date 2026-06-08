@@ -42,6 +42,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
         select: {
           id: true, vehicleId: true, driverName: true, startAt: true, endAt: true, status: true,
           _count: { select: { carSeatRequests: true, accessoryReservations: true } },
+          carSeatRequests: { where: { status: { in: ['confirmed', 'pending', 'unavailable'] } }, select: { status: true } },
         },
       }),
       db.blocking.findMany({

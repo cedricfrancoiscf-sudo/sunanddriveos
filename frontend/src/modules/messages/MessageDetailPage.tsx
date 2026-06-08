@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { messagesApi, aiApi, type Message } from './messagesApi';
+import { messagesApi, type Message } from './messagesApi';
 
 function Bubble({ msg, isLast }: { msg: { direction: string; content: string; sentAt: string | null; status: string; aiSuggestion: string | null; createdAt: string }; isLast: boolean }): React.JSX.Element {
   const isInbound = msg.direction === 'inbound';
@@ -67,8 +67,6 @@ export default function MessageDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const [replyContent, setReplyContent] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-
   const { data: message, isLoading } = useQuery({
 
     queryKey: ['message', id],
@@ -101,42 +99,6 @@ export default function MessageDetailPage(): React.JSX.Element {
     mutationFn: () => messagesApi.cancel(id!),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['message', id] }); },
   });
-
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  async function handleAnalyze(): Promise<void> {
-    if (!message || message.direction !== 'inbound') return;
-    setIsAnalyzing(true);
-    try {
-      await aiApi.analyze(message.content, {
-        messageId: message.id,
-        rentalId: message.rentalId,
-        vehicleId: message.rental.vehicle.id,
-      });
-      void qc.invalidateQueries({ queryKey: ['message', id] });
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }
-
-  async function handleGenerate(): Promise<void> {
-    if (!message) return;
-    setIsGenerating(true);
-    try {
-      const lastInbound = (message.rental.messages ?? [])
-        .slice()
-        .reverse()
-        .find((m) => m.direction === 'inbound');
-      if (!lastInbound) return;
-
-      const { suggestion } = await aiApi.suggest(message.rentalId, lastInbound.content);
-      if (suggestion) setReplyContent(suggestion);
-    } catch (e) {
-      console.error('[Suggérer IA] Erreur:', e);
-    } finally {
-      setIsGenerating(false);
-    }
-  }
 
   if (isLoading) {
     return (
@@ -205,20 +167,8 @@ export default function MessageDetailPage(): React.JSX.Element {
       <div className="shrink-0 border-t border-gray-200 bg-white p-4 lg:p-6">
         <div className="mx-auto max-w-2xl space-y-3">
           {/* Analyse IA du dernier message entrant */}
-          {message.direction === 'inbound' && (
-            message.aiAnalysis ? (
-              <AnalysisCard analysis={message.aiAnalysis} />
-            ) : (
-              <button type="button" onClick={() => void handleAnalyze()} disabled={isAnalyzing}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#01696e]/20 bg-[#01696e]/5 py-2.5 text-sm font-medium text-[#01696e] hover:bg-[#01696e]/10 disabled:opacity-60 transition">
-                {isAnalyzing ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent border-[#01696e]" />
-                ) : (
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                )}
-                {isAnalyzing ? 'Analyse en cours...' : 'Analyser avec IA'}
-              </button>
-            )
+          {message.direction === 'inbound' && message.aiAnalysis && (
+            <AnalysisCard analysis={message.aiAnalysis} />
           )}
 
           {/* Message en attente d'approbation — on affiche le contenu éditable */}
@@ -229,23 +179,6 @@ export default function MessageDetailPage(): React.JSX.Element {
                   <label className="text-xs font-medium text-gray-500">
                     {isPending ? 'Suggestion à approuver' : 'Message approuvé'}
                   </label>
-                  {isPending && !aiSuggestDisabled && (
-                    <button
-                      type="button"
-                      onClick={() => void handleGenerate()}
-                      disabled={isGenerating}
-                      className="flex items-center gap-1 text-xs font-medium text-[#01696e] hover:underline disabled:opacity-60"
-                    >
-                      {isGenerating ? (
-                        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-t-transparent border-[#01696e]" />
-                      ) : (
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                      )}
-                      {isGenerating ? 'Génération...' : 'Régénérer avec IA'}
-                    </button>
-                  )}
                 </div>
                 <textarea
                   value={replyContent || message.content}
@@ -302,40 +235,34 @@ export default function MessageDetailPage(): React.JSX.Element {
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
               />
               <div className="flex gap-2">
-                {!aiDraft && (
-                  aiSuggestDisabled ? (
-                    <p className="py-2 text-xs text-gray-400">Suggestion IA non disponible (location terminée)</p>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void handleGenerate()}
-                      disabled={isGenerating}
-                      className="flex items-center gap-1.5 rounded-xl border border-[#01696e]/30 px-3 py-2 text-sm font-medium text-[#01696e] hover:bg-[#01696e]/5 disabled:opacity-60"
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      {isGenerating ? 'Génération...' : 'Suggérer avec IA'}
-                    </button>
-                  )
-                )}
                 {replyContent && (
                   <button
                     type="button"
                     onClick={() => {
                       if (aiDraft) {
                         approveMutation.mutate({ msgId: aiDraft.id, content: replyContent });
+                        setReplyContent('');
                       } else {
-                        void messagesApi.create(message.rentalId, replyContent);
-                        void qc.invalidateQueries({ queryKey: ['message', id] });
+                        const content = replyContent;
+                        setReplyContent('');
+                        void (async () => {
+                          try {
+                            const newMsg = await messagesApi.create(message.rentalId, content);
+                            await messagesApi.approve(newMsg.id, content);
+                            await qc.invalidateQueries({ queryKey: ['message', id] });
+                            await qc.invalidateQueries({ queryKey: ['messages'] });
+                            await qc.invalidateQueries({ queryKey: ['inbox-summary'] });
+                          } catch (e) {
+                            console.error('[Envoyer] Erreur:', e);
+                          }
+                        })();
                       }
-                      setReplyContent('');
                     }}
                     disabled={approveMutation.isPending}
                     className="flex-1 rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-60"
                     style={{ backgroundColor: '#01696e' }}
                   >
-                    {aiDraft ? 'Envoyer' : 'Créer le brouillon'}
+                    Envoyer
                   </button>
                 )}
               </div>

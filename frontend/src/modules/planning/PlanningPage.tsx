@@ -24,6 +24,7 @@ interface PlanningRental {
   endAt: string;
   status: string;
   _count: { carSeatRequests: number; accessoryReservations: number };
+  carSeatRequests: Array<{ status: string }>;
 }
 interface PlanningBlocking {
   id: string;
@@ -37,10 +38,12 @@ interface PlanningBlocking {
 const BLOCKING_LABELS: Record<string, string> = {
   maintenance: 'Maintenance',
   incident: 'Incident',
+  unavailability: 'Indisponible',
 };
 const BLOCKING_COLORS: Record<string, string> = {
   maintenance: 'bg-orange-400',
   incident: 'bg-red-500',
+  unavailability: 'bg-gray-400',
 };
 
 // Positionnement précis à la minute près dans la grille
@@ -61,7 +64,7 @@ function formatHour(iso: string): string {
 }
 
 function RentalBar({ rental, periodStart, totalDays, onClick }: { rental: PlanningRental; periodStart: Date; totalDays: number; onClick: () => void }) {
-  const hasCarSeat = rental._count.carSeatRequests > 0;
+  const hasCarSeat = rental.carSeatRequests.length > 0;
   const hasAccessory = rental._count.accessoryReservations > 0;
   const tooltip = `${rental.driverName}\n${format(parseISO(rental.startAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(rental.endAt), 'dd/MM HH:mm', { locale: fr })}${hasCarSeat ? '\n🪑 Siège auto' : ''}${hasAccessory ? '\n📦 Accessoire' : ''}`;
   const durationMin = differenceInMinutes(parseISO(rental.endAt), parseISO(rental.startAt));

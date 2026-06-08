@@ -255,7 +255,6 @@ export default function IntelligencePage(): React.JSX.Element {
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-orange-400 inline-block" /> Réparations</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-stone-400 inline-block" /> Autres</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-500 inline-block" /> Prévisionnel</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#38bdf8' }} /> Commission (↓)</span>
               <span className="flex items-center gap-1"><span className="h-0.5 w-4 bg-orange-400 inline-block" /> Km</span>
             </div>
           </div>
@@ -265,14 +264,14 @@ export default function IntelligencePage(): React.JSX.Element {
                 <ComposedChart data={annual.monthlyData} margin={{ top: 24, right: 50, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="ca" domain={['auto', 'auto']} tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
+                  <YAxis yAxisId="ca" tick={{ fontSize: 11 }} tickFormatter={v => `${v}€`} />
                   <YAxis yAxisId="km" orientation="right" tick={{ fontSize: 10 }} tickFormatter={v => `${v}km`} />
                   <Tooltip content={<CATooltip />} />
-                  <Bar yAxisId="ca" dataKey="encaisse.basePrice" stackId="encaisse" fill="#16a34a" name="Location" />
-                  <Bar yAxisId="ca" dataKey="encaisse.insuranceFee" stackId="encaisse" fill="#10b981" name="Assurance" />
-                  <Bar yAxisId="ca" dataKey="encaisse.driverMessFee" stackId="encaisse" fill="#eab308" name="Nettoyage" />
-                  <Bar yAxisId="ca" dataKey="encaisse.damageCompensation" stackId="encaisse" fill="#f97316" name="Réparations" />
-                  <Bar yAxisId="ca" dataKey="encaisse.autres" stackId="encaisse" fill="#a8a29e" name="Autres"
+                  <Bar yAxisId="ca" dataKey="encaisse.basePrice" stackId="monthly" fill="#16a34a" name="Location" />
+                  <Bar yAxisId="ca" dataKey="encaisse.insuranceFee" stackId="monthly" fill="#10b981" name="Assurance" />
+                  <Bar yAxisId="ca" dataKey="encaisse.driverMessFee" stackId="monthly" fill="#eab308" name="Nettoyage" />
+                  <Bar yAxisId="ca" dataKey="encaisse.damageCompensation" stackId="monthly" fill="#f97316" name="Réparations" />
+                  <Bar yAxisId="ca" dataKey="encaisse.autres" stackId="monthly" fill="#a8a29e" name="Autres"
                     label={(props: Record<string, unknown>) => {
                       const { x, y, width, index } = props as { x: number; y: number; width: number; index: number };
                       const d = annual.monthlyData[index];
@@ -284,8 +283,7 @@ export default function IntelligencePage(): React.JSX.Element {
                       );
                     }}
                   />
-                  <Bar yAxisId="ca" dataKey="encaisse.getaroundServiceFee" stackId="commission" fill="#38bdf8" name="Commission Getaround" />
-                  <Bar yAxisId="ca" dataKey="previsionnel" stackId="previsionnel" fill="#3b82f6" radius={[3,3,0,0]} name="Prévisionnel" />
+                  <Bar yAxisId="ca" dataKey="previsionnel" stackId="monthly" fill="#3b82f6" radius={[3,3,0,0]} name="Prévisionnel" />
                   <Line yAxisId="km" type="monotone" dataKey="km" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} name="Km" />
                 </ComposedChart>
               </ResponsiveContainer>

@@ -1,8 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { Resend } from 'resend';
 import type { PrismaClient } from '../../generated/tenant';
 import type { GetaroundClient } from '../getaround-sync/getaround-sync.service';
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+function getResend(): Resend {
+  return new Resend(process.env.RESEND_API_KEY);
+}
+
+const FROM_ADDR = process.env.RESEND_FROM ?? 'noreply@sunanddrive.fr';
 
 interface ProactiveAnalysis {
   type: 'car_seat' | 'remise' | 'incident' | 'general' | 'remerciement';
@@ -18,8 +25,93 @@ export type RentalForMessaging = {
   driverGetaroundId: string | null;
   getaroundId: string | null;
   startAt: Date;
-  vehicle: { make: string; model: string; licensePlate: string; parkingZone: string | null };
+  endAt: Date;
+  vehicle: { make: string; model: string; licensePlate: string; parkingZone: string | null; deliveryPointName: string | null };
 };
+
+function toIcalDate(d: Date): string {
+  return d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+}
+
+function toGCalDate(d: Date): string {
+  return toIcalDate(d);
+}
+
+function buildGoogleCalendarUrl(rental: RentalForMessaging): string {
+  const location = rental.vehicle.deliveryPointName ?? rental.vehicle.parkingZone ?? '';
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: `Siège auto — ${rental.driverName}`,
+    dates: `${toGCalDate(rental.startAt)}/${toGCalDate(rental.endAt)}`,
+    details: `Siège auto requis pour la location Getaround. Véhicule: ${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`,
+    location,
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function buildIcal(rental: RentalForMessaging): string {
+  const location = (rental.vehicle.deliveryPointName ?? rental.vehicle.parkingZone ?? '').replace(/,/g, '\\,');
+  const description = `Siège auto requis\\, véhicule: ${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`;
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//SunandDrive//FR',
+    'BEGIN:VEVENT',
+    `UID:carseat-${rental.id}@sunanddrive`,
+    `DTSTART:${toIcalDate(rental.startAt)}`,
+    `DTEND:${toIcalDate(rental.endAt)}`,
+    `SUMMARY:Siège auto — ${rental.driverName}`,
+    `DESCRIPTION:${description}`,
+    `LOCATION:${location}`,
+    'BEGIN:VALARM',
+    'TRIGGER:-PT48H',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:Rappel siège auto dans 48h',
+    'END:VALARM',
+    'BEGIN:VALARM',
+    'TRIGGER:-PT24H',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:Rappel siège auto dans 24h',
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+}
+
+async function sendCarSeatEmail(
+  recipients: string[],
+  rental: RentalForMessaging,
+  assistantName: string,
+  confirmed: boolean,
+): Promise<void> {
+  if (!process.env.RESEND_API_KEY || recipients.length === 0) return;
+  const gcalUrl = buildGoogleCalendarUrl(rental);
+  const icalContent = buildIcal(rental);
+  const location = rental.vehicle.deliveryPointName ?? rental.vehicle.parkingZone ?? 'Non défini';
+  const subject = confirmed
+    ? `🪑 Siège auto confirmé — ${rental.driverName}`
+    : `⚠️ Siège auto demandé — stock insuffisant (${rental.driverName})`;
+  const html = confirmed
+    ? `<p>Un siège auto a été attribué pour la location de <strong>${rental.driverName}</strong>.</p>
+       <p>Véhicule&nbsp;: ${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})</p>
+       <p>Point de remise&nbsp;: ${location}</p>
+       <p>Période&nbsp;: ${rental.startAt.toLocaleDateString('fr-FR')} → ${rental.endAt.toLocaleDateString('fr-FR')}</p>
+       <p><a href="${gcalUrl}" style="display:inline-block;padding:10px 20px;background:#01696e;color:#fff;border-radius:6px;text-decoration:none;">Ajouter au calendrier Google</a></p>
+       <p style="color:#666;font-size:12px;">Le fichier .ics ci-joint peut être importé dans Apple Calendrier ou Outlook.</p>`
+    : `<p><strong>⚠️ Siège auto indisponible</strong> pour la location de <strong>${rental.driverName}</strong>.</p>
+       <p>Véhicule&nbsp;: ${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})</p>
+       <p>Action requise&nbsp;: réapprovisionner le stock ou contacter le locataire.</p>`;
+
+  await getResend().emails.send({
+    from: `${assistantName} <${FROM_ADDR}>`,
+    to: recipients,
+    subject,
+    html,
+    attachments: confirmed
+      ? [{ filename: 'siege-auto.ics', content: Buffer.from(icalContent), contentType: 'text/calendar' }]
+      : undefined,
+  });
+}
 
 export async function analyzeAndProcessMessage(
   message: { id: string; content: string },
@@ -52,7 +144,7 @@ La réponse suggérée doit être en ${tone}, signée ${assistantName}.`,
         role: 'user',
         content: `Message du locataire : "${message.content}"
 Véhicule : ${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})
-Lieu : ${rental.vehicle.parkingZone ?? 'Non défini'}
+Lieu : ${rental.vehicle.deliveryPointName ?? rental.vehicle.parkingZone ?? 'Non défini'}
 Début location : ${rental.startAt.toLocaleDateString('fr-FR')}
 Locataire : ${rental.driverName}`,
       }],
@@ -83,13 +175,45 @@ Locataire : ${rental.driverName}`,
   // 4. Adapter la réponse selon le type (siège auto + stock)
   let suggestedReply = analysis.suggestedReply;
   if (analysis.type === 'car_seat') {
-    const stockCount = await db.carSeat.count({ where: { isActive: true } });
     const existing = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
     if (!existing) {
-      await db.carSeatRequest.create({ data: { vehicleId: rental.vehicleId, rentalId: rental.id } });
-    }
-    if (stockCount === 0) {
-      suggestedReply = `Bonjour ${rental.driverName}, je suis désolé(e), nous n'avons pas de siège auto disponible pour votre location. ${assistantName}`;
+      const availableSeat = await db.carSeat.findFirst({ where: { isActive: true, availableStock: { gt: 0 } } });
+      if (availableSeat) {
+        await db.carSeat.update({
+          where: { id: availableSeat.id },
+          data: { availableStock: { decrement: 1 } },
+        });
+        await db.carSeatRequest.create({
+          data: { vehicleId: rental.vehicleId, rentalId: rental.id, carSeatId: availableSeat.id, status: 'confirmed' },
+        });
+        const staff = await db.user.findMany({
+          where: { role: { in: ['admin', 'carkeeper'] }, isActive: true },
+          select: { email: true },
+        });
+        const emails = staff.map(u => u.email).filter(Boolean);
+        void sendCarSeatEmail(emails, rental, assistantName, true).catch(e =>
+          console.error('[Messaging] Erreur email siège auto:', e),
+        );
+        console.log(`[Messaging] Siège auto attribué rental ${rental.id}`);
+      } else {
+        await db.carSeatRequest.create({
+          data: { vehicleId: rental.vehicleId, rentalId: rental.id, status: 'unavailable' },
+        });
+        const staff = await db.user.findMany({
+          where: { role: { in: ['admin', 'carkeeper'] }, isActive: true },
+          select: { email: true },
+        });
+        const emails = staff.map(u => u.email).filter(Boolean);
+        void sendCarSeatEmail(emails, rental, assistantName, false).catch(e =>
+          console.error('[Messaging] Erreur email alerte siège:', e),
+        );
+        suggestedReply = `Bonjour ${rental.driverName}, je suis désolé(e), nous n'avons pas de siège auto disponible pour votre location. Cordialement, ${assistantName}`;
+        console.warn(`[Messaging] Stock siège auto épuisé — rental ${rental.id}`);
+      }
+    } else {
+      if (existing.status === 'unavailable') {
+        suggestedReply = `Bonjour ${rental.driverName}, je suis désolé(e), nous n'avons pas de siège auto disponible pour votre location. Cordialement, ${assistantName}`;
+      }
     }
   }
 

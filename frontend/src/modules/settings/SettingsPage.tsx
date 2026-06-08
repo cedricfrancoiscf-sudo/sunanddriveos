@@ -424,6 +424,7 @@ function GetaroundSection(): React.JSX.Element {
   const [editKeyId, setEditKeyId] = useState<string | null>(null);
   const [newKey, setNewKey] = useState('');
   const [syncMsg, setSyncMsg] = useState<Record<string, string>>({});
+  const [deleteGaError, setDeleteGaError] = useState<string | null>(null);
   const [pendingStartDateAccountId, setPendingStartDateAccountId] = useState<string | null>(null);
   const [pendingStartDate, setPendingStartDate] = useState(defaultStartDate());
 
@@ -464,8 +465,12 @@ function GetaroundSection(): React.JSX.Element {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => getaroundSyncApi.deleteAccount(id),
     onSuccess: () => {
+      setDeleteGaError(null);
       void qc.invalidateQueries({ queryKey: ['getaround-accounts'] });
       void qc.invalidateQueries({ queryKey: ['onboarding-progress'] });
+    },
+    onError: (err: unknown) => {
+      setDeleteGaError((err as { response?: { data?: { error?: string } } }).response?.data?.error ?? 'Erreur lors de la suppression du compte');
     },
   });
 
@@ -666,6 +671,13 @@ function GetaroundSection(): React.JSX.Element {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {deleteGaError && (
+        <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
+          {deleteGaError}
+          <button type="button" onClick={() => setDeleteGaError(null)} className="ml-2 text-red-400">✕</button>
         </div>
       )}
 

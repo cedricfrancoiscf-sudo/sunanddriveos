@@ -1670,3 +1670,46 @@ export async function deleteAccount(db: PrismaClient, id: string) {
   await db.vehicle.updateMany({ where: { getaroundAccountId: id }, data: { isActive: false } });
   return db.getaroundAccount.update({ where: { id }, data: { isActive: false } });
 }
+
+export async function syncUnavailabilitiesForTenant(db: PrismaClient, tenantSlug: string): Promise<void> {
+  const accounts = await db.getaroundAccount.findMany({
+    where: { isActive: true },
+    select: { id: true, apiKeyHash: true },
+  });
+  const startDate = new Date(Date.now() - 7 * 86_400_000);
+  const endDate = new Date(Date.now() + 60 * 86_400_000);
+
+  for (const account of accounts) {
+    const apiKey = decrypt(account.apiKeyHash);
+    const ga = createGetaroundClient(apiKey);
+    const vehicles = await db.vehicle.findMany({
+      where: { getaroundAccountId: account.id, getaroundId: { not: null }, isActive: true },
+      select: { id: true, getaroundId: true },
+    });
+    for (const vehicle of vehicles) {
+      if (!vehicle.getaroundId) continue;
+      try {
+        const unavs = await ga.getUnavailabilities(parseInt(vehicle.getaroundId, 10), startDate, endDate);
+        for (const unav of unavs) {
+          await db.blocking.upsert({
+            where: { getaroundUnavailabilityId: String(unav.id) },
+            create: {
+              vehicleId: vehicle.id,
+              type: 'unavailability',
+              startAt: new Date(unav.starts_at),
+              endAt: new Date(unav.ends_at),
+              getaroundUnavailabilityId: String(unav.id),
+            },
+            update: {
+              startAt: new Date(unav.starts_at),
+              endAt: new Date(unav.ends_at),
+            },
+          });
+        }
+      } catch (e) {
+        console.error(`[Unavailabilities] Erreur véhicule ${vehicle.getaroundId}:`, e);
+      }
+    }
+  }
+  console.log(`[Unavailabilities] Sync terminée — tenant ${tenantSlug}`);
+}

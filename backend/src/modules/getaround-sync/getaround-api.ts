@@ -352,6 +352,14 @@ export function createGetaroundClient(apiKey: string) {
       }));
     },
 
+    async getUnavailabilities(carId: number, startDate: Date, endDate: Date): Promise<Array<{ id: number; starts_at: string; ends_at: string }>> {
+      const res = await withRetry(() => client.get<Array<{ id: number; starts_at: string; ends_at: string }>>(
+        `/cars/${carId}/unavailabilities.json`,
+        { params: { start_date: toGetaroundDate(startDate), end_date: toGetaroundDate(endDate), per_page: '100' } },
+      ));
+      return Array.isArray(res.data) ? res.data : [];
+    },
+
     async getRentalInvoices(rentalId: number): Promise<GetaroundInvoiceApi[]> {
       return fetchAllPages<GetaroundInvoiceApi>(client, `/rentals/${rentalId}/invoices.json`, {});
     },

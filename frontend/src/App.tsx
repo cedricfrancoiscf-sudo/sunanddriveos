@@ -130,6 +130,7 @@ export default function App(): React.JSX.Element {
               <Route path="/vehicles/new" element={<VehicleFormPage />} />
               <Route path="/vehicles/:id" element={<VehicleDetailPage />} />
               <Route path="/vehicles/:id/edit" element={<VehicleFormPage />} />
+              <Route path="/fleet/:id/edit" element={<VehicleFormPage />} />
               <Route path="/rentals" element={<RentalListPage />} />
               <Route path="/rentals/:id" element={<RentalDetailPage />} />
               <Route path="/messages" element={<MessageListPage />} />

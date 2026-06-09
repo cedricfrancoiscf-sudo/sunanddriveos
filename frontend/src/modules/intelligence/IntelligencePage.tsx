@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ComposedChart, Line, ReferenceLine, Cell,
@@ -43,6 +43,7 @@ interface VehiclePerf {
 }
 
 interface ChatMsg { role: 'user' | 'ai'; content: string; }
+interface AiSuggestion { title: string; description: string; type: 'alert' | 'opportunity' | 'info'; priority: 'high' | 'medium' | 'low'; }
 
 // ── Couleurs ──────────────────────────────────────────────────────────────────
 
@@ -129,6 +130,7 @@ export default function IntelligencePage(): React.JSX.Element {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  const qc = useQueryClient();
 
   const { data: annual, isLoading: annualLoading } = useQuery<AnnualKPIs>({
     queryKey: ['intelligence-annual'],
@@ -140,6 +142,13 @@ export default function IntelligencePage(): React.JSX.Element {
     queryKey: ['intelligence-performance'],
     queryFn: () => api.get<{ performance: VehiclePerf[] }>('/intelligence/performance').then(r => r.data),
     staleTime: 5 * 60_000,
+  });
+
+  const { data: suggestionsData, isLoading: suggestionsLoading, isFetching: suggestionsFetching } = useQuery<{ suggestions: AiSuggestion[] }>({
+    queryKey: ['intelligence-suggestions'],
+    queryFn: () => api.get<{ suggestions: AiSuggestion[] }>('/intelligence/suggestions').then(r => r.data),
+    staleTime: 24 * 3_600_000,
+    retry: false,
   });
 
   const chatMutation = useMutation({
@@ -426,6 +435,55 @@ export default function IntelligencePage(): React.JSX.Element {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── SECTION 4 : SUGGESTIONS IA ───────────────────────────────────── */}
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Suggestions IA ✨</h2>
+            <p className="text-xs text-gray-400">Recommandations basées sur les données de la flotte</p>
+          </div>
+          <button type="button"
+            onClick={() => { void api.get('/intelligence/suggestions?force=1').then(() => qc.invalidateQueries({ queryKey: ['intelligence-suggestions'] })); }}
+            disabled={suggestionsFetching}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition">
+            <svg className={`h-3.5 w-3.5 ${suggestionsFetching ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Actualiser
+          </button>
+        </div>
+        <div className="p-5">
+          {suggestionsLoading ? (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {[1,2,3,4].map(i => <div key={i} className="h-20 rounded-xl bg-gray-100 animate-pulse" />)}
+            </div>
+          ) : (suggestionsData?.suggestions ?? []).length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">Aucune suggestion disponible</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {(suggestionsData?.suggestions ?? []).map((s, i) => {
+                const colors = {
+                  alert:       { bg: 'bg-red-50',    border: 'border-red-100',    icon: 'text-red-500',    dot: 'bg-red-400' },
+                  opportunity: { bg: 'bg-green-50',  border: 'border-green-100',  icon: 'text-green-600',  dot: 'bg-green-400' },
+                  info:        { bg: 'bg-blue-50',   border: 'border-blue-100',   icon: 'text-blue-500',   dot: 'bg-blue-400' },
+                };
+                const c = colors[s.type] ?? colors.info;
+                const priorityLabel = { high: 'Urgent', medium: 'Moyen', low: 'Info' }[s.priority] ?? '';
+                return (
+                  <div key={i} className={`rounded-xl border p-4 ${c.bg} ${c.border}`}>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <p className={`text-xs font-bold ${c.icon}`}>{s.title}</p>
+                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-white ${c.dot}`}>{priorityLabel}</span>
+                    </div>
+                    <p className="text-xs text-gray-600 leading-relaxed">{s.description}</p>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

@@ -4,6 +4,7 @@ import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { getUpcomingMaintenances } from '../maintenance/maintenance.service';
+import { getRentalStats } from '../rentals/rentals.service';
 
 const copilotCache = new Map<string, { text: string; ts: number }>();
 
@@ -144,11 +145,8 @@ router.get('/copilot', async (req: Request, res: Response, next: NextFunction) =
       select: { name: true },
     });
 
-    const [monthRentals, activeCount, todayDepartCount, todayReturnCount, maintenances, unansweredCount, ctCount, vehicleCount] = await Promise.all([
-      db.rental.findMany({
-        where: { status: { in: ['completed', 'active', 'booked'] }, startAt: { lt: endOfMonth }, endAt: { gte: startOfMonth } },
-        select: { ownerPayout: true, grossRevenue: true, startAt: true, endAt: true },
-      }),
+    const [stats, activeCount, todayDepartCount, todayReturnCount, maintenances, unansweredCount, ctCount] = await Promise.all([
+      getRentalStats(db, startOfMonth, endOfMonth),
       db.rental.count({ where: { status: 'active' } }),
       db.rental.count({ where: { startAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['booked', 'active'] } } }),
       db.rental.count({ where: { endAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['active', 'completed'] } } }),
@@ -157,21 +155,12 @@ router.get('/copilot', async (req: Request, res: Response, next: NextFunction) =
         where: { direction: 'inbound', createdAt: { lt: new Date(Date.now() - 12 * 3_600_000) }, rental: { status: { in: ['active', 'booked'] } } },
       }),
       db.technicalControl.count({ where: { expiryAt: { lte: new Date(Date.now() + 45 * 86_400_000) } } }),
-      db.vehicle.count({ where: { isActive: true } }),
     ]);
 
-    const caEncaisse = monthRentals.filter(r => (r.ownerPayout ?? 0) > 0).reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
-    const caPrevisionnel = monthRentals.filter(r => !((r.ownerPayout ?? 0) > 0)).reduce((s, r) => s + Math.max(0, r.grossRevenue ?? 0), 0);
-
-    const periodDays = Math.ceil((endOfMonth.getTime() - startOfMonth.getTime()) / 86_400_000);
-    const bookedDays = monthRentals.reduce((s, r) => {
-      const s2 = new Date(r.startAt) < startOfMonth ? startOfMonth : new Date(r.startAt);
-      const e = new Date(r.endAt) > endOfMonth ? endOfMonth : new Date(r.endAt);
-      return s + Math.max(0, Math.ceil((e.getTime() - s2.getTime()) / 86_400_000));
-    }, 0);
-    const occupancyRate = vehicleCount > 0 && periodDays > 0
-      ? Math.round((bookedDays / (vehicleCount * periodDays)) * 100)
-      : 0;
+    const caEncaisse = stats.totalEncaisse;
+    const caPrevisionnel = stats.totalPrevisionnel;
+    const occupancyRate = stats.occupancyRate;
+    const vehicleCount = stats.vehicleCount;
 
     const alertCount = maintenances.length + ctCount + (unansweredCount > 0 ? 1 : 0);
 

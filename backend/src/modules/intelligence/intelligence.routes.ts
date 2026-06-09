@@ -67,12 +67,18 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
     const prevGross = sum(prevRentals.map(r => r.grossRevenue));
     const prevCount = prevRentals.length;
 
-    const totalRentalDays = currentRentals.reduce((s, r) => {
-      return s + Math.max(0, (new Date(r.endAt).getTime() - new Date(r.startAt).getTime()) / 86_400_000);
-    }, 0);
     const vehicleCount = vehicles.length;
+    const vDaysKpis = new Map<string, Set<string>>();
+    for (const r of currentRentals) {
+      if (!vDaysKpis.has(r.vehicleId)) vDaysKpis.set(r.vehicleId, new Set());
+      const ds = vDaysKpis.get(r.vehicleId)!;
+      let d = new Date(r.startAt); d.setHours(0,0,0,0);
+      const e = new Date(r.endAt); e.setHours(0,0,0,0);
+      while (d <= e) { ds.add(d.toISOString().slice(0,10)); d = new Date(d.getTime() + 86_400_000); }
+    }
+    const totalDistinctDaysKpis = Array.from(vDaysKpis.values()).reduce((acc, s) => acc + s.size, 0);
     const occupancyRate = vehicleCount > 0 && daysInMonth > 0
-      ? Math.round((totalRentalDays / (vehicleCount * daysInMonth)) * 100) : 0;
+      ? Math.min(100, Math.round((totalDistinctDaysKpis / (vehicleCount * daysInMonth)) * 100)) : 0;
 
     const avgDuration = rentalCount > 0
       ? currentRentals.reduce((s, r) =>
@@ -150,9 +156,16 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
     const vehicles = await db.vehicle.findMany({ where: { isActive: true }, select: { id: true } });
     const vehicleCount = vehicles.length;
     const daysSinceYearStart = Math.max(1, (now.getTime() - yearStart.getTime()) / 86_400_000);
-    const totalRentalDays = valid.reduce((acc, r) =>
-      acc + Math.max(0, (new Date(r.endAt).getTime() - new Date(r.startAt).getTime()) / 86_400_000), 0);
-    const occupancyRate = vehicleCount > 0 ? Math.round((totalRentalDays / (vehicleCount * daysSinceYearStart)) * 100) : 0;
+    const vDaysAnnual = new Map<string, Set<string>>();
+    for (const r of valid) {
+      if (!vDaysAnnual.has(r.vehicleId)) vDaysAnnual.set(r.vehicleId, new Set());
+      const ds = vDaysAnnual.get(r.vehicleId)!;
+      let d = new Date(r.startAt); d.setHours(0,0,0,0);
+      const e = new Date(r.endAt); e.setHours(0,0,0,0);
+      while (d <= e) { ds.add(d.toISOString().slice(0,10)); d = new Date(d.getTime() + 86_400_000); }
+    }
+    const totalDistinctDaysAnnual = Array.from(vDaysAnnual.values()).reduce((acc, s) => acc + s.size, 0);
+    const occupancyRate = vehicleCount > 0 ? Math.min(100, Math.round((totalDistinctDaysAnnual / (vehicleCount * daysSinceYearStart)) * 100)) : 0;
     const totalKm = valid.reduce((acc, r) => acc + s(r.kmDriven), 0);
 
     type MonthBucket = {
@@ -310,7 +323,13 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
       const avgDuration    = rentalCount > 0 ? totalDays / rentalCount : 0;
       const totalKm        = sumArr(vRentals.map(r => r.kmDriven));
       const avgKmPerRental = rentalCount > 0 ? totalKm / rentalCount : 0;
-      const occupancyRate  = Math.round((totalDays / 180) * 100);
+      const occSet = new Set<string>();
+      for (const r of vRentals) {
+        let od = new Date(r.startAt); od.setHours(0,0,0,0);
+        const oe = new Date(r.endAt); oe.setHours(0,0,0,0);
+        while (od <= oe) { occSet.add(od.toISOString().slice(0,10)); od = new Date(od.getTime() + 86_400_000); }
+      }
+      const occupancyRate = Math.min(100, Math.round((occSet.size / 180) * 100));
 
       const withExtra = vRentals.filter(r =>
         (r.gasRefillFee ?? 0) > 0 || (r.lateReturnFee ?? 0) > 0 ||
@@ -339,11 +358,17 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
         const b = monthBuckets[month] ?? { ca: 0, encaisse: 0, previsionnel: 0, count: 0, km: 0 };
         const [yearStr, monthStr] = month.split('-');
         const daysInMonth = new Date(parseInt(yearStr!), parseInt(monthStr!), 0).getDate();
-        const daysLoaned = vRentals
-          .filter(r => new Date(r.startAt).toISOString().slice(0, 7) === month)
-          .reduce((acc, r) =>
-            acc + Math.max(0, (new Date(r.endAt).getTime() - new Date(r.startAt).getTime()) / 86_400_000), 0);
-        const occupancy = daysInMonth > 0 ? Math.round((daysLoaned / daysInMonth) * 100) : 0;
+        const monthOccSet = new Set<string>();
+        for (const r of vRentals.filter(r2 => new Date(r2.startAt).toISOString().slice(0,7) === month)) {
+          let md = new Date(r.startAt); md.setHours(0,0,0,0);
+          const me = new Date(r.endAt); me.setHours(0,0,0,0);
+          while (md <= me) {
+            const mds = md.toISOString().slice(0,10);
+            if (mds.slice(0,7) === month) monthOccSet.add(mds);
+            md = new Date(md.getTime() + 86_400_000);
+          }
+        }
+        const occupancy = daysInMonth > 0 ? Math.min(100, Math.round((monthOccSet.size / daysInMonth) * 100)) : 0;
         return {
           month,
           ca: rnd2(b.ca),
@@ -439,7 +464,7 @@ router.get('/forecasts', async (req: Request, res: Response, next: NextFunction)
     // 4 semaines glissantes : S1=aujourd'hui..+6j, S2=+7..+13j, etc.
     const weekWindows: Array<{ start: Date; end: Date; label: string }> = [];
     const FR_MONTHS_SHORT = ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
-    for (let w = 0; w < 4; w++) {
+    for (let w = 0; w < 8; w++) {
       const start = new Date(now);
       start.setDate(now.getDate() + w * 7);
       start.setHours(0, 0, 0, 0);
@@ -450,7 +475,7 @@ router.get('/forecasts', async (req: Request, res: Response, next: NextFunction)
       weekWindows.push({ start, end, label: `${fmt(start)} – ${fmt(end)}` });
     }
 
-    const fourWeeksOut = weekWindows[3].end;
+    const fourWeeksOut = weekWindows[7].end;
 
     const rentals = await db.rental.findMany({
       where: {
@@ -499,6 +524,7 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
     const db = getTenantClient(req.tenantDbUrl!);
     const now = new Date();
     const twoYearsAgo = new Date(Date.now() - 24 * 30 * 86_400_000);
+    const oneYearAgo = new Date(Date.now() - 12 * 30 * 86_400_000);
 
     const [vehicles, rentals, incidents, maintenances] = await Promise.all([
       db.vehicle.findMany({
@@ -581,21 +607,25 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
       vehicleMonthlyMap[vId][month].daysBooked += days;
     });
 
+    const sixMonthsCutoff = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().slice(0, 7);
     const parVehiculeParMois = vehicles.map(v => {
       const mois = vehicleMonthlyMap[v.id] ?? {};
       return {
         vehicule: `${v.make} ${v.model} (${v.licensePlate})`,
-        mois: Object.entries(mois).sort(([a], [b]) => a.localeCompare(b)).map(([m, d]) => {
-          const daysInMonth = new Date(parseInt(m.slice(0, 4)), parseInt(m.slice(5, 7)), 0).getDate();
-          return {
-            mois: m,
-            caNet: Math.round(d.payout * 100) / 100,
-            caBrut: Math.round(d.gross * 100) / 100,
-            nbLocations: d.count,
-            km: d.km,
-            tauxOccupation: Math.round(Math.min(d.daysBooked, daysInMonth) / daysInMonth * 100),
-          };
-        }),
+        mois: Object.entries(mois)
+          .filter(([m]) => m >= sixMonthsCutoff)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([m, d]) => {
+            const daysInMonth = new Date(parseInt(m.slice(0, 4)), parseInt(m.slice(5, 7)), 0).getDate();
+            return {
+              mois: m,
+              caNet: Math.round(d.payout * 100) / 100,
+              caBrut: Math.round(d.gross * 100) / 100,
+              nbLocations: d.count,
+              km: d.km,
+              tauxOccupation: Math.round(Math.min(d.daysBooked, daysInMonth) / daysInMonth * 100),
+            };
+          }),
       };
     });
 
@@ -711,6 +741,71 @@ router.get('/pending-revenue', async (req: Request, res: Response, next: NextFun
         count: futureRentals.length,
       },
     });
+  } catch (err) { next(err); }
+});
+
+// GET /api/v1/intelligence/suggestions — suggestions IA, cache 24h
+interface AiSuggestion { title: string; description: string; type: 'alert' | 'opportunity' | 'info'; priority: 'high' | 'medium' | 'low'; }
+const suggestionsCache = new Map<string, { data: AiSuggestion[]; ts: number }>();
+
+router.get('/suggestions', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantSlug = req.auth!.tenantSlug;
+    const force = req.query.force === '1';
+    const cacheKey = `suggestions:${tenantSlug}`;
+    const cached = suggestionsCache.get(cacheKey);
+    if (!force && cached && Date.now() - cached.ts < 24 * 3_600_000) {
+      res.json({ suggestions: cached.data });
+      return;
+    }
+
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const sixMonthsAgo = new Date(Date.now() - 180 * 86_400_000);
+
+    const [vehicles, currentRentals, sixMoRentals, pendingMaints, openIncidents] = await Promise.all([
+      db.vehicle.findMany({ where: { isActive: true }, select: { id: true, make: true, model: true, licensePlate: true, healthScore: true } }),
+      db.rental.findMany({
+        where: { startAt: { gte: monthStart }, status: { in: ['booked', 'active', 'completed'] } },
+        select: { vehicleId: true, ownerPayout: true, grossRevenue: true },
+      }),
+      db.rental.findMany({
+        where: { startAt: { gte: sixMonthsAgo }, status: { in: ['completed', 'active', 'booked'] } },
+        select: { vehicleId: true, ownerPayout: true, grossRevenue: true, startAt: true, endAt: true },
+      }),
+      db.maintenance.count({ where: { nextServiceDate: { not: null, lte: new Date(Date.now() + 30 * 86_400_000) } } }),
+      db.incident.count({ where: { status: { in: ['open', 'in_progress'] } } }),
+    ]);
+
+    const s = (v: number | null | undefined) => Math.max(0, v ?? 0);
+    const vehicleStats = vehicles.map(v => {
+      const vCur = currentRentals.filter(r => r.vehicleId === v.id);
+      const caMois = vCur.reduce((acc, r) => acc + (s(r.ownerPayout) > 0 ? s(r.ownerPayout) : s(r.grossRevenue)), 0);
+      const vSix = sixMoRentals.filter(r => r.vehicleId === v.id);
+      const ca6m = vSix.reduce((acc, r) => acc + (s(r.ownerPayout) > 0 ? s(r.ownerPayout) : s(r.grossRevenue)), 0);
+      const totalDays = vSix.reduce((acc, r) => acc + Math.max(0, (new Date(r.endAt).getTime() - new Date(r.startAt).getTime()) / 86_400_000), 0);
+      return { label: `${v.make} ${v.model} (${v.licensePlate})`, caMois: Math.round(caMois), ca6m: Math.round(ca6m), occupancy: Math.min(100, Math.round(totalDays / 180 * 100)), healthScore: v.healthScore ?? 100, rentalCount: vSix.length };
+    });
+
+    const context = JSON.stringify({ vehicules: vehicleStats, fleetCA: vehicleStats.reduce((s, v) => s + v.caMois, 0), avgOccupancy: vehicleStats.length > 0 ? Math.round(vehicleStats.reduce((s, v) => s + v.occupancy, 0) / vehicleStats.length) : 0, pendingMaintenances: pendingMaints, openIncidents });
+
+    if (!process.env.ANTHROPIC_API_KEY) { res.status(503).json({ error: 'IA non disponible' }); return; }
+
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 800,
+      system: `Tu es consultant en gestion de flotte automobile. Analyse les données et génère exactement 5 suggestions concrètes et actionnables en JSON. Réponds UNIQUEMENT avec un tableau JSON valide, sans texte avant ou après. Chaque élément : { "title": string (max 60 chars), "description": string (max 150 chars), "type": "alert"|"opportunity"|"info", "priority": "high"|"medium"|"low" }`,
+      messages: [{ role: 'user', content: `Données flotte :\n${context}` }],
+    });
+
+    const raw = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '[]';
+    let suggestions: AiSuggestion[] = [];
+    try { suggestions = JSON.parse(raw) as AiSuggestion[]; } catch { suggestions = []; }
+
+    suggestionsCache.set(cacheKey, { data: suggestions, ts: Date.now() });
+    res.json({ suggestions });
   } catch (err) { next(err); }
 });
 

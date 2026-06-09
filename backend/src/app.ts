@@ -73,6 +73,7 @@ import scanRoutes from './modules/ai/scan.routes';
 import billingRoutes from './modules/billing/billing.routes';
 import intelligenceRoutes from './modules/intelligence/intelligence.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
+import rentersRoutes from './modules/renters/renters.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -175,6 +176,7 @@ export function createApp(): Express {
   app.use('/api/v1/sync', syncStatusRoutes);
   app.use('/api/v1/intelligence', intelligenceRoutes);
   app.use('/api/v1/dashboard', dashboardRoutes);
+  app.use('/api/v1/renters', rentersRoutes);
   // Route publique iCal — pas de JWT, compatible abonnement calendriers
   app.use('/ical', icalRoutes);
 

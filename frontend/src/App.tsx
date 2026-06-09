@@ -67,6 +67,8 @@ const IntelligencePage = React.lazy(() => import('./modules/intelligence/Intelli
 const ReportPage = React.lazy(() => import('./modules/intelligence/ReportPage'));
 const TrialExpiredPage = React.lazy(() => import('./modules/billing/TrialExpiredPage'));
 const RentersPage = React.lazy(() => import('./modules/renters/RentersPage'));
+const RentabilityPage = React.lazy(() => import('./modules/rentability/RentabilityPage'));
+const ForecastsPage = React.lazy(() => import('./modules/forecasts/ForecastsPage'));
 
 function LoadingFallback(): React.JSX.Element {
   return (
@@ -153,6 +155,8 @@ export default function App(): React.JSX.Element {
               <Route path="/intelligence" element={<IntelligencePage />} />
               <Route path="/intelligence/report" element={<ReportPage />} />
               <Route path="/renters" element={<RentersPage />} />
+              <Route path="/rentability" element={<RentabilityPage />} />
+              <Route path="/forecasts" element={<ForecastsPage />} />
             </Route>
 
             {/* Redirections */}

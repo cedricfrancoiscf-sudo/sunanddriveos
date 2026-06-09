@@ -88,9 +88,9 @@ export async function scheduleSequencesForRental(
       let scheduledAt: Date;
 
       if (t === 'rental.before_checkin') {
-        scheduledAt = new Date(rental.startAt.getTime() - seq.delayMinutes * 60_000);
+        scheduledAt = new Date(rental.startAt.getTime() + seq.delayMinutes * 60_000);
       } else if (t === 'rental.before_checkout') {
-        scheduledAt = new Date(rental.endAt.getTime() - seq.delayMinutes * 60_000);
+        scheduledAt = new Date(rental.endAt.getTime() + seq.delayMinutes * 60_000);
       } else {
         scheduledAt = new Date(Date.now() + seq.delayMinutes * 60_000);
       }

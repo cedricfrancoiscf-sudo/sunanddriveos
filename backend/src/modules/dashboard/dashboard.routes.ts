@@ -1,8 +1,11 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import Anthropic from '@anthropic-ai/sdk';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
-import { getTenantClient } from '../../prisma/client';
+import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { getUpcomingMaintenances } from '../maintenance/maintenance.service';
+
+const copilotCache = new Map<string, { text: string; ts: number }>();
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -113,6 +116,95 @@ router.get('/occupancy', async (req: Request, res: Response, next: NextFunction)
 
     res.json(result);
   } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/v1/dashboard/copilot
+router.get('/copilot', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantSlug = req.auth!.tenantSlug;
+    const cacheKey = `copilot:${tenantSlug}`;
+    const cached = copilotCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 3_600_000) {
+      res.json({ text: cached.text });
+      return;
+    }
+
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
+
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug: tenantSlug },
+      select: { name: true },
+    });
+
+    const [monthRentals, activeCount, todayDepartCount, todayReturnCount, maintenances, unansweredCount, ctCount, vehicleCount] = await Promise.all([
+      db.rental.findMany({
+        where: { status: { in: ['completed', 'active', 'booked'] }, startAt: { lt: endOfMonth }, endAt: { gte: startOfMonth } },
+        select: { ownerPayout: true, grossRevenue: true, startAt: true, endAt: true },
+      }),
+      db.rental.count({ where: { status: 'active' } }),
+      db.rental.count({ where: { startAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['booked', 'active'] } } }),
+      db.rental.count({ where: { endAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['active', 'completed'] } } }),
+      getUpcomingMaintenances(db),
+      db.message.count({
+        where: { direction: 'inbound', createdAt: { lt: new Date(Date.now() - 12 * 3_600_000) }, rental: { status: { in: ['active', 'booked'] } } },
+      }),
+      db.technicalControl.count({ where: { expiryAt: { lte: new Date(Date.now() + 45 * 86_400_000) } } }),
+      db.vehicle.count({ where: { isActive: true } }),
+    ]);
+
+    const caEncaisse = monthRentals.filter(r => (r.ownerPayout ?? 0) > 0).reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
+    const caPrevisionnel = monthRentals.filter(r => !((r.ownerPayout ?? 0) > 0)).reduce((s, r) => s + Math.max(0, r.grossRevenue ?? 0), 0);
+
+    const periodDays = Math.ceil((endOfMonth.getTime() - startOfMonth.getTime()) / 86_400_000);
+    const bookedDays = monthRentals.reduce((s, r) => {
+      const s2 = new Date(r.startAt) < startOfMonth ? startOfMonth : new Date(r.startAt);
+      const e = new Date(r.endAt) > endOfMonth ? endOfMonth : new Date(r.endAt);
+      return s + Math.max(0, Math.ceil((e.getTime() - s2.getTime()) / 86_400_000));
+    }, 0);
+    const occupancyRate = vehicleCount > 0 && periodDays > 0
+      ? Math.round((bookedDays / (vehicleCount * periodDays)) * 100)
+      : 0;
+
+    const alertCount = maintenances.length + ctCount + (unansweredCount > 0 ? 1 : 0);
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      res.status(503).json({ error: 'Copilote non disponible' });
+      return;
+    }
+
+    const dateLabel = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const fmtEur = (v: number) => v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+
+    const client = new Anthropic();
+    const aiResponse = await Promise.race([
+      client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        system: `Tu es le copilote de ${company?.name ?? 'votre flotte'}, opérateur Getaround. Réponds en 3-4 phrases courtes, ton professionnel et direct. Pas de formule de politesse.`,
+        messages: [{
+          role: 'user',
+          content: `Données du jour ${dateLabel} :\nCA mois : ${fmtEur(caEncaisse)} encaissé + ${fmtEur(caPrevisionnel)} prévu\nTaux occupation : ${occupancyRate}%\nLocations actives : ${activeCount}\nDéparts aujourd'hui : ${todayDepartCount}\nRetours aujourd'hui : ${todayReturnCount}\nAlertes : ${alertCount} (CT, entretiens, messages)\nGénère le résumé opérationnel du jour.`,
+        }],
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15_000)),
+    ]);
+
+    const text = aiResponse.content[0]?.type === 'text' ? aiResponse.content[0].text : '';
+    copilotCache.set(cacheKey, { text, ts: Date.now() });
+    res.json({ text });
+  } catch (err) {
+    if (err instanceof Error && err.message === 'Timeout') {
+      res.status(504).json({ error: 'Timeout' });
+      return;
+    }
     next(err);
   }
 });

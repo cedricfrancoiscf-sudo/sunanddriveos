@@ -125,6 +125,13 @@ export default function DashboardPage(): React.JSX.Element {
   });
 
 
+  const { data: copilotData, isLoading: copilotLoading } = useQuery<{ text: string }>({
+    queryKey: ['dashboard-copilot'],
+    queryFn: () => api.get<{ text: string }>('/dashboard/copilot').then(r => r.data),
+    staleTime: 3_600_000,
+    retry: false,
+  });
+
   const { data: syncStatus } = useQuery<SyncStateData>({
     queryKey: ['sync-status'],
     queryFn: () => api.get<{ state: SyncStateData }>('/sync/status').then(r => r.data.state),
@@ -291,6 +298,17 @@ export default function DashboardPage(): React.JSX.Element {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">{greeting}, {user?.name?.split(' ')[0]} 👋</h1>
         <p className="text-sm text-gray-500">{format(new Date(), "EEEE d MMMM yyyy", { locale: fr })}</p>
+        {copilotLoading ? (
+          <div className="mt-3 rounded-xl border-l-4 border-[#01696e] bg-[#f0fdf4] px-4 py-3 space-y-2">
+            <div className="h-3.5 w-3/4 animate-pulse rounded bg-green-200" />
+            <div className="h-3.5 w-2/3 animate-pulse rounded bg-green-200" />
+            <div className="h-3.5 w-1/2 animate-pulse rounded bg-green-200" />
+          </div>
+        ) : copilotData?.text ? (
+          <div className="mt-3 rounded-xl border-l-4 border-[#01696e] bg-[#f0fdf4] px-4 py-3">
+            <p className="text-sm text-gray-700">✨ {copilotData.text}</p>
+          </div>
+        ) : null}
       </div>
 
       {/* KPIs du mois — masqués pour les carkeepers */}

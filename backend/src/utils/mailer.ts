@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { welcomeEmailHtml, invitationEmailHtml } from '../modules/email/templates';
 
 function getResend(): Resend {
   return new Resend(process.env.RESEND_API_KEY);
@@ -52,11 +53,29 @@ export async function sendAlertEmail(opts: {
   });
 }
 
+export async function sendWelcomeEmail(
+  to: string,
+  firstName: string,
+  companyName: string,
+): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Mailer] RESEND_API_KEY non défini — email de bienvenue non envoyé');
+    return;
+  }
+  await getResend().emails.send({
+    from: FROM_DEFAULT,
+    to,
+    subject: 'Bienvenue sur SunanddriveOS 🚗',
+    html: welcomeEmailHtml(firstName, companyName),
+  });
+}
+
 export async function sendInvitationEmail(
   to: string,
-  name: string,
+  inviteeName: string,
   inviteUrl: string,
   companyName: string,
+  inviterName?: string,
 ): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.warn('[Mailer] RESEND_API_KEY non défini — email d\'invitation non envoyé');
@@ -65,16 +84,8 @@ export async function sendInvitationEmail(
   await getResend().emails.send({
     from: `${companyName} <${process.env.RESEND_FROM ?? 'noreply@sunanddrive.fr'}>`,
     to,
-    subject: `Invitation à rejoindre ${companyName}`,
-    html: `
-      <p>Bonjour ${name},</p>
-      <p>Vous avez été invité(e) à rejoindre <strong>${companyName}</strong> sur SunanddriveOS.</p>
-      <p>
-        <a href="${inviteUrl}" style="display:inline-block;padding:12px 24px;background:#01696e;color:#fff;text-decoration:none;border-radius:6px;">
-          Accepter l'invitation
-        </a>
-      </p>
-      <p>Ce lien est valable 7 jours.</p>
-    `,
+    subject: `${companyName} vous invite sur SunanddriveOS`,
+    html: invitationEmailHtml(inviterName ?? companyName, companyName, inviteUrl),
   });
+  void inviteeName;
 }

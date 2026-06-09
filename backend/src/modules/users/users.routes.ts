@@ -5,7 +5,7 @@ import { requireAuth, requireRole, requireActiveUser } from '../../middleware/au
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
-import { sendInvitationEmail } from '../../utils/mailer';
+import { sendInvitationEmail, sendWelcomeEmail } from '../../utils/mailer';
 import type { UserRole } from '../../generated/tenant';
 
 const router: Router = Router();
@@ -42,6 +42,16 @@ router.post('/accept-invitation', async (req: Request, res: Response, next: Next
       where: { id: user.id },
       data: { passwordHash, invitationToken: null, invitationExpiry: null, isActive: true },
     });
+
+    if (user.role === 'admin') {
+      const co = await master.company.findUnique({
+        where: { slug: body.data.companySlug },
+        select: { name: true },
+      });
+      void sendWelcomeEmail(user.email, user.name.split(' ')[0] ?? user.name, co?.name ?? 'SunanddriveOS').catch(e =>
+        console.error('[Auth] Erreur email bienvenue:', e),
+      );
+    }
 
     res.json({ success: true });
   } catch (err: unknown) { next(err); }
@@ -81,7 +91,7 @@ router.post('/invite', async (req: Request, res: Response, next: NextFunction) =
     if (existing) { res.status(409).json({ error: 'Email déjà utilisé' }); return; }
 
     const token = crypto.randomBytes(32).toString('hex');
-    const expiry = new Date(Date.now() + 7 * 86_400_000);
+    const expiry = new Date(Date.now() + 48 * 3_600_000);
 
     const user = await db.user.create({
       data: {
@@ -98,11 +108,11 @@ router.post('/invite', async (req: Request, res: Response, next: NextFunction) =
     console.log(`[Invite] Email d'invitation envoyé à ${body.data.email}`);
 
     const master = getMasterClient();
-    const company = await master.company.findUnique({
-      where: { slug: req.auth!.tenantSlug },
-      select: { name: true },
-    });
-    void sendInvitationEmail(body.data.email, body.data.name, inviteUrl, company?.name ?? 'SunanddriveOS').catch(console.error);
+    const [company, inviter] = await Promise.all([
+      master.company.findUnique({ where: { slug: req.auth!.tenantSlug }, select: { name: true } }),
+      db.user.findUnique({ where: { id: req.auth!.userId! }, select: { name: true } }),
+    ]);
+    void sendInvitationEmail(body.data.email, body.data.name, inviteUrl, company?.name ?? 'SunanddriveOS', inviter?.name).catch(console.error);
 
     res.status(201).json({ user, inviteUrl });
   } catch (err: unknown) { next(err); }

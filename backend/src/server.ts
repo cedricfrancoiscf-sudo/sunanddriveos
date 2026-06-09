@@ -19,6 +19,7 @@ import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks
 import { notifyMileageAnomalies } from './modules/ai/ai.service';
 import { getUpcomingMaintenances } from './modules/maintenance/maintenance.service';
 import { sendEmail } from './utils/mailer';
+import { trialExpiryEmailHtml } from './modules/email/templates';
 import { sendTelegramMessage, getTelegramChatId } from './utils/telegram';
 
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
@@ -941,7 +942,55 @@ async function runDocumentExpiryAlerts(): Promise<void> {
   } catch (err: unknown) { console.error('[CTExpiry] Erreur:', err); }
 }
 
-cron.schedule('0 9 * * *', () => void runDocumentExpiryAlerts());
+// ─── Alerte fin de trial J-3 (quotidien 9h) ─────────────────────────────────
+
+async function runTrialExpiryAlerts(): Promise<void> {
+  try {
+    const master = getMasterClient();
+    const now = new Date();
+    const in3d = new Date(now.getTime() + 3 * 86_400_000);
+    const in4d = new Date(now.getTime() + 4 * 86_400_000);
+
+    const companies = await master.company.findMany({
+      where: { isActive: true, trialEndsAt: { gte: in3d, lt: in4d } },
+      select: { name: true, slug: true, tenantDbUrl: true, trialEndsAt: true },
+    });
+
+    for (const company of companies) {
+      try {
+        const db = getTenantClient(company.tenantDbUrl);
+        const admins = await db.user.findMany({
+          where: { role: 'admin', isActive: true },
+          select: { email: true },
+        });
+        const expiryDate = company.trialEndsAt!.toLocaleDateString('fr-FR', {
+          weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+        });
+        for (const admin of admins) {
+          if (!process.env.RESEND_API_KEY) {
+            console.log(`[TrialExpiry] ${company.slug} → ${admin.email} — expire ${expiryDate}`);
+            continue;
+          }
+          await sendEmail({
+            to: admin.email,
+            subject: '⏰ Votre essai expire dans 3 jours',
+            html: trialExpiryEmailHtml(company.name, expiryDate),
+          });
+          console.log(`[TrialExpiry] Email envoyé → ${admin.email} (${company.slug})`);
+        }
+      } catch (err: unknown) {
+        console.error(`[TrialExpiry] Erreur tenant ${company.slug}:`, err);
+      }
+    }
+  } catch (err: unknown) {
+    console.error('[TrialExpiry] Erreur:', err);
+  }
+}
+
+cron.schedule('0 9 * * *', () => {
+  void runDocumentExpiryAlerts();
+  void runTrialExpiryAlerts();
+});
 
 // ─── Nettoyage notifications obsolètes (3h chaque jour) ─────────────────────
 

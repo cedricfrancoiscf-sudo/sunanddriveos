@@ -17,6 +17,7 @@ import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
 import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
 import { notifyMileageAnomalies } from './modules/ai/ai.service';
+import { getUpcomingMaintenances } from './modules/maintenance/maintenance.service';
 import { sendEmail } from './utils/mailer';
 import { sendTelegramMessage, getTelegramChatId } from './utils/telegram';
 
@@ -456,11 +457,7 @@ async function runMorningSummary(): Promise<void> {
             select: { expiryAt: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
             orderBy: { expiryAt: 'asc' },
           }),
-          db.maintenance.findMany({
-            where: { nextServiceDate: { not: null, lte: in30d } },
-            select: { type: true, nextServiceDate: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
-            orderBy: { nextServiceDate: 'asc' },
-          }),
+          getUpcomingMaintenances(db),
           db.user.findMany({
             where: { role: { in: ['admin', 'exploitant'] }, isActive: true },
             select: { email: true, name: true },
@@ -527,7 +524,18 @@ async function runMorningSummary(): Promise<void> {
     ${section('🪑', `Sièges auto à préparer (${carSeatRequests.length})`, carSeatRequests.filter(r => r.rental).map(r => `${r.rental!.driverName} · ${r.rental!.vehicle.make} ${r.rental!.vehicle.model} (${r.rental!.vehicle.licensePlate}) — départ ${new Date(r.rental!.startAt).toLocaleDateString('fr-FR')}`))}
     ${section('🔧', `CT / Entretiens dans 30 jours`, [
       ...expiringCT.map(c => `CT — ${c.vehicle.make} ${c.vehicle.model} (${c.vehicle.licensePlate}) — expire le ${new Date(c.expiryAt).toLocaleDateString('fr-FR')}`),
-      ...expiringMaint.filter(m => m.nextServiceDate).map(m => `Entretien ${m.type ?? ''} — ${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate}) — avant le ${new Date(m.nextServiceDate!).toLocaleDateString('fr-FR')}`),
+      ...expiringMaint.map(m => {
+        const parts: string[] = [`Entretien ${m.type} — ${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`];
+        if (m.nextServiceDate) {
+          const diffDays = Math.ceil((new Date(m.nextServiceDate).getTime() - now.getTime()) / 86_400_000);
+          parts.push(diffDays <= 0 ? `date dépassée (${new Date(m.nextServiceDate).toLocaleDateString('fr-FR')})` : `dans ${diffDays} j (${new Date(m.nextServiceDate).toLocaleDateString('fr-FR')})`);
+        }
+        if (m.nextServiceMileage != null && m.vehicle.currentMileage != null) {
+          const remaining = m.nextServiceMileage - m.vehicle.currentMileage;
+          parts.push(`dans ${remaining.toLocaleString('fr-FR')} km (actuel : ${m.vehicle.currentMileage.toLocaleString('fr-FR')} km)`);
+        }
+        return parts.join(' — ');
+      }),
     ])}
     ${section('💬', `Messages en attente > 12h (${unansweredMessages.length})`, unansweredMessages.map(m => `${m.rental?.driverName ?? '?'} · ${m.rental?.vehicle.make} ${m.rental?.vehicle.model} — <i>${m.content.slice(0, 60)}…</i>`))}
     ${section('💶', 'CA du jour', [

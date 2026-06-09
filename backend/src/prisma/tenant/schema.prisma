@@ -300,6 +300,8 @@ model Maintenance {
   mileageAtService   Int
   nextServiceDate    DateTime?
   nextServiceMileage Int?
+  intervalKm         Int?
+  intervalMonths     Int?
   cost               Float?
   provider           String?
   notes              String?

@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
+import { getUpcomingMaintenances } from '../maintenance/maintenance.service';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -111,6 +112,18 @@ router.get('/occupancy', async (req: Request, res: Response, next: NextFunction)
     });
 
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/v1/dashboard/maintenances
+// Entretiens dont l'échéance date (45j) OU km (2500km avant) est atteinte
+router.get('/maintenances', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const maintenances = await getUpcomingMaintenances(db);
+    res.json({ maintenances, count: maintenances.length });
   } catch (err) {
     next(err);
   }

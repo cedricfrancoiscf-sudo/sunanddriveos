@@ -12,6 +12,8 @@ interface Maintenance {
   mileageAtService: number;
   nextServiceDate: string | null;
   nextServiceMileage: number | null;
+  intervalKm: number | null;
+  intervalMonths: number | null;
   cost: number | null;
   provider: string | null;
   notes: string | null;
@@ -42,7 +44,9 @@ export default function MaintenancePage(): React.JSX.Element {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     vehicleId: '', type: 'vidange', performedAt: new Date().toISOString().slice(0, 16),
-    mileageAtService: '', nextServiceDate: '', nextServiceMileage: '', cost: '', provider: '', notes: '',
+    mileageAtService: '', nextServiceDate: '', nextServiceMileage: '',
+    intervalKm: '', intervalMonths: '',
+    cost: '', provider: '', notes: '',
   });
 
   const { data: maintenances = [], isLoading } = useQuery({
@@ -70,13 +74,30 @@ export default function MaintenancePage(): React.JSX.Element {
 
   function handleSubmit(e: React.FormEvent): void {
     e.preventDefault();
+    const mileage = parseInt(form.mileageAtService, 10);
+    const intervalKm = form.intervalKm ? parseInt(form.intervalKm, 10) : undefined;
+    const intervalMonths = form.intervalMonths ? parseInt(form.intervalMonths, 10) : undefined;
+
+    // Auto-calculate next service if intervals are set
+    let nextServiceMileage = form.nextServiceMileage ? parseInt(form.nextServiceMileage, 10) : undefined;
+    if (intervalKm && !isNaN(mileage)) nextServiceMileage = mileage + intervalKm;
+
+    let nextServiceDate: string | undefined = form.nextServiceDate ? new Date(form.nextServiceDate).toISOString() : undefined;
+    if (intervalMonths && form.performedAt) {
+      const d = new Date(form.performedAt);
+      d.setMonth(d.getMonth() + intervalMonths);
+      nextServiceDate = d.toISOString();
+    }
+
     createMutation.mutate({
       vehicleId: form.vehicleId,
       type: form.type,
       performedAt: new Date(form.performedAt).toISOString(),
-      mileageAtService: parseInt(form.mileageAtService, 10),
-      nextServiceDate: form.nextServiceDate ? new Date(form.nextServiceDate).toISOString() : undefined,
-      nextServiceMileage: form.nextServiceMileage ? parseInt(form.nextServiceMileage, 10) : undefined,
+      mileageAtService: mileage,
+      nextServiceDate,
+      nextServiceMileage,
+      intervalKm,
+      intervalMonths,
       cost: form.cost ? parseFloat(form.cost) : undefined,
       provider: form.provider || undefined,
       notes: form.notes || undefined,
@@ -175,6 +196,16 @@ export default function MaintenancePage(): React.JSX.Element {
               <label className="mb-1 block text-xs font-medium text-gray-600">Prochain entretien (km)</label>
               <input type="number" min={0} value={form.nextServiceMileage} onChange={(e) => setForm((f) => ({ ...f, nextServiceMileage: e.target.value }))}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" placeholder="60000" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Intervalle km <span className="text-gray-400 font-normal">(auto-calcul)</span></label>
+              <input type="number" min={0} value={form.intervalKm} onChange={(e) => setForm((f) => ({ ...f, intervalKm: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" placeholder="10000" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Intervalle mois <span className="text-gray-400 font-normal">(auto-calcul)</span></label>
+              <input type="number" min={1} value={form.intervalMonths} onChange={(e) => setForm((f) => ({ ...f, intervalMonths: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" placeholder="6" />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Coût (€)</label>

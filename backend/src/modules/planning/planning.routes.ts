@@ -51,8 +51,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       }),
       db.vehicle.findMany({
         where: vehicleFilter,
-        select: { id: true, make: true, model: true, licensePlate: true, photoUrl: true, parkingZone: true },
-        orderBy: [{ parkingZone: 'asc' }, { make: 'asc' }],
+        select: { id: true, make: true, model: true, licensePlate: true, photoUrl: true, parkingZone: true, deliveryPointName: true },
+        orderBy: [{ deliveryPointName: 'asc' }, { make: 'asc' }],
       }),
     ]);
 

@@ -152,12 +152,6 @@ export default function ScoringPage(): React.JSX.Element {
 
   return (
     <div className="p-4 lg:p-6">
-      {/* Titre */}
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Scoring conducteurs</h1>
-        <p className="mt-1 text-sm text-gray-500">Score calculé sur l'historique complet des locations</p>
-      </div>
-
       {/* KPI cards */}
       {stats && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

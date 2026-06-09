@@ -77,7 +77,10 @@
       "Bash(Select-Object -First 30)",
       "Bash(xargs cat)",
       "Bash(node_modules\\\\.bin\\\\tsc --noEmit)",
-      "PowerShell(git *)"
+      "PowerShell(git *)",
+      "Bash(xargs grep -l \"cron\\\\|schedule\")",
+      "Bash(Remove-Item \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\frontend\\\\src\\\\modules\\\\forecasts\\\\ForecastsPage.tsx\" -Force)",
+      "Bash(Write-Output \"Done\")"
     ]
   }
 }

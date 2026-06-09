@@ -216,14 +216,6 @@ export default function VehicleFormPage(): React.JSX.Element {
                 onChange={e => setForm(f => ({ ...f, currentMileage: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
             </div>
-            {isEdit && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Score santé (0-100)</label>
-                <input type="number" min="0" max="100" value={healthScore}
-                  onChange={e => setHealthScore(Number(e.target.value))}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
-              </div>
-            )}
           </div>
 
           <div>

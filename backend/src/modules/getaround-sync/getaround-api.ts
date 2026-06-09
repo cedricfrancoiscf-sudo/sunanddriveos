@@ -357,7 +357,7 @@ export function createGetaroundClient(apiKey: string) {
       const start = toIso(startDate);
       const end = toIso(endDate);
       const url = `/cars/${carId}/unavailabilities.json?start_date=${start}&end_date=${end}&per_page=100`;
-      console.log(`[API] GET unavailabilities URL: ${url}`);
+      console.log('[Unavailabilities] URL:', url);
       try {
         const res = await withRetry(() => client.get<Array<{ id: number; starts_at: string; ends_at: string }>>(url));
         return Array.isArray(res.data) ? res.data : [];

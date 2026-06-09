@@ -307,6 +307,10 @@ async function processRental(
     select: { id: true, currentMileage: true, make: true, model: true, licensePlate: true },
   });
   if (!vehicle) {
+    const existingForSubst = await db.rental.findUnique({ where: { getaroundId: String(r.id) }, select: { id: true } });
+    if (existingForSubst) {
+      console.log(`[Sync] ❌ Substitution véhicule impossible — location ${r.id} : nouveau carId ${r.car_id} inconnu en base`);
+    }
     result.errors.push(`Location ${r.id}: véhicule ${r.car_id} non trouvé en base`);
     return;
   }
@@ -333,8 +337,12 @@ async function processRental(
   // Vérifier le statut existant pour ne pas écraser un 'cancelled' manuel
   const existingRental = await db.rental.findUnique({
     where: { getaroundId: String(r.id) },
-    select: { id: true, status: true, startMileage: true, endMileage: true, fuelLevelCheckin: true, grossRevenue: true },
+    select: { id: true, status: true, startMileage: true, endMileage: true, fuelLevelCheckin: true, grossRevenue: true, vehicleId: true },
   });
+  if (existingRental && existingRental.vehicleId !== vehicle.id) {
+    const oldVehicle = await db.vehicle.findUnique({ where: { id: existingRental.vehicleId }, select: { licensePlate: true } });
+    console.log(`[Sync] ⚠️ Substitution véhicule détectée — location ${r.id} : ${oldVehicle?.licensePlate ?? existingRental.vehicleId} → ${vehicle.licensePlate}`);
+  }
   const prevStatus = existingRental?.status;
   const newStatus = prevStatus === 'cancelled' ? 'cancelled' : status;
 

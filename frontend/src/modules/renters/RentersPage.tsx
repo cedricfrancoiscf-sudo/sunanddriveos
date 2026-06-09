@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../utils/api';
+import ScoringPage from '../scoring/ScoringPage';
 
 interface Renter {
   driverGetaroundId: string;
@@ -22,7 +24,12 @@ function fmtDate(s: string): string {
   return new Date(s).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+const PRIMARY = '#01696e';
+
 export default function RentersPage(): React.JSX.Element {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab: 'list' | 'scoring' = searchParams.get('tab') === 'scoring' ? 'scoring' : 'list';
+
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'vip' | 'blacklisted'>('all');
 
@@ -46,12 +53,52 @@ export default function RentersPage(): React.JSX.Element {
   const vipCount = renters.filter(r => r.isVip).length;
   const blacklistedCount = renters.filter(r => r.isBlacklisted).length;
 
+  const tabBar = (
+    <div className="flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 w-fit">
+      <button
+        type="button"
+        onClick={() => setSearchParams({})}
+        className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+          activeTab === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+        }`}
+      >
+        👥 Liste
+      </button>
+      <button
+        type="button"
+        onClick={() => setSearchParams({ tab: 'scoring' })}
+        className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+          activeTab === 'scoring' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+        }`}
+      >
+        ⭐ Scoring
+      </button>
+    </div>
+  );
+
+  if (activeTab === 'scoring') {
+    return (
+      <>
+        <div className="px-4 pt-4 pb-3 lg:px-6 lg:pt-6 lg:pb-3">
+          <div className="mb-4">
+            <h1 className="text-xl font-bold text-gray-900">Locataires</h1>
+            <p className="text-sm text-gray-500">Historique et profils conducteurs</p>
+          </div>
+          {tabBar}
+        </div>
+        <ScoringPage />
+      </>
+    );
+  }
+
   return (
     <div className="p-4 lg:p-6 max-w-6xl space-y-5">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Locataires</h1>
         <p className="text-sm text-gray-500">Historique et profils conducteurs</p>
       </div>
+
+      {tabBar}
 
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -74,7 +121,8 @@ export default function RentersPage(): React.JSX.Element {
           placeholder="Rechercher par nom..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="rounded-xl border border-gray-200 px-4 py-2 text-sm outline-none focus:border-[#01696e] w-64"
+          className="rounded-xl border border-gray-200 px-4 py-2 text-sm outline-none w-64"
+          style={{ '--tw-ring-color': PRIMARY } as React.CSSProperties}
         />
         <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
           {(['all', 'vip', 'blacklisted'] as const).map(f => (
@@ -93,7 +141,7 @@ export default function RentersPage(): React.JSX.Element {
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
-              style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} />
+              style={{ borderColor: PRIMARY, borderTopColor: 'transparent' }} />
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center text-sm text-gray-400">

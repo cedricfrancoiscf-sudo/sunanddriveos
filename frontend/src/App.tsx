@@ -58,7 +58,6 @@ const SettingsPage = React.lazy(() => import('./modules/settings/SettingsPage'))
 const AccessoriesPage = React.lazy(() => import('./modules/accessories/AccessoriesPage'));
 const ExportPage = React.lazy(() => import('./modules/export/ExportPage'));
 const TvDashboardPage = React.lazy(() => import('./modules/tv/TvDashboardPage'));
-const ScoringPage = React.lazy(() => import('./modules/scoring/ScoringPage'));
 const ThirdPartyOwnersPage = React.lazy(() => import('./modules/third-party-owners/ThirdPartyOwnersPage'));
 const SuperAdminLoginPage = React.lazy(() => import('./modules/superadmin/SuperAdminLoginPage'));
 const SuperAdminDashboard = React.lazy(() => import('./modules/superadmin/SuperAdminDashboard'));
@@ -68,7 +67,6 @@ const ReportPage = React.lazy(() => import('./modules/intelligence/ReportPage'))
 const TrialExpiredPage = React.lazy(() => import('./modules/billing/TrialExpiredPage'));
 const RentersPage = React.lazy(() => import('./modules/renters/RentersPage'));
 const RentabilityPage = React.lazy(() => import('./modules/rentability/RentabilityPage'));
-const ForecastsPage = React.lazy(() => import('./modules/forecasts/ForecastsPage'));
 
 function LoadingFallback(): React.JSX.Element {
   return (
@@ -149,14 +147,13 @@ export default function App(): React.JSX.Element {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/accessories" element={<AccessoriesPage />} />
               <Route path="/export" element={<ExportPage />} />
-              <Route path="/scoring" element={<ScoringPage />} />
+              <Route path="/scoring" element={<Navigate to="/renters?tab=scoring" replace />} />
               <Route path="/third-party-owners" element={<ThirdPartyOwnersPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
               <Route path="/intelligence" element={<IntelligencePage />} />
               <Route path="/intelligence/report" element={<ReportPage />} />
               <Route path="/renters" element={<RentersPage />} />
               <Route path="/rentability" element={<RentabilityPage />} />
-              <Route path="/forecasts" element={<ForecastsPage />} />
             </Route>
 
             {/* Redirections */}

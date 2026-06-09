@@ -140,6 +140,14 @@ export default function DashboardPage(): React.JSX.Element {
     enabled: user?.role !== 'carkeeper',
   });
 
+  type N1Data = { caNet: number; tauxOccupation: number; nbLocations: number };
+  const { data: n1Data } = useQuery<N1Data>({
+    queryKey: ['dashboard-n1'],
+    queryFn: () => api.get<N1Data>('/dashboard/n1').then(r => r.data),
+    staleTime: 60 * 60_000,
+    enabled: user?.role !== 'carkeeper',
+  });
+
   // Construire les alertes
   const alerts: Alert[] = [
     ...(pendingMessages && pendingMessages.pendingCount > 0 ? [{
@@ -362,6 +370,42 @@ export default function DashboardPage(): React.JSX.Element {
               sub="ce mois"
             />
           </div>
+
+          {/* Encart N-1 */}
+          {n1Data && stats && (
+            <div className="mt-3 rounded-xl bg-gray-50 border border-gray-100 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide shrink-0">Même période {new Date().getFullYear() - 1}</span>
+              <span className="text-xs text-gray-600">
+                <span className="font-semibold text-gray-800">{n1Data.caNet.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}</span>
+                {' '}
+                {stats.totalEncaisse > 0 && n1Data.caNet > 0 ? (
+                  <span style={{ color: stats.totalEncaisse >= n1Data.caNet ? '#16a34a' : '#dc2626' }}>
+                    {stats.totalEncaisse >= n1Data.caNet ? '↑' : '↓'} {Math.round(Math.abs((stats.totalEncaisse - n1Data.caNet) / n1Data.caNet) * 100)}%
+                  </span>
+                ) : null}
+              </span>
+              <span className="text-xs text-gray-400">·</span>
+              <span className="text-xs text-gray-600">
+                <span className="font-semibold text-gray-800">{n1Data.tauxOccupation}% occupation</span>
+                {' '}
+                {stats.occupancyRate > 0 && n1Data.tauxOccupation > 0 ? (
+                  <span style={{ color: stats.occupancyRate >= n1Data.tauxOccupation ? '#16a34a' : '#dc2626' }}>
+                    {stats.occupancyRate >= n1Data.tauxOccupation ? '↑' : '↓'} {Math.abs(stats.occupancyRate - n1Data.tauxOccupation)}pt
+                  </span>
+                ) : null}
+              </span>
+              <span className="text-xs text-gray-400">·</span>
+              <span className="text-xs text-gray-600">
+                <span className="font-semibold text-gray-800">{n1Data.nbLocations} location{n1Data.nbLocations !== 1 ? 's' : ''}</span>
+                {' '}
+                {stats.rentalCount > 0 && n1Data.nbLocations > 0 ? (
+                  <span style={{ color: stats.rentalCount >= n1Data.nbLocations ? '#16a34a' : '#dc2626' }}>
+                    {stats.rentalCount >= n1Data.nbLocations ? '↑' : '↓'} {Math.abs(stats.rentalCount - n1Data.nbLocations)}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+          )}
 
         </div>
       )}

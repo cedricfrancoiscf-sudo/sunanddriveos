@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../utils/api';
-import ScoringPage from '../scoring/ScoringPage';
 
 interface Renter {
   driverGetaroundId: string;
@@ -14,6 +12,8 @@ interface Renter {
   avgRating: number | null;
   isBlacklisted: boolean;
   isVip: boolean;
+  score: number;
+  tier: 'excellent' | 'good' | 'average' | 'poor';
 }
 
 function fmtEuro(v: number): string {
@@ -26,12 +26,28 @@ function fmtDate(s: string): string {
 
 const PRIMARY = '#01696e';
 
-export default function RentersPage(): React.JSX.Element {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab: 'list' | 'scoring' = searchParams.get('tab') === 'scoring' ? 'scoring' : 'list';
+type SortKey = 'name' | 'rentalCount' | 'totalCA' | 'totalKm' | 'score' | 'lastRentalAt';
+type FilterKey = 'all' | 'vip' | 'blacklisted' | 'excellent' | 'good' | 'average' | 'poor';
 
+function ScoreBadge({ score, tier }: { score: number; tier: string }): React.JSX.Element {
+  const cfg = {
+    excellent: { bg: 'bg-green-100', text: 'text-green-700', label: 'Excellent' },
+    good:      { bg: 'bg-blue-100',  text: 'text-blue-700',  label: 'Bon' },
+    average:   { bg: 'bg-orange-100',text: 'text-orange-700',label: 'Moyen' },
+    poor:      { bg: 'bg-red-100',   text: 'text-red-700',   label: 'Mauvais' },
+  }[tier] ?? { bg: 'bg-gray-100', text: 'text-gray-700', label: '—' };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${cfg.bg} ${cfg.text}`}>
+      {score} · {cfg.label}
+    </span>
+  );
+}
+
+export default function RentersPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'vip' | 'blacklisted'>('all');
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('totalCA');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const { data, isLoading } = useQuery<{ renters: Renter[]; total: number }>({
     queryKey: ['renters'],
@@ -41,77 +57,93 @@ export default function RentersPage(): React.JSX.Element {
 
   const renters = data?.renters ?? [];
 
-  const filtered = renters.filter(r => {
-    const matchSearch = !search || r.name.toLowerCase().includes(search.toLowerCase());
-    const matchFilter =
-      filter === 'all' ||
-      (filter === 'vip' && r.isVip) ||
-      (filter === 'blacklisted' && r.isBlacklisted);
-    return matchSearch && matchFilter;
-  });
+  const filtered = renters
+    .filter(r => {
+      const matchSearch = !search || r.name.toLowerCase().includes(search.toLowerCase());
+      const matchFilter =
+        filter === 'all' ||
+        (filter === 'vip' && r.isVip) ||
+        (filter === 'blacklisted' && r.isBlacklisted) ||
+        (filter === 'excellent' && r.tier === 'excellent') ||
+        (filter === 'good' && r.tier === 'good') ||
+        (filter === 'average' && r.tier === 'average') ||
+        (filter === 'poor' && r.tier === 'poor');
+      return matchSearch && matchFilter;
+    })
+    .sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'name') cmp = a.name.localeCompare(b.name, 'fr');
+      else if (sortKey === 'lastRentalAt') cmp = new Date(a.lastRentalAt).getTime() - new Date(b.lastRentalAt).getTime();
+      else cmp = (a[sortKey] as number) - (b[sortKey] as number);
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
 
-  const vipCount = renters.filter(r => r.isVip).length;
-  const blacklistedCount = renters.filter(r => r.isBlacklisted).length;
+  function toggleSort(k: SortKey) {
+    if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(k); setSortDir('desc'); }
+  }
 
-  const tabBar = (
-    <div className="flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 w-fit">
-      <button
-        type="button"
-        onClick={() => setSearchParams({})}
-        className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
-          activeTab === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-        }`}
-      >
-        👥 Liste
-      </button>
-      <button
-        type="button"
-        onClick={() => setSearchParams({ tab: 'scoring' })}
-        className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
-          activeTab === 'scoring' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-        }`}
-      >
-        ⭐ Scoring
-      </button>
-    </div>
-  );
-
-  if (activeTab === 'scoring') {
+  function SortTh({ k, label, right }: { k: SortKey; label: string; right?: boolean }): React.JSX.Element {
+    const active = sortKey === k;
     return (
-      <>
-        <div className="px-4 pt-4 pb-3 lg:px-6 lg:pt-6 lg:pb-3">
-          <div className="mb-4">
-            <h1 className="text-xl font-bold text-gray-900">Locataires</h1>
-            <p className="text-sm text-gray-500">Historique et profils conducteurs</p>
-          </div>
-          {tabBar}
-        </div>
-        <ScoringPage />
-      </>
+      <th
+        className={`px-4 py-3 text-xs font-semibold cursor-pointer select-none hover:opacity-80 ${right ? 'text-right' : 'text-left'}`}
+        style={{ color: active ? PRIMARY : '#6b7280' }}
+        onClick={() => toggleSort(k)}
+      >
+        {label}{active ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+      </th>
     );
   }
+
+  const countExcellent = renters.filter(r => r.tier === 'excellent').length;
+  const countGood = renters.filter(r => r.tier === 'good').length;
+  const countAverage = renters.filter(r => r.tier === 'average').length;
+  const countPoor = renters.filter(r => r.tier === 'poor').length;
+  const avgScore = renters.length > 0 ? Math.round(renters.reduce((s, r) => s + r.score, 0) / renters.length) : 0;
+
+  const filters: { key: FilterKey; label: string }[] = [
+    { key: 'all', label: 'Tous' },
+    { key: 'vip', label: 'VIP' },
+    { key: 'blacklisted', label: 'Blacklistés' },
+    { key: 'excellent', label: 'Excellent' },
+    { key: 'good', label: 'Bon' },
+    { key: 'average', label: 'Moyen' },
+    { key: 'poor', label: 'Mauvais' },
+  ];
 
   return (
     <div className="p-4 lg:p-6 max-w-6xl space-y-5">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Locataires</h1>
-        <p className="text-sm text-gray-500">Historique et profils conducteurs</p>
+        <p className="text-sm text-gray-500">Historique et scoring conducteurs</p>
       </div>
 
-      {tabBar}
-
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-gray-500">Total locataires</p>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm col-span-2 lg:col-span-2">
+          <p className="text-xs font-medium text-gray-500">Total conducteurs</p>
           <p className="mt-1 text-2xl font-bold text-gray-900">{renters.length}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Score moyen : <span className="font-semibold text-gray-700">{avgScore}</span></p>
         </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-gray-500">VIP (≥ 5 locations)</p>
-          <p className="mt-1 text-2xl font-bold text-amber-600">{vipCount}</p>
+        <div className="rounded-2xl border border-green-100 bg-green-50 p-4 shadow-sm">
+          <p className="text-xs font-medium text-green-700">Excellent</p>
+          <p className="mt-1 text-2xl font-bold text-green-700">{countExcellent}</p>
+          <p className="text-xs text-green-600">≥ 90</p>
         </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-gray-500">Blacklistés</p>
-          <p className="mt-1 text-2xl font-bold text-red-600">{blacklistedCount}</p>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+          <p className="text-xs font-medium text-blue-700">Bon</p>
+          <p className="mt-1 text-2xl font-bold text-blue-700">{countGood}</p>
+          <p className="text-xs text-blue-600">≥ 75</p>
+        </div>
+        <div className="rounded-2xl border border-orange-100 bg-orange-50 p-4 shadow-sm">
+          <p className="text-xs font-medium text-orange-700">Moyen</p>
+          <p className="mt-1 text-2xl font-bold text-orange-700">{countAverage}</p>
+          <p className="text-xs text-orange-600">≥ 50</p>
+        </div>
+        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 shadow-sm">
+          <p className="text-xs font-medium text-red-700">Mauvais</p>
+          <p className="mt-1 text-2xl font-bold text-red-700">{countPoor}</p>
+          <p className="text-xs text-red-600">&lt; 50</p>
         </div>
       </div>
 
@@ -122,13 +154,12 @@ export default function RentersPage(): React.JSX.Element {
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="rounded-xl border border-gray-200 px-4 py-2 text-sm outline-none w-64"
-          style={{ '--tw-ring-color': PRIMARY } as React.CSSProperties}
         />
-        <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-          {(['all', 'vip', 'blacklisted'] as const).map(f => (
-            <button key={f} type="button" onClick={() => setFilter(f)}
-              className={`rounded px-3 py-1 text-xs font-medium transition ${filter === f ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
-              {f === 'all' ? 'Tous' : f === 'vip' ? 'VIP' : 'Blacklistés'}
+        <div className="flex flex-wrap gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+          {filters.map(f => (
+            <button key={f.key} type="button" onClick={() => setFilter(f.key)}
+              className={`rounded px-3 py-1 text-xs font-medium transition ${filter === f.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+              {f.label}
             </button>
           ))}
         </div>
@@ -152,13 +183,13 @@ export default function RentersPage(): React.JSX.Element {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500">Nom</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">Locations</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">CA total</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">Km total</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">Note moy.</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">Dernière loc.</th>
+                  <SortTh k="name" label="Nom" />
+                  <SortTh k="rentalCount" label="Locations" right />
+                  <SortTh k="totalCA" label="CA total" right />
+                  <SortTh k="totalKm" label="Km total" right />
+                  <SortTh k="score" label="Score" right />
                   <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500">Statut</th>
+                  <SortTh k="lastRentalAt" label="Dernière loc." right />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -170,10 +201,9 @@ export default function RentersPage(): React.JSX.Element {
                     <td className="px-4 py-3 text-right text-gray-700">{r.rentalCount}</td>
                     <td className="px-4 py-3 text-right font-semibold text-green-700">{fmtEuro(r.totalCA)}</td>
                     <td className="px-4 py-3 text-right text-gray-600">{r.totalKm.toLocaleString('fr-FR')} km</td>
-                    <td className="px-4 py-3 text-right text-gray-600">
-                      {r.avgRating != null ? `${r.avgRating}/5` : '—'}
+                    <td className="px-4 py-3 text-right">
+                      <ScoreBadge score={r.score} tier={r.tier} />
                     </td>
-                    <td className="px-4 py-3 text-right text-xs text-gray-500">{fmtDate(r.lastRentalAt)}</td>
                     <td className="px-5 py-3 text-right">
                       {r.isBlacklisted ? (
                         <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">Blacklisté</span>
@@ -183,6 +213,7 @@ export default function RentersPage(): React.JSX.Element {
                         <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-500">Normal</span>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-right text-xs text-gray-500">{fmtDate(r.lastRentalAt)}</td>
                   </tr>
                 ))}
               </tbody>

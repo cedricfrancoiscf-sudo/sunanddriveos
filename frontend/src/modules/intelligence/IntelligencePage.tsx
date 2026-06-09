@@ -115,6 +115,19 @@ function CATooltip({ active, payload, label }: { active?: boolean; payload?: Arr
           {d.previsionnel > 0 && <p className="flex justify-between text-blue-600"><span>Prévisionnel</span><span>{fmt(d.previsionnel)}</span></p>}
           <p className="flex justify-between text-gray-400"><span>Km</span><span>{d.km.toLocaleString('fr-FR')} km</span></p>
         </div>
+        {(d.costsTotal ?? 0) > 0 && (
+          <div className="border-t border-gray-100 pt-0.5 mt-0.5 space-y-0.5">
+            <p className="flex justify-between text-gray-500"><span>Coûts fixes</span><span>{fmt(d.costsFixed ?? 0)}</span></p>
+            <p className="flex justify-between text-gray-500"><span>Coûts variables</span><span>{fmt(d.costsVariable ?? 0)}</span></p>
+            <p className="flex justify-between font-medium text-gray-700"><span>Total coûts</span><span>{fmt(d.costsTotal ?? 0)}</span></p>
+            <div className="border-t border-gray-100 pt-0.5">
+              <p className="flex justify-between font-bold" style={{ color: (d.margin ?? 0) >= 0 ? '#16a34a' : '#dc2626' }}>
+                <span>Marge brute</span>
+                <span>{(d.margin ?? 0) >= 0 ? '+' : ''}{fmt(d.margin ?? 0)}</span>
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -288,17 +301,11 @@ export default function IntelligencePage(): React.JSX.Element {
                       const d = annual.monthlyData[index];
                       if (!d || d.encaisse.total === 0) return <g />;
                       const margin = d.margin ?? 0;
+                      if (margin === 0) return <g />;
                       return (
-                        <g>
-                          <text x={(x as number) + (width as number) / 2} y={(y as number) - 13} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#1e293b">
-                            {fmtEuro(d.encaisse.total)}
-                          </text>
-                          {(d.costsTotal ?? 0) > 0 && (
-                            <text x={(x as number) + (width as number) / 2} y={(y as number) - 3} textAnchor="middle" fontSize={8} fill={margin >= 0 ? '#16a34a' : '#dc2626'}>
-                              {margin >= 0 ? '+' : ''}{fmtEuro(margin)}
-                            </text>
-                          )}
-                        </g>
+                        <text x={(x as number) + (width as number) / 2} y={(y as number) - 8} textAnchor="middle" fontSize={11} fontWeight="bold" fill={margin >= 0 ? '#16a34a' : '#dc2626'}>
+                          {margin >= 0 ? '+' : ''}{fmtEuro(margin)}
+                        </text>
                       );
                     }}
                   />

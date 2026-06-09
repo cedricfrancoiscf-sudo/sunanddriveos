@@ -105,8 +105,19 @@ function CostPanel({ vehicleId }: { vehicleId: string }): React.JSX.Element {
   );
 }
 
+type SortKey = 'licensePlate' | 'caNet' | 'totalCosts' | 'margin' | 'caAnnuel' | 'costsAnnuels' | 'margeAnnuelle';
+
 export default function RentabilityPage(): React.JSX.Element {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('caNet');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  function toggleSort(k: SortKey) {
+    if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(k); setSortDir('desc'); }
+  }
+
+  const PRIMARY = '#01696e';
 
   const { data, isLoading } = useQuery<{ rentability: RentabilityEntry[] }>({
     queryKey: ['rentability'],
@@ -114,9 +125,15 @@ export default function RentabilityPage(): React.JSX.Element {
     staleTime: 5 * 60_000,
   });
 
-  const entries = data?.rentability ?? [];
-  const totalCA = entries.reduce((s, e) => s + e.caNet, 0);
-  const totalCosts = entries.reduce((s, e) => s + e.totalCosts, 0);
+  const rawEntries = data?.rentability ?? [];
+  const entries = [...rawEntries].sort((a, b) => {
+    let cmp = 0;
+    if (sortKey === 'licensePlate') cmp = a.licensePlate.localeCompare(b.licensePlate, 'fr');
+    else cmp = (a[sortKey] as number) - (b[sortKey] as number);
+    return sortDir === 'desc' ? -cmp : cmp;
+  });
+  const totalCA = rawEntries.reduce((s, e) => s + e.caNet, 0);
+  const totalCosts = rawEntries.reduce((s, e) => s + e.totalCosts, 0);
   const totalMargin = totalCA - totalCosts;
 
   return (
@@ -149,14 +166,22 @@ export default function RentabilityPage(): React.JSX.Element {
           <p className="text-xs text-gray-400">Cliquez sur un véhicule pour gérer ses coûts</p>
         </div>
         {!isLoading && entries.length > 0 && (
-          <div className="flex items-center gap-4 px-5 py-2 border-b border-gray-100 text-[10px] font-semibold text-gray-400 uppercase tracking-wide bg-gray-50">
-            <div className="flex-1 text-left">Véhicule</div>
-            <div className="text-right min-w-24">CA net / mois</div>
-            <div className="text-right min-w-24">Coûts / mois</div>
-            <div className="text-right min-w-28">Marge mens.</div>
-            <div className="text-right min-w-24 rounded px-1.5 py-0.5" style={{ background: '#f0fdf4' }}>CA annuel</div>
-            <div className="text-right min-w-24 rounded px-1.5 py-0.5" style={{ background: '#f0fdf4' }}>Coûts ann.</div>
-            <div className="text-right min-w-28 rounded px-1.5 py-0.5" style={{ background: '#f0fdf4' }}>Marge ann.</div>
+          <div className="flex items-center gap-4 px-5 py-2 border-b border-gray-100 text-[10px] font-semibold uppercase tracking-wide bg-gray-50">
+            {(['licensePlate', 'caNet', 'totalCosts', 'margin', 'caAnnuel', 'costsAnnuels', 'margeAnnuelle'] as SortKey[]).map((k, i) => {
+              const labels: Record<SortKey, string> = {
+                licensePlate: 'Véhicule', caNet: 'CA net / mois', totalCosts: 'Coûts / mois',
+                margin: 'Marge mens.', caAnnuel: 'CA annuel', costsAnnuels: 'Coûts ann.', margeAnnuelle: 'Marge ann.',
+              };
+              const active = sortKey === k;
+              const isGreen = i >= 4;
+              return (
+                <button key={k} type="button" onClick={() => toggleSort(k)}
+                  className={`cursor-pointer select-none hover:opacity-80 transition flex items-center gap-0.5 ${i === 0 ? 'flex-1 text-left justify-start' : 'text-right min-w-24 justify-end'} ${i >= 4 ? 'rounded px-1.5 py-0.5' : ''}`}
+                  style={{ color: active ? PRIMARY : '#9ca3af', background: isGreen ? '#f0fdf4' : 'transparent' }}>
+                  {labels[k]}{active ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+                </button>
+              );
+            })}
             <div className="w-4" />
           </div>
         )}

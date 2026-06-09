@@ -283,7 +283,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
           <li>
             {isStarterPlan
               ? <LockedItem label="Intelligence" icon={iconBolt} requiredPlan="pro" collapsed={collapsed} />
-              : <NavLink to="/intelligence" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Intelligence' : undefined}>
+              : <NavLink to="/intelligence" end onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Intelligence' : undefined}>
                   {iconBolt}
                   {!collapsed && 'Intelligence'}
                 </NavLink>

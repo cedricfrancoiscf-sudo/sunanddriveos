@@ -210,4 +210,47 @@ router.get('/maintenances', async (req: Request, res: Response, next: NextFuncti
   }
 });
 
+// GET /api/v1/dashboard/n1
+// Même période N-1 : caNet, tauxOccupation, nbLocations
+router.get('/n1', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const n1Start = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    const n1End = new Date(now.getFullYear() - 1, now.getMonth() + 1, 0, 23, 59, 59);
+
+    const [rentals, vehicleCount] = await Promise.all([
+      db.rental.findMany({
+        where: { startAt: { gte: n1Start }, endAt: { lte: n1End }, status: { in: ['completed', 'active', 'booked'] } },
+        select: { ownerPayout: true, grossRevenue: true, vehicleId: true, startAt: true, endAt: true },
+      }),
+      db.vehicle.count({ where: { isActive: true } }),
+    ]);
+
+    const caNet = rentals.reduce((s, r) => {
+      const payout = (r.ownerPayout ?? 0) > 0 ? (r.ownerPayout ?? 0) : Math.max(0, r.grossRevenue ?? 0);
+      return s + payout;
+    }, 0);
+
+    const nbLocations = rentals.length;
+
+    let tauxOccupation = 0;
+    if (vehicleCount > 0 && rentals.length > 0) {
+      const totalDaysInMonth = n1End.getDate();
+      const totalSlots = vehicleCount * totalDaysInMonth;
+      let occupiedDays = 0;
+      for (const r of rentals) {
+        const s = Math.max(new Date(r.startAt).getTime(), n1Start.getTime());
+        const e = Math.min(new Date(r.endAt).getTime(), n1End.getTime());
+        occupiedDays += Math.max(0, Math.ceil((e - s) / 86_400_000));
+      }
+      tauxOccupation = Math.round(Math.min(occupiedDays / totalSlots, 1) * 100);
+    }
+
+    res.json({ caNet: Math.round(caNet * 100) / 100, tauxOccupation, nbLocations, period: { from: n1Start, to: n1End } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

@@ -1694,6 +1694,7 @@ export async function syncUnavailabilitiesForTenant(db: PrismaClient, tenantSlug
       where: { getaroundAccountId: account.id, getaroundId: { not: null }, isActive: true },
       select: { id: true, getaroundId: true },
     });
+    console.log(`[Unavailabilities] Début sync — tenant ${tenantSlug} compte ${account.id} : ${vehicles.length} véhicule(s)`);
     for (const vehicle of vehicles) {
       if (!vehicle.getaroundId) continue;
       try {

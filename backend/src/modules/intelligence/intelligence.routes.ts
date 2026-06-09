@@ -155,6 +155,14 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
 
     const vehicles = await db.vehicle.findMany({ where: { isActive: true }, select: { id: true } });
     const vehicleCount = vehicles.length;
+
+    const [vehicleCostsAll, annualMaints, annualCTs] = await Promise.all([
+      db.vehicleCost.findMany({ select: { amount: true, type: true } }),
+      db.maintenance.findMany({ where: { performedAt: { gte: yearStart, lte: yearEnd } }, select: { cost: true, performedAt: true } }),
+      db.technicalControl.findMany({ where: { performedAt: { gte: yearStart, lte: yearEnd } }, select: { cost: true, performedAt: true } }),
+    ]);
+    const totalFixedCostsMonthly = vehicleCostsAll.filter(c => c.type === 'fixed').reduce((s, c) => s + c.amount, 0);
+    const totalVariableCostsMonthly = vehicleCostsAll.filter(c => c.type !== 'fixed').reduce((s, c) => s + c.amount, 0);
     const daysSinceYearStart = Math.max(1, (now.getTime() - yearStart.getTime()) / 86_400_000);
     const vDaysAnnual = new Map<string, Set<string>>();
     for (const r of valid) {
@@ -259,6 +267,14 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
         total: rnd(e.total + v.previsionnel),
         rentalCount: v.rentalCount,
         km: v.km,
+        ...((): { costsFixed: number; costsVariable: number; costsTotal: number; margin: number } => {
+          const maint = annualMaints.filter(m => new Date(m.performedAt).toISOString().slice(0, 7) === key).reduce((s, m) => s + (m.cost ?? 0), 0);
+          const ct = annualCTs.filter(c => new Date(c.performedAt).toISOString().slice(0, 7) === key).reduce((s, c) => s + (c.cost ?? 0), 0);
+          const costsFixed = rnd(totalFixedCostsMonthly);
+          const costsVariable = rnd(totalVariableCostsMonthly + maint + ct);
+          const costsTotal = rnd(costsFixed + costsVariable);
+          return { costsFixed, costsVariable, costsTotal, margin: rnd(e.total + v.previsionnel - costsTotal) };
+        })(),
       };
     });
 
@@ -413,7 +429,8 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [vehicles, rentals, costs] = await Promise.all([
+    const yearStart = new Date(Date.now() - 365 * 86_400_000);
+    const [vehicles, rentals, costs, annualRentals, annualMaintenances, annualTechControls] = await Promise.all([
       db.vehicle.findMany({
         where: { isActive: true },
         select: { id: true, make: true, model: true, licensePlate: true },
@@ -423,6 +440,12 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
         select: { vehicleId: true, ownerPayout: true, grossRevenue: true },
       }),
       db.vehicleCost.findMany({ select: { vehicleId: true, amount: true, type: true } }),
+      db.rental.findMany({
+        where: { startAt: { gte: yearStart }, status: { in: ['booked', 'active', 'completed'] } },
+        select: { vehicleId: true, ownerPayout: true, grossRevenue: true },
+      }),
+      db.maintenance.findMany({ where: { performedAt: { gte: yearStart } }, select: { vehicleId: true, cost: true } }),
+      db.technicalControl.findMany({ where: { performedAt: { gte: yearStart } }, select: { vehicleId: true, cost: true } }),
     ]);
 
     const rentability = vehicles.map(v => {
@@ -434,6 +457,13 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
       const variableCosts = vCosts.filter(c => c.type !== 'fixed').reduce((s, c) => s + c.amount, 0);
       const totalCosts = fixedCosts + variableCosts;
       const margin = caNet - totalCosts;
+
+      const vAnnualRentals = annualRentals.filter(r => r.vehicleId === v.id);
+      const caAnnuel = vAnnualRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
+      const annualMaintCosts = annualMaintenances.filter(m => m.vehicleId === v.id).reduce((s, m) => s + (m.cost ?? 0), 0);
+      const annualCtCosts = annualTechControls.filter(ct => ct.vehicleId === v.id).reduce((s, ct) => s + (ct.cost ?? 0), 0);
+      const costsAnnuels = fixedCosts * 12 + annualMaintCosts + annualCtCosts;
+      const margeAnnuelle = caAnnuel - costsAnnuels;
 
       return {
         vehicleId: v.id,
@@ -447,6 +477,9 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
         totalCosts: Math.round(totalCosts * 100) / 100,
         margin: Math.round(margin * 100) / 100,
         isProfit: margin >= 0,
+        caAnnuel: Math.round(caAnnuel * 100) / 100,
+        costsAnnuels: Math.round(costsAnnuels * 100) / 100,
+        margeAnnuelle: Math.round(margeAnnuelle * 100) / 100,
       };
     });
 
@@ -788,7 +821,21 @@ router.get('/suggestions', async (req: Request, res: Response, next: NextFunctio
       return { label: `${v.make} ${v.model} (${v.licensePlate})`, caMois: Math.round(caMois), ca6m: Math.round(ca6m), occupancy: Math.min(100, Math.round(totalDays / 180 * 100)), healthScore: v.healthScore ?? 100, rentalCount: vSix.length };
     });
 
+    const defaultSuggestions: AiSuggestion[] = [
+      { title: 'Optimiser les photos des véhicules', description: 'Des photos de qualité augmentent le taux de conversion de 30%', type: 'opportunity', priority: 'medium' },
+      { title: 'Ajuster les prix selon la saison', description: 'Les tarifs dynamiques permettent d\'optimiser le remplissage et le CA', type: 'opportunity', priority: 'medium' },
+      { title: 'Enregistrer vos coûts fixes', description: 'Renseignez vos charges mensuelles (assurance, crédit) pour suivre votre rentabilité réelle', type: 'info', priority: 'low' },
+      { title: 'Activer les séquences automatiques', description: 'Les messages automatisés améliorent la satisfaction et réduisent les litiges', type: 'opportunity', priority: 'medium' },
+      { title: 'Documenter les entretiens', description: 'Un historique à jour des maintenances préserve la valeur de votre flotte', type: 'info', priority: 'low' },
+    ];
+
+    if (vehicleStats.length === 0) {
+      res.json({ suggestions: defaultSuggestions });
+      return;
+    }
+
     const context = JSON.stringify({ vehicules: vehicleStats, fleetCA: vehicleStats.reduce((s, v) => s + v.caMois, 0), avgOccupancy: vehicleStats.length > 0 ? Math.round(vehicleStats.reduce((s, v) => s + v.occupancy, 0) / vehicleStats.length) : 0, pendingMaintenances: pendingMaints, openIncidents });
+    console.log('[Suggestions] Données collectées:', context.slice(0, 500));
 
     if (!process.env.ANTHROPIC_API_KEY) { res.status(503).json({ error: 'IA non disponible' }); return; }
 
@@ -801,8 +848,16 @@ router.get('/suggestions', async (req: Request, res: Response, next: NextFunctio
     });
 
     const raw = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '[]';
+    console.log('[Suggestions] Réponse Claude:', raw.slice(0, 500));
     let suggestions: AiSuggestion[] = [];
-    try { suggestions = JSON.parse(raw) as AiSuggestion[]; } catch { suggestions = []; }
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) suggestions = parsed as AiSuggestion[];
+      else { console.error('[Suggestions] Réponse non tableau:', raw.slice(0, 200)); suggestions = defaultSuggestions; }
+    } catch (parseErr) {
+      console.error('[Suggestions] Erreur JSON.parse:', parseErr, '— Raw:', raw.slice(0, 300));
+      suggestions = defaultSuggestions;
+    }
 
     suggestionsCache.set(cacheKey, { data: suggestions, ts: Date.now() });
     res.json({ suggestions });

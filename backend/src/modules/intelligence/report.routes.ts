@@ -35,7 +35,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
   const sixMonthsAgo = new Date(Date.now() - 180 * 86_400_000);
   const nextMonth = new Date(Date.now() + 30 * 86_400_000);
 
-  const [settings, vehicles, rentals, incidents, maintenances, technicalControls, carSeatRequests] = await Promise.all([
+  const [settings, vehicles, rentals, incidents, maintenances, technicalControls, carSeatRequests, vehicleCosts] = await Promise.all([
     db.companySettings.findFirst({
       select: { primaryColor: true, fontFamily: true, logoUrl: true, senderName: true },
     }),
@@ -65,7 +65,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     }),
     db.technicalControl.findMany({
       where: { expiryAt: { lte: new Date(Date.now() + 90 * 86_400_000) } },
-      select: { vehicleId: true, expiryAt: true, result: true,
+      select: { vehicleId: true, expiryAt: true, result: true, cost: true,
                 vehicle: { select: { make: true, model: true, licensePlate: true } } },
     }),
     db.carSeatRequest.findMany({
@@ -73,6 +73,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
       select: { vehicleId: true, status: true, createdAt: true,
                 vehicle: { select: { parkingZone: true, deliveryPointName: true } } },
     }),
+    db.vehicleCost.findMany({ select: { vehicleId: true, amount: true, type: true } }),
   ]);
 
   const totalCA = rentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
@@ -109,6 +110,10 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
   const occupancyRate = vehicles.length > 0
     ? Math.round(bookedDays / (vehicles.length * daysInPeriod) * 100) : 0;
 
+  const totalFixedCostsMonthly = vehicleCosts.filter(c => c.type === 'fixed').reduce((s, c) => s + c.amount, 0);
+  const totalVariableCostsMonthly = vehicleCosts.filter(c => c.type !== 'fixed').reduce((s, c) => s + c.amount, 0);
+  const totalMonthlyCosts = totalFixedCostsMonthly + totalVariableCostsMonthly;
+
   const vehicleStats = vehicles.map(v => {
     const vRentals = rentals.filter(r => r.vehicleId === v.id);
     const vCA = vRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
@@ -116,6 +121,11 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     const vIncidents = incidents.filter(i => i.vehicleId === v.id).length;
     const vMaint = maintenances.filter(m => m.vehicleId === v.id);
     const vCT = technicalControls.filter(ct => ct.vehicleId === v.id);
+    const vVehicleCosts = vehicleCosts.filter(c => c.vehicleId === v.id);
+    const vFixedMonthly = vVehicleCosts.filter(c => c.type === 'fixed').reduce((s, c) => s + c.amount, 0);
+    const vVariableMonthly = vVehicleCosts.filter(c => c.type !== 'fixed').reduce((s, c) => s + c.amount, 0);
+    const vCostsAnnuels = vFixedMonthly * 12 + vVariableMonthly * 12;
+    const vMargeAnnuelle = vCA - vCostsAnnuels;
     return {
       vehicule: `${v.make} ${v.model} (${v.licensePlate})`,
       zone: v.deliveryPointName ?? v.parkingZone ?? 'Non définie',
@@ -129,10 +139,17 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
       incidents: vIncidents,
       entretiensEnAttente: vMaint.length,
       ctExpiration: vCT.length > 0 ? vCT[0].expiryAt : null,
+      coutsMensuels: Math.round((vFixedMonthly + vVariableMonthly) * 100) / 100,
+      coutsAnnuels: Math.round(vCostsAnnuels * 100) / 100,
+      margeAnnuelle: Math.round(vMargeAnnuelle * 100) / 100,
     };
   });
 
   const zones = [...new Set(vehicles.map(v => v.deliveryPointName ?? v.parkingZone).filter((z): z is string => Boolean(z)))];
+
+  const totalCostsAnnuels = totalMonthlyCosts * 12;
+  const margeNette = totalCA - totalCostsAnnuels;
+  const ratioChargesCA = totalCA > 0 ? Math.round(totalMonthlyCosts * 12 / totalCA * 100) : 0;
 
   const internalContext = {
     periode: '12 derniers mois',
@@ -143,6 +160,14 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     tauxOccupation: occupancyRate,
     nbLocations: rentals.length,
     nbIncidents: incidents.length,
+    finances: {
+      coutsMensuelsTotal: Math.round(totalMonthlyCosts * 100) / 100,
+      coutsFixesMensuels: Math.round(totalFixedCostsMonthly * 100) / 100,
+      coutsVariablesMensuels: Math.round(totalVariableCostsMonthly * 100) / 100,
+      coutsAnnuels: Math.round(totalCostsAnnuels * 100) / 100,
+      margeNette: Math.round(margeNette * 100) / 100,
+      ratioChargesCA: `${ratioChargesCA}%`,
+    },
     vehicules: vehicleStats,
     zoneStats: Object.entries(zoneStats).map(([zone, s]) => ({
       zone, ca: Math.round(s.ca * 100) / 100, count: s.count, carSeats: s.carSeats,
@@ -196,6 +221,15 @@ IMPORTANT : retourne UNIQUEMENT du JSON valide, sans markdown, sans backticks.`,
 
 DONNÉES INTERNES :
 ${JSON.stringify(internalContext, null, 2)}
+
+ANALYSE FINANCIÈRE :
+- CA net 12 mois : ${internalContext.caNet} €
+- Coûts fixes mensuels : ${internalContext.finances.coutsFixesMensuels} € / mois
+- Coûts variables mensuels : ${internalContext.finances.coutsVariablesMensuels} € / mois
+- Coûts totaux annuels estimés : ${internalContext.finances.coutsAnnuels} €
+- Marge nette estimée : ${internalContext.finances.margeNette} €
+- Ratio charges/CA : ${internalContext.finances.ratioChargesCA}
+${vehicleStats.map(v => `- ${v.vehicule} : CA=${v.caNet}€ / Coûts ann.=${v.coutsAnnuels}€ / Marge=${v.margeAnnuelle}€`).join('\n')}
 
 ZONES DE LIVRAISON : ${zones.join(', ')}
 
@@ -289,7 +323,7 @@ async function collectMonthlyData(db: ReturnType<typeof getTenantClient>, monthS
   const N1 = getMonthPeriod(monthStr, -12);
   const nextM = getMonthPeriod(monthStr, 1);
 
-  const [settings, vehicles, allRentals, ctAlerts, carSeatAlerts, pendingMessages] = await Promise.all([
+  const [settings, vehicles, allRentals, ctAlerts, carSeatAlerts, pendingMessages, monthlyVehicleCosts] = await Promise.all([
     db.companySettings.findFirst({
       select: { senderName: true, primaryColor: true, fontFamily: true, logoUrl: true },
     }),
@@ -316,6 +350,7 @@ async function collectMonthlyData(db: ReturnType<typeof getTenantClient>, monthS
       where: { status: 'pending_approval', direction: 'outbound' },
       select: { id: true },
     }),
+    db.vehicleCost.findMany({ select: { amount: true, type: true } }),
   ]);
 
   const nbVehicles = vehicles.length;
@@ -364,6 +399,11 @@ async function collectMonthlyData(db: ReturnType<typeof getTenantClient>, monthS
     };
   });
 
+  const mFixedCosts = monthlyVehicleCosts.filter(c => c.type === 'fixed').reduce((s, c) => s + c.amount, 0);
+  const mVariableCosts = monthlyVehicleCosts.filter(c => c.type !== 'fixed').reduce((s, c) => s + c.amount, 0);
+  const mTotalCosts = mFixedCosts + mVariableCosts;
+  const mMarge = mStats.ca - mTotalCosts;
+
   return {
     settings,
     societe: settings?.senderName ?? 'Sun and Drive',
@@ -380,6 +420,12 @@ async function collectMonthlyData(db: ReturnType<typeof getTenantClient>, monthS
     })),
     siege_auto_alerts: carSeatAlerts.length,
     messages_en_attente: pendingMessages.length,
+    finances_mois: {
+      coutsMensuels: Math.round(mTotalCosts * 100) / 100,
+      coutsFixesMensuels: Math.round(mFixedCosts * 100) / 100,
+      coutsVariablesMensuels: Math.round(mVariableCosts * 100) / 100,
+      margeMois: Math.round(mMarge * 100) / 100,
+    },
   };
 }
 
@@ -421,6 +467,12 @@ PERFORMANCES DU MOIS :
 - Km : ${data.mois_courant.km} (M-1: ${data.m_moins_1.km}, N-1: ${data.n_moins_1.km})
 
 DONNÉES M-2 (${data.m_moins_2.label}) : CA=${data.m_moins_2.ca}€, taux=${data.m_moins_2.tauxOccupation}%, locations=${data.m_moins_2.nbLocations}
+
+ANALYSE FINANCIÈRE DU MOIS :
+- Coûts fixes mensuels : ${data.finances_mois.coutsFixesMensuels} €
+- Coûts variables mensuels : ${data.finances_mois.coutsVariablesMensuels} €
+- Total charges : ${data.finances_mois.coutsMensuels} €
+- Marge nette estimée : ${data.finances_mois.margeMois} €
 
 CA PAR VÉHICULE :
 ${data.caParVehicule.map(v => `- ${v.vehicule}: ${v.ca_mois}€ (évol. M-1: ${v.evolution_vs_m1}%), taux: ${v.taux_occupation}%`).join('\n')}

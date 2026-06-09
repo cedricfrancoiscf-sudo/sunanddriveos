@@ -22,6 +22,7 @@ interface MonthData {
   month: string; label: string;
   encaisse: EncaisseBreakdown;
   previsionnel: number; total: number; rentalCount: number; km: number;
+  costsFixed: number; costsVariable: number; costsTotal: number; margin: number;
 }
 interface AnnualKPIs {
   totalEncaisse: number; totalPrevisionnel: number; totalCA: number;
@@ -264,7 +265,8 @@ export default function IntelligencePage(): React.JSX.Element {
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#dc2626' }} /> Réparations</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#7c3aed' }} /> Autres</span>
               <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#3b82f6' }} /> Prévisionnel</span>
-              <span className="flex items-center gap-1"><span className="h-0.5 w-4 bg-orange-400 inline-block" /> Km</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ backgroundColor: '#f97316' }} /> Coûts</span>
+              <span className="flex items-center gap-1"><span className="h-0.5 w-4 bg-slate-400 inline-block" /> Km</span>
             </div>
           </div>
           <div className="p-5">
@@ -285,15 +287,24 @@ export default function IntelligencePage(): React.JSX.Element {
                       const { x, y, width, index } = props as { x: number; y: number; width: number; index: number };
                       const d = annual.monthlyData[index];
                       if (!d || d.encaisse.total === 0) return <g />;
+                      const margin = d.margin ?? 0;
                       return (
-                        <text x={x + width / 2} y={y - 5} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#1e293b">
-                          {fmtEuro(d.encaisse.total)}
-                        </text>
+                        <g>
+                          <text x={(x as number) + (width as number) / 2} y={(y as number) - 13} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#1e293b">
+                            {fmtEuro(d.encaisse.total)}
+                          </text>
+                          {(d.costsTotal ?? 0) > 0 && (
+                            <text x={(x as number) + (width as number) / 2} y={(y as number) - 3} textAnchor="middle" fontSize={8} fill={margin >= 0 ? '#16a34a' : '#dc2626'}>
+                              {margin >= 0 ? '+' : ''}{fmtEuro(margin)}
+                            </text>
+                          )}
+                        </g>
                       );
                     }}
                   />
                   <Bar yAxisId="ca" dataKey="previsionnel" stackId="monthly" fill="#3b82f6" radius={[3,3,0,0]} name="Prévisionnel" />
-                  <Line yAxisId="km" type="monotone" dataKey="km" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} name="Km" />
+                  <Bar yAxisId="ca" dataKey="costsTotal" fill="#f97316" radius={[3,3,0,0]} name="Coûts" />
+                  <Line yAxisId="km" type="monotone" dataKey="km" stroke="#94a3b8" strokeWidth={2} dot={{ r: 3 }} name="Km" />
                 </ComposedChart>
               </ResponsiveContainer>
             ) : <p className="py-10 text-center text-sm text-gray-400">Aucune donnée pour l'année en cours</p>}

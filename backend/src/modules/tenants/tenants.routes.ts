@@ -4,6 +4,9 @@ import { requireAuth, requireSuperAdmin } from '../../middleware/auth';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
 import { resetCorruptedPayouts } from '../getaround-sync/getaround-sync.service';
+import { analyzeAndProcessMessage, type RentalForMessaging } from '../messages/messaging.service';
+import { createGetaroundClient } from '../getaround-sync/getaround-api';
+import { decrypt } from '../../utils/crypto';
 
 const router: Router = Router();
 router.use(requireAuth, requireSuperAdmin);
@@ -440,6 +443,61 @@ router.post('/admins', async (req: Request, res: Response, next: NextFunction) =
     });
     res.status(201).json({ admin });
   } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/superadmin/tenants/:slug/simulate-rental
+router.post('/:slug/simulate-rental', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { slug } = req.params as { slug: string };
+    const master = getMasterClient();
+    const company = await master.company.findUnique({ where: { slug }, select: { tenantDbUrl: true, isActive: true } });
+    if (!company) { res.status(404).json({ error: 'Tenant non trouvé' }); return; }
+
+    const db = getTenantClient(company.tenantDbUrl);
+    const vehicle = await db.vehicle.findFirst({
+      where: { isActive: true },
+      select: { id: true, licensePlate: true, make: true, model: true, parkingZone: true, deliveryPointName: true, getaroundAccountId: true },
+    });
+    if (!vehicle) { res.status(400).json({ error: 'Aucun véhicule actif pour ce tenant' }); return; }
+
+    const now = new Date();
+    const startAt = new Date(now.getTime() + 3_600_000);
+    const endAt   = new Date(now.getTime() + 90_000_000);
+    const testGetaroundId = `test_${Date.now()}`;
+
+    console.log(`[SimulateRental] Tenant=${slug} — véhicule=${vehicle.licensePlate} getaroundId=${testGetaroundId}`);
+
+    const rental = await db.rental.create({
+      data: { getaroundId: testGetaroundId, vehicleId: vehicle.id, driverName: 'Test Locataire', status: 'booked', startAt, endAt, grossRevenue: 85.00 },
+    });
+    console.log(`[SimulateRental] Location créée — id=${rental.id}`);
+
+    const message = await db.message.create({
+      data: { rentalId: rental.id, direction: 'inbound', content: "Bonjour, j'ai besoin d'un siège auto pour mon fils de 2 ans. Merci", status: 'pending_approval' },
+    });
+    console.log(`[SimulateRental] Message créé — id=${message.id}`);
+
+    if (vehicle.getaroundAccountId) {
+      try {
+        const account = await db.getaroundAccount.findUnique({
+          where: { id: vehicle.getaroundAccountId },
+          select: { apiKeyHash: true },
+        });
+        if (account) {
+          const ga = createGetaroundClient(decrypt(account.apiKeyHash));
+          const rentalData: RentalForMessaging = {
+            id: rental.id, vehicleId: vehicle.id, driverName: 'Test Locataire',
+            driverGetaroundId: null, getaroundId: testGetaroundId, startAt, endAt,
+            vehicle: { make: vehicle.make, model: vehicle.model, licensePlate: vehicle.licensePlate, parkingZone: vehicle.parkingZone, deliveryPointName: vehicle.deliveryPointName },
+          };
+          await analyzeAndProcessMessage({ id: message.id, content: message.content }, rentalData, db, ga);
+          console.log(`[SimulateRental] Messagerie proactive déclenchée`);
+        }
+      } catch (e) { console.error('[SimulateRental] Erreur messagerie proactive:', e); }
+    }
+
+    res.json({ rentalId: rental.id, messageId: message.id, vehicleLicensePlate: vehicle.licensePlate, message: 'Simulation créée avec succès' });
+  } catch (err) { next(err); }
 });
 
 export default router;

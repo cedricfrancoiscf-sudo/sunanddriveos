@@ -14,6 +14,9 @@ interface RentabilityEntry {
   totalCosts: number;
   margin: number;
   isProfit: boolean;
+  caAnnuel: number;
+  costsAnnuels: number;
+  margeAnnuelle: number;
 }
 
 interface VehicleCost {
@@ -145,6 +148,18 @@ export default function RentabilityPage(): React.JSX.Element {
           <h2 className="text-sm font-semibold text-gray-900">Détail par véhicule</h2>
           <p className="text-xs text-gray-400">Cliquez sur un véhicule pour gérer ses coûts</p>
         </div>
+        {!isLoading && entries.length > 0 && (
+          <div className="flex items-center gap-4 px-5 py-2 border-b border-gray-100 text-[10px] font-semibold text-gray-400 uppercase tracking-wide bg-gray-50">
+            <div className="flex-1 text-left">Véhicule</div>
+            <div className="text-right min-w-24">CA net / mois</div>
+            <div className="text-right min-w-24">Coûts / mois</div>
+            <div className="text-right min-w-28">Marge mens.</div>
+            <div className="text-right min-w-24 rounded px-1.5 py-0.5" style={{ background: '#f0fdf4' }}>CA annuel</div>
+            <div className="text-right min-w-24 rounded px-1.5 py-0.5" style={{ background: '#f0fdf4' }}>Coûts ann.</div>
+            <div className="text-right min-w-28 rounded px-1.5 py-0.5" style={{ background: '#f0fdf4' }}>Marge ann.</div>
+            <div className="w-4" />
+          </div>
+        )}
         {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
@@ -176,6 +191,20 @@ export default function RentabilityPage(): React.JSX.Element {
                     <p className="text-[10px] text-gray-400">Marge</p>
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${e.isProfit ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                       {e.isProfit ? '+' : ''}{fmtEuro(e.margin)}
+                    </span>
+                  </div>
+                  <div className="text-right min-w-24 rounded px-1.5" style={{ background: '#f0fdf4' }}>
+                    <p className="text-[10px] text-gray-400">CA annuel</p>
+                    <p className="font-semibold text-green-700">{fmtEuro(e.caAnnuel)}</p>
+                  </div>
+                  <div className="text-right min-w-24 rounded px-1.5" style={{ background: '#f0fdf4' }}>
+                    <p className="text-[10px] text-gray-400">Coûts ann.</p>
+                    <p className="font-semibold text-red-600">{fmtEuro(e.costsAnnuels)}</p>
+                  </div>
+                  <div className="text-right min-w-28 rounded px-1.5" style={{ background: '#f0fdf4' }}>
+                    <p className="text-[10px] text-gray-400">Marge ann.</p>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${e.margeAnnuelle >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                      {e.margeAnnuelle >= 0 ? '+' : ''}{fmtEuro(e.margeAnnuelle)}
                     </span>
                   </div>
                   <svg

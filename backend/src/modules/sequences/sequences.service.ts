@@ -103,7 +103,7 @@ export async function scheduleSequencesForRental(
         scheduledAt = now;
       }
 
-      console.log(`[Sequence] Envoi prévu le ${scheduledAt.toISOString()} pour location ${rentalId}`);
+      console.log(`[Sequence] scheduledAt calculé : ${scheduledAt.toISOString()} pour rental ${rentalId} (séquence "${seq.name}", délai ${seq.delayMinutes} min)`);
       await db.sequenceExecution.create({
         data: { rentalId, sequenceId: seq.id, scheduledAt, status: 'pending' },
       });

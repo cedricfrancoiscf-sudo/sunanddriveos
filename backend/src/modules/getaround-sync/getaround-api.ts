@@ -353,12 +353,22 @@ export function createGetaroundClient(apiKey: string) {
     },
 
     async getUnavailabilities(carId: number, startDate: Date, endDate: Date): Promise<Array<{ id: number; starts_at: string; ends_at: string }>> {
-      const startStr = toGetaroundDate(startDate);
-      const endStr = toGetaroundDate(endDate);
-      const url = `/cars/${carId}/unavailabilities.json?start_date=${startStr}&end_date=${endStr}&per_page=100`;
+      const toIso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+      const start = toIso(startDate);
+      const end = toIso(endDate);
+      const url = `/cars/${carId}/unavailabilities.json?start_date=${start}&end_date=${end}&per_page=100`;
       console.log(`[API] GET unavailabilities URL: ${url}`);
-      const res = await withRetry(() => client.get<Array<{ id: number; starts_at: string; ends_at: string }>>(url));
-      return Array.isArray(res.data) ? res.data : [];
+      try {
+        const res = await withRetry(() => client.get<Array<{ id: number; starts_at: string; ends_at: string }>>(url));
+        return Array.isArray(res.data) ? res.data : [];
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } }).response?.status;
+        if (status === 422) {
+          console.log(`[API] GET unavailabilities 422 — carId ${carId} : paramètres refusés, retour tableau vide`);
+          return [];
+        }
+        throw err;
+      }
     },
 
     async getRentalInvoices(rentalId: number): Promise<GetaroundInvoiceApi[]> {

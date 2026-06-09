@@ -97,7 +97,6 @@ function SequenceForm({
           <div className="flex-1">
             <input
               type="number"
-              min={0}
               max={72}
               value={delayHours}
               onChange={(e) => set('delayMinutes', (isBefore ? -1 : 1) * (parseInt(e.target.value || '0', 10) * 60 + delayMins))}
@@ -108,7 +107,6 @@ function SequenceForm({
           <div className="flex-1">
             <input
               type="number"
-              min={0}
               max={59}
               step={5}
               value={delayMins}

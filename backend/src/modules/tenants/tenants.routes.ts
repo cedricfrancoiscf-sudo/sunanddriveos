@@ -500,4 +500,32 @@ router.post('/:slug/simulate-rental', async (req: Request, res: Response, next: 
   } catch (err) { next(err); }
 });
 
+// DELETE /api/v1/superadmin/tenants/:slug/cleanup-simulation
+router.delete('/tenants/:slug/cleanup-simulation', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { slug } = req.params as { slug: string };
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug },
+      select: { tenantDbUrl: true },
+    });
+    if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
+
+    const db = getTenantClient(company.tenantDbUrl);
+    const testRentals = await db.rental.findMany({
+      where: { getaroundId: { startsWith: 'test_' } },
+      select: { id: true },
+    });
+    const rentalIds = testRentals.map(r => r.id);
+
+    if (rentalIds.length > 0) {
+      await db.message.deleteMany({ where: { rentalId: { in: rentalIds } } });
+      await db.rental.deleteMany({ where: { id: { in: rentalIds } } });
+    }
+
+    res.json({ success: true, deleted: rentalIds.length });
+  } catch (err: unknown) { next(err); }
+});
+
 export default router;
+

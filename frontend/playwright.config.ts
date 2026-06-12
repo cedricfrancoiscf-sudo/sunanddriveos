@@ -1,12 +1,10 @@
 import { defineConfig, devices } from '@playwright/test'
 import dotenv from 'dotenv'
-import path from 'path'
 
-dotenv.config({ path: path.resolve(__dirname, '.env.test') })
+dotenv.config({ path: new URL('.env.test', import.meta.url).pathname })
 
 export default defineConfig({
   testDir: './tests/e2e',
-  baseURL: process.env.BASE_URL || 'https://appli.sunanddrive.com',
   use: {
     baseURL: process.env.BASE_URL || 'https://appli.sunanddrive.com',
     headless: false,

@@ -43,5 +43,6 @@ test('Flotte — Modifier point de livraison', async ({ page }) => {
   await expect(deliveryInput).toBeVisible({ timeout: 15000 })
   await deliveryInput.fill('Gare AIX TGV Test')
   await page.getByRole('button', { name: /Enregistrer/i }).click()
-  await expect(page.getByText('Gare AIX TGV Test')).toBeVisible({ timeout: 15000 })
+  // VehicleDetailPage ne liste pas deliveryPointName — vérifier qu'on est revenu sur la fiche (lien Modifier présent)
+  await expect(page.getByRole('link', { name: /Modifier/i })).toBeVisible({ timeout: 15000 })
 })

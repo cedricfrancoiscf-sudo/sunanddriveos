@@ -36,7 +36,8 @@ test('Rentabilité — Ajouter coût fixe', async ({ page }) => {
     const amountInput = page.locator('input[placeholder*="Montant"]')
     await amountInput.fill('150')
     await page.getByRole('button', { name: 'Ajouter' }).last().click()
-    await expect(page.locator('main').getByText('Test assurance')).toBeVisible({ timeout: 15000 })
+    // .first() car un run précédent peut avoir laissé un "Test assurance" en DB (strict mode sinon)
+    await expect(page.locator('main').getByText('Test assurance').first()).toBeVisible({ timeout: 15000 })
   }
 })
 

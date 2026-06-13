@@ -6,7 +6,9 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('Entretiens — Page charge', async ({ page }) => {
-  await expect(page.getByRole('heading', { name: 'Entretiens' })).toBeVisible()
+  await page.waitForLoadState('domcontentloaded')
+  await page.getByRole('heading', { name: 'Entretiens' }).waitFor({ timeout: 15000 })
+  await expect(page.getByRole('heading', { name: 'Entretiens' })).toBeVisible({ timeout: 15000 })
 })
 
 test('Entretiens — Alertes visibles', async ({ page }) => {

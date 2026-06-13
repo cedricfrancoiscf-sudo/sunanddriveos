@@ -6,33 +6,33 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('Intelligence — Page charge sans blanchir', async ({ page }) => {
-  await expect(page.locator('text=CA mensuel')).toBeVisible()
+  await expect(page.locator('main').getByText(/CA mensuel/).first()).toBeVisible()
   await page.waitForTimeout(3000)
-  await expect(page.locator('text=CA mensuel')).toBeVisible()
+  await expect(page.locator('main').getByText(/CA mensuel/).first()).toBeVisible()
 })
 
 test('Intelligence — Histogramme visible', async ({ page }) => {
-  await expect(page.locator('.recharts-wrapper, svg')).toBeVisible()
+  await expect(page.locator('.recharts-wrapper, svg').first()).toBeVisible()
 })
 
 test('Intelligence — Tooltip au survol', async ({ page }) => {
   const bar = page.locator('.recharts-bar-rectangle').first()
   if (await bar.isVisible()) {
     await bar.hover()
-    await expect(page.locator('text=Location')).toBeVisible()
+    await expect(page.locator('main').getByText('Location').first()).toBeVisible()
   }
 })
 
 test('Intelligence — Taux occupation ≤ 100%', async ({ page }) => {
-  await page.click('text=Occupation')
+  await page.locator('main').getByText('Occupation').first().click()
   await page.waitForTimeout(1000)
-  const labels = await page.locator('.recharts-label, text=/10[1-9]%|1[1-9][0-9]%/').count()
+  const labels = await page.locator('.recharts-label').filter({ hasText: /10[1-9]%|1[1-9][0-9]%/ }).count()
   expect(labels).toBe(0)
 })
 
 test('Intelligence — Suggestions IA visibles', async ({ page }) => {
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-  await expect(page.locator('text=Suggestion, text=suggestion')).toBeVisible({ timeout: 15000 })
+  await expect(page.locator('main').getByText(/Suggestions IA/).first()).toBeVisible({ timeout: 15000 })
 })
 
 test('Intelligence — Chat IA répond', async ({ page }) => {
@@ -40,7 +40,7 @@ test('Intelligence — Chat IA répond', async ({ page }) => {
   const input = page.locator('input[placeholder*="question"], textarea[placeholder*="question"]')
   if (await input.isVisible()) {
     await input.fill('Quelle est ma voiture la plus rentable ?')
-    await page.click('button:has-text("Envoyer")')
+    await page.getByRole('button', { name: 'Envoyer' }).click()
     await expect(page.locator('.ai-response, .message-ai')).toBeVisible({ timeout: 30000 })
   }
 })

@@ -446,7 +446,7 @@ router.post('/admins', async (req: Request, res: Response, next: NextFunction) =
 });
 
 // POST /api/v1/superadmin/tenants/:slug/simulate-rental
-router.post('/:slug/simulate-rental', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/tenants/:slug/simulate-rental', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { slug } = req.params as { slug: string };
     const master = getMasterClient();

@@ -20,7 +20,11 @@ test('Sécurité — Page login accessible sans auth', async ({ page }) => {
   await expect(page.locator('input[type="email"]')).toBeVisible()
 })
 
-test('Sécurité — Dashboard redirige si non connecté', async ({ page }) => {
-  await page.goto('/dashboard')
-  await expect(page).toHaveURL(/login/)
+test.describe('Sécurité — contexte non authentifié', () => {
+  test.use({ storageState: { cookies: [], origins: [] } })
+
+  test('Sécurité — Dashboard redirige si non connecté', async ({ page }) => {
+    await page.goto('/dashboard')
+    await expect(page).toHaveURL(/login/, { timeout: 10000 })
+  })
 })

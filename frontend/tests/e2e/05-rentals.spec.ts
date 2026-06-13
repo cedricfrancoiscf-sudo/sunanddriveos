@@ -5,16 +5,16 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('Locations — Page charge', async ({ page }) => {
-  await expect(page.locator('text=Locations')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Locations' })).toBeVisible()
 })
 
 test('Locations — Filtre statut', async ({ page }) => {
-  await page.selectOption('select', 'completed')
+  await page.getByRole('combobox').nth(1).selectOption('Terminées')
   await page.waitForTimeout(1000)
-  await expect(page.locator('text=completed, text=Terminée')).toBeVisible()
+  await expect(page.locator('main').getByText('Terminée').first()).toBeVisible()
 })
 
 test('Locations — Clic → fiche location', async ({ page }) => {
-  await page.locator('tr, .rental-item').first().click()
+  await page.locator('main').getByRole('link').first().click()
   await expect(page).toHaveURL(/\/rentals\//)
 })

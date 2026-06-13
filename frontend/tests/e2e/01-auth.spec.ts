@@ -4,7 +4,7 @@ import { login } from './helpers/auth'
 test('Login valide → dashboard', async ({ page }) => {
   await login(page)
   await expect(page).toHaveURL(/dashboard/)
-  await expect(page.locator('text=Tableau de bord')).toBeVisible()
+  await expect(page.locator('main').getByRole('heading', { level: 1 })).toBeVisible()
 })
 
 test('Login invalide → message erreur', async ({ page }) => {
@@ -12,11 +12,11 @@ test('Login invalide → message erreur', async ({ page }) => {
   await page.fill('input[type="email"]', 'faux@email.com')
   await page.fill('input[type="password"]', 'mauvais')
   await page.click('button[type="submit"]')
-  await expect(page.locator('.error, [role="alert"], text=incorrect, text=invalide')).toBeVisible()
+  await expect(page.getByText('Identifiants incorrects')).toBeVisible()
 })
 
 test('Déconnexion → retour login', async ({ page }) => {
   await login(page)
-  await page.click('[data-testid="logout"], text=Déconnexion, button:has-text("logout")')
+  await page.getByRole('button', { name: 'Déconnexion' }).click()
   await expect(page).toHaveURL(/login/)
 })

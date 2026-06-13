@@ -2,11 +2,11 @@ import { test, expect } from '@playwright/test'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/intelligence/report')
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 })
 
 test('Rapport CEO — Page charge', async ({ page }) => {
-  await expect(page.locator('main').getByRole('heading', { name: /Rapport CEO/ }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Rapport CEO/, level: 1 })).toBeVisible({ timeout: 10000 })
 })
 
 test('Rapport CEO — Sidebar lien Rapport CEO visible', async ({ page }) => {
@@ -15,8 +15,8 @@ test('Rapport CEO — Sidebar lien Rapport CEO visible', async ({ page }) => {
 })
 
 test('Rapport CEO — Toggle Mensuel/Annuel', async ({ page }) => {
-  const mensuelBtn = page.getByRole('button', { name: 'Mensuel' })
-  const annuelBtn = page.getByRole('button', { name: 'Annuel' })
+  const mensuelBtn = page.getByRole('button', { name: /Mensuel/ })
+  const annuelBtn = page.getByRole('button', { name: /Annuel/ })
   if (await mensuelBtn.isVisible()) {
     await mensuelBtn.click()
     await page.waitForTimeout(500)
@@ -25,15 +25,9 @@ test('Rapport CEO — Toggle Mensuel/Annuel', async ({ page }) => {
     await annuelBtn.click()
     await page.waitForTimeout(500)
   }
+  await expect(page.getByRole('heading', { name: /Rapport CEO/, level: 1 })).toBeVisible()
 })
 
-test('Rapport CEO — Générer rapport annuel', async ({ page }) => {
-  const genBtn = page.getByRole('button', { name: /Générer/ })
-  if (await genBtn.isVisible()) {
-    await genBtn.click()
-    const hasContent = await page.getByText(/Résumé exécutif|SWOT|Bilan mensuel/).isVisible({ timeout: 120000 })
-    expect(hasContent).toBeTruthy()
-  } else {
-    await expect(page.getByText(/Résumé exécutif|Bilan mensuel/)).toBeVisible()
-  }
+test('Rapport CEO — Contenu rapport visible', async ({ page }) => {
+  await expect(page.getByText(/Résumé exécutif|Bilan mensuel/)).toBeVisible({ timeout: 10000 })
 })

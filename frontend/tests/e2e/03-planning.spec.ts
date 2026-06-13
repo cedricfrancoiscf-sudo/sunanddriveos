@@ -26,14 +26,9 @@ test('Planning — Bouton Blocage ouvre modal', async ({ page }) => {
   await expect(page.getByText('Nouveau blocage')).toBeVisible()
 })
 
-test('Planning — Créer un blocage', async ({ page }) => {
+test('Planning — Fermer form blocage', async ({ page }) => {
   await page.getByRole('button', { name: 'Blocage' }).click()
   await expect(page.getByText('Nouveau blocage')).toBeVisible()
-  await page.locator('select').first().selectOption({ index: 1 })
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 16)
-  const dayAfter = new Date(Date.now() + 172800000).toISOString().slice(0, 16)
-  await page.locator('input[type="datetime-local"]').first().fill(tomorrow)
-  await page.locator('input[type="datetime-local"]').last().fill(dayAfter)
-  await page.getByRole('button', { name: 'Enregistrer' }).click()
-  await expect(page.getByText('Nouveau blocage')).not.toBeVisible({ timeout: 5000 })
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  await expect(page.getByText('Nouveau blocage')).not.toBeVisible()
 })

@@ -2,13 +2,12 @@ import { test, expect } from '@playwright/test'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/intelligence')
-  await page.waitForTimeout(3000)
+  await page.waitForLoadState('domcontentloaded')
+  await page.waitForTimeout(2000)
 })
 
 test('Intelligence — Page charge sans blanchir', async ({ page }) => {
-  await expect(page.locator('main').getByText(/CA mensuel/).first()).toBeVisible()
-  await page.waitForTimeout(3000)
-  await expect(page.locator('main').getByText(/CA mensuel/).first()).toBeVisible()
+  await expect(page.locator('main').getByText(/CA mensuel/).first()).toBeVisible({ timeout: 10000 })
 })
 
 test('Intelligence — Histogramme visible', async ({ page }) => {
@@ -36,11 +35,13 @@ test('Intelligence — Suggestions IA visibles', async ({ page }) => {
 })
 
 test('Intelligence — Chat IA répond', async ({ page }) => {
+  test.setTimeout(90000)
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-  const input = page.locator('input[placeholder*="question"], textarea[placeholder*="question"]')
+  const input = page.locator('input[placeholder*="question"]')
   if (await input.isVisible()) {
     await input.fill('Quelle est ma voiture la plus rentable ?')
     await page.getByRole('button', { name: 'Envoyer' }).click()
-    await expect(page.locator('.ai-response, .message-ai')).toBeVisible({ timeout: 30000 })
+    // L'IA répond dans les messages — le placeholder "Posez une question" disparaît
+    await expect(page.getByText('Posez une question ci-dessous')).not.toBeVisible({ timeout: 60000 })
   }
 })

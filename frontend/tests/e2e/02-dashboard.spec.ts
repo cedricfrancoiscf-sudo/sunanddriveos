@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/dashboard')
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 })
 
 test('Dashboard — KPIs visibles', async ({ page }) => {

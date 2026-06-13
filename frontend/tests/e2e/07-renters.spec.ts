@@ -2,11 +2,11 @@ import { test, expect } from '@playwright/test'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/renters')
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 })
 
 test('Locataires — 1208 conducteurs', async ({ page }) => {
-  await expect(page.locator('main').getByText(/\d[\s ]\d{3}/).first()).toBeVisible({ timeout: 10000 })
+  await expect(page.locator('main').getByText(/\d[\s ]\d{3}/).first()).toBeVisible({ timeout: 10000 })
 })
 
 test('Locataires — Colonne Score visible', async ({ page }) => {

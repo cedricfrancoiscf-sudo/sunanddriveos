@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/rentability')
-  await page.waitForLoadState('networkidle')
+  await page.waitForLoadState('domcontentloaded')
 })
 
 test('Rentabilité — Page charge', async ({ page }) => {
@@ -16,7 +16,7 @@ test('Rentabilité — KPIs CA/Coûts/Marge visibles', async ({ page }) => {
 })
 
 test('Rentabilité — Colonnes annuelles visibles', async ({ page }) => {
-  await expect(page.locator('main').getByText('CA annuel')).toBeVisible()
+  await expect(page.locator('main').getByText('CA annuel').first()).toBeVisible()
 })
 
 test('Rentabilité — Clic véhicule ouvre panneau coûts', async ({ page }) => {

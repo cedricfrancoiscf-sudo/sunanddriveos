@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test'
-import { login } from './helpers/auth'
 
-test.beforeEach(async ({ page }) => { await login(page) })
+test.beforeEach(async ({ page }) => {
+  await page.goto('/dashboard')
+})
 
 test('Dashboard — KPIs visibles', async ({ page }) => {
   await expect(page.locator('text=CHIFFRE D\'AFFAIRES')).toBeVisible()

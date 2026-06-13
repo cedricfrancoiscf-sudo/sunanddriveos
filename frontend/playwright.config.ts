@@ -16,6 +16,17 @@ export default defineConfig({
   retries: 1,
   reporter: [['html', { outputFolder: 'playwright-report' }]],
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } }
+    {
+      name: 'setup',
+      testMatch: '**/helpers/setup.ts',
+    },
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: 'tests/e2e/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    }
   ]
 })

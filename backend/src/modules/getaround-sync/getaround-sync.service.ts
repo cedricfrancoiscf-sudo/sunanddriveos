@@ -1698,20 +1698,21 @@ export async function syncUnavailabilitiesForTenant(db: PrismaClient, tenantSlug
     for (const vehicle of vehicles) {
       if (!vehicle.getaroundId) continue;
       try {
-        const unavs = await ga.getUnavailabilities(parseInt(vehicle.getaroundId, 10), startDate, endDate);
+        const carId = parseInt(vehicle.getaroundId, 10);
+        const unavs = await ga.getUnavailabilities(carId, startDate, endDate);
         for (const unav of unavs) {
-          await db.blocking.upsert({
-            where: { getaroundUnavailabilityId: String(unav.id) },
+          await db.unavailability.upsert({
+            where: { getaroundId: unav.id },
             create: {
               vehicleId: vehicle.id,
-              type: 'unavailability',
-              startAt: new Date(unav.starts_at),
-              endAt: new Date(unav.ends_at),
-              getaroundUnavailabilityId: String(unav.id),
+              getaroundCarId: carId,
+              getaroundId: unav.id,
+              startsAt: new Date(unav.starts_at),
+              endsAt: new Date(unav.ends_at),
             },
             update: {
-              startAt: new Date(unav.starts_at),
-              endAt: new Date(unav.ends_at),
+              startsAt: new Date(unav.starts_at),
+              endsAt: new Date(unav.ends_at),
             },
           });
         }

@@ -156,6 +156,7 @@ model Vehicle {
   documents          VehicleDocument[]
   incidents          Incident[]
   blockings          Blocking[]
+  unavailabilities   Unavailability[]
   accessories           AccessoryVehicle[]
   carSeatRequests       CarSeatRequest[]
   accessoryReservations AccessoryReservation[]
@@ -409,6 +410,21 @@ model Blocking {
   updatedAt                 DateTime @updatedAt
 
   @@map("blockings")
+}
+
+model Unavailability {
+  id             String   @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle  @relation(fields: [vehicleId], references: [id])
+  getaroundCarId Int
+  getaroundId    Int      @unique
+  startsAt       DateTime
+  endsAt         DateTime
+  reason         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("unavailabilities")
 }
 
 model Accessory {

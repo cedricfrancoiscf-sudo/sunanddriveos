@@ -353,12 +353,12 @@ export function createGetaroundClient(apiKey: string) {
     },
 
     async getUnavailabilities(carId: number, startDate: Date, endDate: Date): Promise<Array<{ id: number; starts_at: string; ends_at: string }>> {
-      const toIso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+      const toDay = (d: Date) => `${d.toISOString().slice(0, 10)}T00:00:00Z`;
       const windows = splitInto30DayWindows(startDate, endDate);
       const seenIds = new Set<number>();
       const allResults: Array<{ id: number; starts_at: string; ends_at: string }> = [];
       for (const w of windows) {
-        const url = `/cars/${carId}/unavailabilities.json?start_date=${toIso(w.start)}&end_date=${toIso(w.end)}&per_page=100`;
+        const url = `/cars/${carId}/unavailabilities.json?start_date=${toDay(w.start)}&end_date=${toDay(w.end)}`;
         console.log('[Unavailabilities] URL:', url);
         try {
           const res = await withRetry(() => client.get<Array<{ id: number; starts_at: string; ends_at: string }>>(url));
@@ -368,7 +368,7 @@ export function createGetaroundClient(apiKey: string) {
         } catch (err: unknown) {
           const status = (err as { response?: { status?: number } }).response?.status;
           if (status === 422) {
-            console.log(`[API] GET unavailabilities 422 — carId ${carId} fenêtre ${toIso(w.start)}→${toIso(w.end)}`);
+            console.log(`[API] GET unavailabilities 422 — carId ${carId} fenêtre ${toDay(w.start)}→${toDay(w.end)}`);
           } else {
             throw err;
           }

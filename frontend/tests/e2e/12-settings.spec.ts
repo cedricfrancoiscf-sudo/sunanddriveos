@@ -15,7 +15,7 @@ test('Paramètres — Section Getaround visible', async ({ page }) => {
 
 test('Paramètres — Toggle messagerie fonctionne', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Paramètres' })).toBeVisible({ timeout: 10000 })
-  const autoBtn = page.getByRole('button', { name: /Automatique/i })
+  const autoBtn = page.getByRole('button', { name: /Automatique/i }).first()
   const approvalBtn = page.getByRole('button', { name: /Approbation/i })
   if (await autoBtn.isVisible()) {
     await autoBtn.click()

@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 
 test('Dashboard — KPIs visibles', async ({ page }) => {
   await expect(page.locator('main').getByText("Chiffre d'affaires")).toBeVisible()
-  await expect(page.locator('main').getByText("Taux d'occupation")).toBeVisible()
+  await expect(page.locator('main').getByText("Taux d'occupation").first()).toBeVisible()
   await expect(page.locator('main').getByRole('link', { name: /Locations/ })).toBeVisible()
   await expect(page.locator('main').getByText('Km parcourus')).toBeVisible()
 })

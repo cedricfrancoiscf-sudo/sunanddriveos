@@ -4,6 +4,7 @@ test.beforeEach(async ({ page }) => { await page.goto('/vehicles') })
 
 test('Flotte — véhicules visibles', async ({ page }) => {
   await page.waitForLoadState('domcontentloaded')
+  await page.waitForSelector('main a[href*="/vehicles/"]', { timeout: 10000 })
   const vehicles = page.locator('main').locator('a[href*="/vehicles/"]')
   const count = await vehicles.count()
   expect(count).toBeGreaterThanOrEqual(7)
@@ -32,9 +33,10 @@ test('Flotte — Score santé non modifiable', async ({ page }) => {
 test('Flotte — Modifier point de livraison', async ({ page }) => {
   await page.locator('main').getByText('FZ671YT').first().click()
   await page.getByRole('link', { name: /Modifier/i }).click()
-  const deliveryInput = page.locator('input[name="deliveryPointName"]')
+  await expect(page).toHaveURL(/\/edit/, { timeout: 10000 })
+  const deliveryInput = page.getByPlaceholder('ex: Parking Mignet')
   await expect(deliveryInput).toBeVisible({ timeout: 10000 })
   await deliveryInput.fill('Gare AIX TGV Test')
-  await page.getByRole('button', { name: /Sauvegarder|Enregistrer/i }).click()
-  await expect(page.getByText('Gare AIX TGV Test')).toBeVisible()
+  await page.getByRole('button', { name: /Enregistrer/i }).click()
+  await expect(page.getByText('Gare AIX TGV Test')).toBeVisible({ timeout: 10000 })
 })

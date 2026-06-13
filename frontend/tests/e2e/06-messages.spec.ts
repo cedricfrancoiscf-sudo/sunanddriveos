@@ -17,9 +17,11 @@ test('Messages — Pas de bouton Suggérer', async ({ page }) => {
 })
 
 test('Messages — Clic conversation → détail', async ({ page }) => {
+  await page.waitForLoadState('domcontentloaded')
   const conv = page.locator('main').getByRole('button').first()
   if (await conv.isVisible()) {
     await conv.click()
-    await expect(page.locator('textarea, .reply-zone')).toBeVisible()
+    await page.waitForURL(/\/messages\//, { timeout: 10000 })
+    await expect(page.locator('textarea').first()).toBeVisible({ timeout: 10000 })
   }
 })

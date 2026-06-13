@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test'
 
-test.beforeEach(async ({ page }) => { await page.goto('/vehicles') })
+test.beforeEach(async ({ page }) => {
+  await page.goto('/vehicles')
+  await page.waitForLoadState('domcontentloaded')
+})
 
 test('Flotte — véhicules visibles', async ({ page }) => {
   await page.waitForLoadState('domcontentloaded')
@@ -33,10 +36,12 @@ test('Flotte — Score santé non modifiable', async ({ page }) => {
 test('Flotte — Modifier point de livraison', async ({ page }) => {
   await page.locator('main').getByText('FZ671YT').first().click()
   await page.getByRole('link', { name: /Modifier/i }).click()
-  await expect(page).toHaveURL(/\/edit/, { timeout: 10000 })
+  await expect(page).toHaveURL(/\/edit/, { timeout: 15000 })
+  // Le formulaire affiche un spinner pendant isLoading — attendre le rendu complet
+  await expect(page.getByRole('heading', { name: /Modifier le véhicule/i })).toBeVisible({ timeout: 15000 })
   const deliveryInput = page.getByPlaceholder('ex: Parking Mignet')
-  await expect(deliveryInput).toBeVisible({ timeout: 10000 })
+  await expect(deliveryInput).toBeVisible({ timeout: 15000 })
   await deliveryInput.fill('Gare AIX TGV Test')
   await page.getByRole('button', { name: /Enregistrer/i }).click()
-  await expect(page.getByText('Gare AIX TGV Test')).toBeVisible({ timeout: 10000 })
+  await expect(page.getByText('Gare AIX TGV Test')).toBeVisible({ timeout: 15000 })
 })

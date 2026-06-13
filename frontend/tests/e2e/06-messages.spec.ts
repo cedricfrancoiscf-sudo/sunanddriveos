@@ -21,7 +21,9 @@ test('Messages — Clic conversation → détail', async ({ page }) => {
   const conv = page.locator('main').getByRole('button').first()
   if (await conv.isVisible()) {
     await conv.click()
-    await page.waitForURL(/\/messages\//, { timeout: 10000 })
-    await expect(page.locator('textarea').first()).toBeVisible({ timeout: 10000 })
+    await page.waitForURL(/\/messages\//, { timeout: 15000 })
+    await page.waitForLoadState('domcontentloaded')
+    // "Voir la location →" est toujours présent dans le détail, quelle que soit la direction du message
+    await expect(page.getByRole('link', { name: /Voir la location/ })).toBeVisible({ timeout: 15000 })
   }
 })

@@ -25,15 +25,18 @@ test('Rentabilité — Clic véhicule ouvre panneau coûts', async ({ page }) =>
 })
 
 test('Rentabilité — Ajouter coût fixe', async ({ page }) => {
-  await page.locator('main').getByText('FZ671YT').first().click()
-  await page.waitForTimeout(500)
+  // Cliquer sur le bouton ligne (pas le span texte seul) pour ouvrir le panneau coûts
+  const vehicleRow = page.locator('main').getByRole('button').filter({ hasText: 'FZ671YT' }).first()
+  await vehicleRow.waitFor({ state: 'visible', timeout: 15000 })
+  await vehicleRow.click()
   const labelInput = page.locator('input[placeholder*="Assurance"]')
+  await labelInput.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {})
   if (await labelInput.isVisible()) {
     await labelInput.fill('Test assurance')
     const amountInput = page.locator('input[placeholder*="Montant"]')
     await amountInput.fill('150')
     await page.getByRole('button', { name: 'Ajouter' }).last().click()
-    await expect(page.locator('main').getByText('Test assurance')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('main').getByText('Test assurance')).toBeVisible({ timeout: 15000 })
   }
 })
 

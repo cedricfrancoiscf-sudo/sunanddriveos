@@ -12,7 +12,7 @@ const PRIMARY = '#01696e';
 function fmtPeriod(p: string): string {
   const [y, m] = p.split('-');
   const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-  return `${months[parseInt(m, 10) - 1]} ${y}`;
+  return `${months[parseInt(m ?? '1', 10) - 1]} ${y ?? ''}`;
 }
 
 function StarInput({ value, onChange }: { value: number; onChange: (v: number) => void }): React.JSX.Element {

@@ -80,7 +80,7 @@ function AddCostModal({ vehicleId, make, model, onClose }: {
         <form onSubmit={e => { e.preventDefault(); if (label && amount) addMut.mutate(); }} className="space-y-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-600">Libellé *</label>
-            <input required value={label} onChange={e => setLabel(e.target.value)}
+            <input required name="label" value={label} onChange={e => setLabel(e.target.value)}
               placeholder="Assurance, Crédit, Parking…"
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
           </div>

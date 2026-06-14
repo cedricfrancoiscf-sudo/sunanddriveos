@@ -279,11 +279,11 @@ export default function PlanningPage(): React.JSX.Element {
 
         {/* Navigation */}
         <div className="flex items-center gap-1.5">
-          <button type="button" onClick={() => setPeriodStart(d => addDays(d, -viewMode))}
+          <button type="button" aria-label="prev" onClick={() => setPeriodStart(d => addDays(d, -viewMode))}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">←</button>
           <button type="button" onClick={() => setPeriodStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">Auj.</button>
-          <button type="button" onClick={() => setPeriodStart(d => addDays(d, viewMode))}
+          <button type="button" aria-label="next" onClick={() => setPeriodStart(d => addDays(d, viewMode))}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">→</button>
         </div>
 

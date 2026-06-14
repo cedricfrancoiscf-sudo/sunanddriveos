@@ -174,14 +174,14 @@ export default function MessageDetailPage(): React.JSX.Element {
           {/* Message en attente d'approbation — on affiche le contenu éditable */}
           {(isPending || isApproved) && (
             <>
-              <div>
+              <div data-testid="ai-draft-zone">
                 <div className="mb-1 flex items-center justify-between">
                   <label className="text-xs font-medium text-gray-500">
                     {isPending ? 'Suggestion à approuver' : 'Message approuvé'}
                   </label>
                 </div>
                 <textarea
-                  value={replyContent || message.content}
+                  value={replyContent || (aiDraft?.content ?? message.content)}
                   onChange={(e) => setReplyContent(e.target.value)}
                   rows={4}
                   readOnly={isApproved}

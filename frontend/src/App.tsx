@@ -158,6 +158,10 @@ export default function App(): React.JSX.Element {
               <Route path="/renters" element={<RentersPage />} />
               <Route path="/renters/:id" element={<RenterDetailPage />} />
               <Route path="/rentability" element={<RentabilityPage />} />
+              {/* Alias routes */}
+              <Route path="/technical-controls" element={<Navigate to="/technical-control" replace />} />
+              <Route path="/fleet" element={<Navigate to="/vehicles" replace />} />
+              <Route path="/settings/users" element={<Navigate to="/settings" replace />} />
             </Route>
 
             {/* Redirections */}

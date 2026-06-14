@@ -279,31 +279,35 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
           )}
 
           {/* ── INTELLIGENCE ✨ ── */}
-          <SectionLabel label="Intelligence ✨" collapsed={collapsed} />
-          <li>
-            {isStarterPlan
-              ? <LockedItem label="Intelligence" icon={iconBolt} requiredPlan="pro" collapsed={collapsed} />
-              : <NavLink to="/intelligence" end onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Intelligence' : undefined}>
-                  {iconBolt}
-                  {!collapsed && 'Intelligence'}
+          {!isCarkeeper && (
+            <>
+              <SectionLabel label="Intelligence ✨" collapsed={collapsed} />
+              <li>
+                {isStarterPlan
+                  ? <LockedItem label="Intelligence" icon={iconBolt} requiredPlan="pro" collapsed={collapsed} />
+                  : <NavLink to="/intelligence" end onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Intelligence' : undefined}>
+                      {iconBolt}
+                      {!collapsed && 'Intelligence'}
+                    </NavLink>
+                }
+              </li>
+              <li>
+                <NavLink to="/rentability" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Rentabilité' : undefined}>
+                  <Icon d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  {!collapsed && 'Rentabilité'}
                 </NavLink>
-            }
-          </li>
-          <li>
-            <NavLink to="/rentability" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Rentabilité' : undefined}>
-              <Icon d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              {!collapsed && 'Rentabilité'}
-            </NavLink>
-          </li>
-          <li>
-            {isStarterPlan
-              ? <LockedItem label="Rapport CEO" icon={iconReport} requiredPlan="pro" collapsed={collapsed} />
-              : <NavLink to="/intelligence/report" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Rapport CEO' : undefined}>
-                  {iconReport}
-                  {!collapsed && 'Rapport CEO'}
-                </NavLink>
-            }
-          </li>
+              </li>
+              <li>
+                {isStarterPlan
+                  ? <LockedItem label="Rapport CEO" icon={iconReport} requiredPlan="pro" collapsed={collapsed} />
+                  : <NavLink to="/intelligence/report" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Rapport CEO' : undefined}>
+                      {iconReport}
+                      {!collapsed && 'Rapport CEO'}
+                    </NavLink>
+                }
+              </li>
+            </>
+          )}
 
           {/* ── ADMINISTRATION ── */}
           {isAdmin && (

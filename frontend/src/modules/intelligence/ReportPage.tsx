@@ -396,6 +396,7 @@ export default function ReportPage(): React.JSX.Element {
               <nav className="hidden md:flex items-center gap-0.5 ml-4">
                 {ANNUAL_SECTIONS.map(s => (
                   <button key={s.id} type="button" onClick={() => scrollTo(s.id)}
+                    data-testid={`section-${s.id}`}
                     className="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors">
                     {s.label}
                   </button>
@@ -421,12 +422,12 @@ export default function ReportPage(): React.JSX.Element {
             </div>
             {/* Sélecteur de mois */}
             <div className="no-print flex items-center gap-1 rounded-xl border border-gray-200 bg-gray-50 px-2 py-1">
-              <button type="button" onClick={() => setSelectedMonth(m => shiftMonth(m, -1))}
+              <button type="button" aria-label="prev-month" onClick={() => setSelectedMonth(m => shiftMonth(m, -1))}
                 className="rounded p-0.5 text-gray-400 hover:text-gray-700 transition">‹</button>
               <span className="text-xs font-medium text-gray-700 min-w-[100px] text-center">
                 {fmtMonth(selectedMonth)}
               </span>
-              <button type="button"
+              <button type="button" aria-label="next-month"
                 onClick={() => setSelectedMonth(m => shiftMonth(m, 1))}
                 disabled={selectedMonth >= currentMonth}
                 className="rounded p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 transition">›</button>
@@ -451,7 +452,7 @@ export default function ReportPage(): React.JSX.Element {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-8 space-y-8">
+      <div className="mx-auto max-w-5xl px-4 py-8 space-y-8">
 
         {/* État : absent */}
         {!isGenerating && !reportData && !monthlyData && statusStr !== 'error' && (
@@ -843,7 +844,7 @@ export default function ReportPage(): React.JSX.Element {
             {format(new Date(monthlyData.generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}
           </footer>
         )}
-      </main>
+      </div>
     </div>
   );
 }

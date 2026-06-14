@@ -21,6 +21,7 @@ interface PlanningRental {
   id: string;
   vehicleId: string;
   driverName: string;
+  driverGetaroundId: string | null;
   startAt: string;
   endAt: string;
   status: string;
@@ -64,10 +65,10 @@ function formatHour(iso: string): string {
   return format(parseISO(iso), 'HH:mm');
 }
 
-function RentalBar({ rental, periodStart, totalDays, onClick }: { rental: PlanningRental; periodStart: Date; totalDays: number; onClick: () => void }) {
+function RentalBar({ rental, periodStart, totalDays, onClick, isBlacklisted }: { rental: PlanningRental; periodStart: Date; totalDays: number; onClick: () => void; isBlacklisted: boolean }) {
   const hasCarSeat = rental.carSeatRequests.length > 0;
   const hasAccessory = rental._count.accessoryReservations > 0;
-  const tooltip = `${rental.driverName}\n${format(parseISO(rental.startAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(rental.endAt), 'dd/MM HH:mm', { locale: fr })}${hasCarSeat ? '\n🪑 Siège auto' : ''}${hasAccessory ? '\n📦 Accessoire' : ''}`;
+  const tooltip = `${rental.driverName}${isBlacklisted ? ' ⛔' : ''}\n${format(parseISO(rental.startAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(rental.endAt), 'dd/MM HH:mm', { locale: fr })}${hasCarSeat ? '\n🪑 Siège auto' : ''}${hasAccessory ? '\n📦 Accessoire' : ''}`;
   const durationMin = differenceInMinutes(parseISO(rental.endAt), parseISO(rental.startAt));
   const isShort = durationMin < 120; // moins de 2h — barre courte, pas de texte
   const isPast = parseISO(rental.endAt) < startOfDay(new Date());
@@ -86,6 +87,7 @@ function RentalBar({ rental, periodStart, totalDays, onClick }: { rental: Planni
     >
       {!isShort && (
         <span className="flex items-center gap-0.5 pl-1.5 text-[10px] text-white font-medium truncate min-w-0">
+          {isBlacklisted && <span className="shrink-0 text-[9px]">⛔</span>}
           <span className="truncate">{formatHour(rental.startAt)} {rental.driverName}</span>
           {hasCarSeat && <span className="shrink-0 text-[9px] ml-0.5 opacity-90">🪑</span>}
           {hasAccessory && <span className="shrink-0 text-[9px] opacity-90">📦</span>}
@@ -100,7 +102,7 @@ function RentalBar({ rental, periodStart, totalDays, onClick }: { rental: Planni
       {/* Tooltip riche au survol */}
       <div className="absolute bottom-full left-0 z-50 mb-1 hidden group-hover:block pointer-events-none">
         <div className="rounded-lg bg-gray-900 px-2.5 py-2 text-[11px] text-white shadow-lg whitespace-nowrap">
-          <p className="font-semibold">{rental.driverName}</p>
+          <p className="font-semibold">{rental.driverName}{isBlacklisted && <span className="ml-1 rounded-full bg-red-500 px-1 text-[9px]">⛔ BL</span>}</p>
           <p className="text-gray-300">{format(parseISO(rental.startAt), 'dd MMM HH:mm', { locale: fr })} → {format(parseISO(rental.endAt), 'dd MMM HH:mm', { locale: fr })}</p>
           {hasCarSeat && <p className="text-blue-300 mt-0.5">🪑 Siège auto requis</p>}
           {hasAccessory && <p className="text-yellow-300 mt-0.5">📦 Accessoire réservé</p>}
@@ -176,6 +178,13 @@ export default function PlanningPage(): React.JSX.Element {
         { params: { from: periodStart.toISOString(), to: addDays(periodStart, viewMode).toISOString() } },
       ).then(r => r.data),
   });
+
+  const { data: blacklistData } = useQuery<{ renters: Array<{ driverGetaroundId: string }> }>({
+    queryKey: ['blacklist-renters'],
+    queryFn: () => api.get<{ renters: Array<{ driverGetaroundId: string }> }>('/blacklist/renters').then(r => r.data),
+    staleTime: 5 * 60_000,
+  });
+  const blacklistedIds = new Set((blacklistData?.renters ?? []).map(r => r.driverGetaroundId));
 
   const createBlocking = useMutation({
     mutationFn: (body: object) => api.post('/planning/blockings', body),
@@ -457,7 +466,7 @@ export default function PlanningPage(): React.JSX.Element {
 
                       {/* Barres locations */}
                       {vRentals.map(r => (
-                        <RentalBar key={r.id} rental={r} periodStart={periodStart} totalDays={viewMode} onClick={() => navigate(`/rentals/${r.id}`)} />
+                        <RentalBar key={r.id} rental={r} periodStart={periodStart} totalDays={viewMode} onClick={() => navigate(`/rentals/${r.id}`)} isBlacklisted={!!(r.driverGetaroundId && blacklistedIds.has(r.driverGetaroundId))} />
                       ))}
 
                       {/* Barres blocages */}

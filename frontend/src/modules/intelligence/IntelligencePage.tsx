@@ -1,10 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ComposedChart, Line, ReferenceLine, Cell,
 } from 'recharts';
 import { api } from '../../utils/api';
+
+interface MileageAnomaly {
+  rentalId: string;
+  driverName: string;
+  vehicleLicensePlate: string;
+  kmDriven: number;
+  durationDays: number;
+  threshold: number;
+  startAt: string;
+  endAt: string;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -136,6 +148,7 @@ function CATooltip({ active, payload, label }: { active?: boolean; payload?: Arr
 // ── Page principale ────────────────────────────────────────────────────────────
 
 export default function IntelligencePage(): React.JSX.Element {
+  const navigate = useNavigate();
   const [perfView, setPerfView] = useState<'chart' | 'table'>('chart');
   const [perfMetric, setPerfMetric] = useState<'ca' | 'occupancy'>('ca');
   const [sortKey, setSortKey] = useState('totalPayout');
@@ -164,6 +177,13 @@ export default function IntelligencePage(): React.JSX.Element {
     staleTime: 24 * 3_600_000,
     retry: false,
   });
+
+  const { data: mileageData } = useQuery<{ anomalies: MileageAnomaly[] }>({
+    queryKey: ['mileage-anomalies'],
+    queryFn: () => api.get<{ anomalies: MileageAnomaly[] }>('/intelligence/mileage-anomalies').then(r => r.data),
+    staleTime: 30 * 60_000,
+  });
+  const mileageAnomalies = mileageData?.anomalies ?? [];
 
   const chatMutation = useMutation({
     mutationFn: (q: string) => api.post<{ answer: string }>('/intelligence/chat', { question: q }).then(r => r.data.answer),
@@ -230,6 +250,18 @@ export default function IntelligencePage(): React.JSX.Element {
       <div>
         <h1 className="text-xl font-bold text-gray-900">Intelligence ✨</h1>
         <p className="text-sm text-gray-500">Analyse annuelle, performance par véhicule et assistant IA</p>
+      </div>
+
+      {/* ── LIENS RAPIDES ─────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => navigate('/intelligence/ratings')}
+          className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-[#01696e] hover:text-[#01696e] shadow-sm transition">
+          <span>★</span> Notes Getaround
+        </button>
+        <button type="button" onClick={() => navigate('/intelligence/report')}
+          className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-[#01696e] hover:text-[#01696e] shadow-sm transition">
+          <span>📄</span> Rapport CEO
+        </button>
       </div>
 
       {/* ── SECTION 1 : KPIs ANNUELS ──────────────────────────────────────── */}
@@ -458,7 +490,37 @@ export default function IntelligencePage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* ── SECTION 4 : SUGGESTIONS IA ───────────────────────────────────── */}
+      {/* ── SECTION 4 : ANOMALIES KILOMÉTRIQUES ─────────────────────────── */}
+      {mileageAnomalies.length > 0 && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50 shadow-sm overflow-hidden">
+          <div className="border-b border-orange-100 px-5 py-3 flex items-center gap-2">
+            <span className="text-base">⚠️</span>
+            <div>
+              <h2 className="text-sm font-semibold text-orange-800">Anomalies kilométriques</h2>
+              <p className="text-xs text-orange-600">{mileageAnomalies.length} location{mileageAnomalies.length > 1 ? 's' : ''} avec km/jour élevés détectée{mileageAnomalies.length > 1 ? 's' : ''}</p>
+            </div>
+          </div>
+          <div className="divide-y divide-orange-100">
+            {mileageAnomalies.slice(0, 5).map(a => (
+              <div key={a.rentalId} className="flex items-center justify-between px-5 py-3 gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{a.driverName}</p>
+                  <p className="text-xs text-gray-500">{a.vehicleLicensePlate} · {new Date(a.startAt).toLocaleDateString('fr-FR')} → {new Date(a.endAt).toLocaleDateString('fr-FR')}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-bold text-orange-700">{a.kmDriven.toLocaleString('fr-FR')} km</p>
+                  <p className="text-xs text-orange-500">{a.durationDays}j · {Math.round(a.kmDriven / a.durationDays)} km/j</p>
+                </div>
+              </div>
+            ))}
+            {mileageAnomalies.length > 5 && (
+              <p className="px-5 py-2 text-xs text-orange-500">+ {mileageAnomalies.length - 5} autres anomalies</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── SECTION 5 : SUGGESTIONS IA ───────────────────────────────────── */}
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
           <div>
@@ -507,7 +569,7 @@ export default function IntelligencePage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* ── SECTION 5 : ASSISTANT IA ──────────────────────────────────────── */}
+      {/* ── SECTION 6 : ASSISTANT IA ──────────────────────────────────────── */}
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="border-b border-gray-100 px-5 py-3">
           <h2 className="text-sm font-semibold text-gray-900">Assistant IA ✨</h2>

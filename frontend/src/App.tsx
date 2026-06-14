@@ -66,7 +66,9 @@ const IntelligencePage = React.lazy(() => import('./modules/intelligence/Intelli
 const ReportPage = React.lazy(() => import('./modules/intelligence/ReportPage'));
 const TrialExpiredPage = React.lazy(() => import('./modules/billing/TrialExpiredPage'));
 const RentersPage = React.lazy(() => import('./modules/renters/RentersPage'));
+const RenterDetailPage = React.lazy(() => import('./modules/renters/RenterDetailPage'));
 const RentabilityPage = React.lazy(() => import('./modules/rentability/RentabilityPage'));
+const RatingPage = React.lazy(() => import('./modules/intelligence/RatingPage'));
 
 function LoadingFallback(): React.JSX.Element {
   return (
@@ -152,7 +154,9 @@ export default function App(): React.JSX.Element {
               <Route path="/onboarding" element={<OnboardingPage />} />
               <Route path="/intelligence" element={<IntelligencePage />} />
               <Route path="/intelligence/report" element={<ReportPage />} />
+              <Route path="/intelligence/ratings" element={<RatingPage />} />
               <Route path="/renters" element={<RentersPage />} />
+              <Route path="/renters/:id" element={<RenterDetailPage />} />
               <Route path="/rentability" element={<RentabilityPage />} />
             </Route>
 

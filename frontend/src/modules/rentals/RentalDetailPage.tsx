@@ -491,6 +491,16 @@ export default function RentalDetailPage(): React.JSX.Element {
                 {updateMutation.isPending ? 'En cours...' : "Bloquer l'évaluation"}
               </button>
             )}
+            {rental.status === 'completed' && rental.evaluationStatus === 'blocked' && (
+              <button
+                type="button"
+                onClick={() => { if (confirm('Réactiver l\'évaluation pour ce locataire ?')) updateMutation.mutate({ evaluationStatus: 'pending' }); }}
+                disabled={updateMutation.isPending}
+                className="mt-3 w-full rounded-lg border border-green-200 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-60"
+              >
+                {updateMutation.isPending ? 'En cours...' : "Réactiver l'évaluation"}
+              </button>
+            )}
           </div>
 
           {/* Incidents */}

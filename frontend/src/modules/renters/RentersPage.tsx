@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
 
 interface Renter {
@@ -44,6 +45,7 @@ function ScoreBadge({ score, tier }: { score: number; tier: string }): React.JSX
 }
 
 export default function RentersPage(): React.JSX.Element {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [sortKey, setSortKey] = useState<SortKey>('totalCA');
@@ -194,9 +196,11 @@ export default function RentersPage(): React.JSX.Element {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filtered.map(r => (
-                  <tr key={r.driverGetaroundId} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={r.driverGetaroundId}
+                    className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/renters/${r.driverGetaroundId}`)}>
                     <td className="px-5 py-3">
-                      <span className="font-medium text-gray-900">{r.name}</span>
+                      <span className="font-medium text-gray-900 hover:underline">{r.name}</span>
                     </td>
                     <td className="px-4 py-3 text-right text-gray-700">{r.rentalCount}</td>
                     <td className="px-4 py-3 text-right font-semibold text-green-700">{fmtEuro(r.totalCA)}</td>

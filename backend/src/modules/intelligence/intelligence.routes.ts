@@ -868,6 +868,26 @@ router.get('/suggestions', async (req: Request, res: Response, next: NextFunctio
   } catch (err) { next(err); }
 });
 
+// GET /api/v1/intelligence/quality-alerts
+router.get('/quality-alerts', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const { getQualityAlerts } = await import('../ai/ai.service');
+    const alerts = await getQualityAlerts(db);
+    res.json({ alerts });
+  } catch (err) { next(err); }
+});
+
+// GET /api/v1/intelligence/mileage-anomalies
+router.get('/mileage-anomalies', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const { detectMileageAnomalies } = await import('../ai/ai.service');
+    const anomalies = await detectMileageAnomalies(db);
+    res.json({ anomalies });
+  } catch (err) { next(err); }
+});
+
 // Rapport CEO — monté ici pour éviter le double plan-gating depuis app.ts
 router.use('/report', reportRouter);
 

@@ -319,7 +319,7 @@ async function runMorningRebalayage(): Promise<void> {
     const master = getMasterClient();
     const companies = await master.company.findMany({
       where: { isActive: true },
-      select: { tenantDbUrl: true, slug: true },
+      select: { tenantDbUrl: true, slug: true, name: true },
     });
     for (const company of companies) {
       try {
@@ -386,7 +386,7 @@ async function runMorningRebalayage(): Promise<void> {
         }
         console.log(`[Cron 7h] ${company.slug} Rebalayage : ${locations} location(s), ${msgs} message(s) traité(s)`);
 
-        // ── Relecture matinale des conversations ──────────────────────────────
+        // ── 1) Relecture matinale des conversations ───────────────────────────
         const now = new Date();
         const ongoingRentals = await db.rental.findMany({
           where: { status: { in: ['booked', 'active'] }, endAt: { gt: now } },
@@ -398,7 +398,7 @@ async function runMorningRebalayage(): Promise<void> {
           },
         });
 
-        let reviewed = 0, siegesRattrapes = 0, questionsNonRepondues = 0;
+        const reviewResults: import('./modules/messages/messaging.service').MorningReviewResult[] = [];
         for (const rental of ongoingRentals) {
           try {
             const rentalData: RentalForMessaging = {
@@ -408,12 +408,83 @@ async function runMorningRebalayage(): Promise<void> {
               vehicle: { make: rental.vehicle.make, model: rental.vehicle.model, licensePlate: rental.vehicle.licensePlate, parkingZone: rental.vehicle.parkingZone, deliveryPointName: rental.vehicle.deliveryPointName },
             };
             const result = await morningConversationReview(rentalData, rental.messages, db);
-            reviewed++;
-            if (result.carSeatCaught) siegesRattrapes++;
-            if (result.unansweredQuestion) questionsNonRepondues++;
+            reviewResults.push(result);
           } catch (e) { console.error(`[MorningReview] Erreur rental ${rental.id}:`, e); }
         }
-        console.log(`[Cron 7h] ${company.slug} Relecture matinale : ${reviewed} locations analysées, ${siegesRattrapes} sièges rattrapés, ${questionsNonRepondues} questions sans réponse`);
+
+        const siegesRows = reviewResults.filter(r => r.carSeatCaught);
+        const questionsRows = reviewResults.filter(r => r.unansweredQuestion);
+        const incidentsRows = reviewResults.filter(r => r.incidentReported);
+
+        // ── 2) Génération du rapport relecture ────────────────────────────────
+        const dateLabel7h = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+        const rowHtml = (label: string, sub: string) =>
+          `<li style="margin:2px 0"><b>${label}</b>${sub ? ` — ${sub}` : ''}</li>`;
+        const section7h = (icon: string, title: string, rows: string[], emptyMsg = 'Rien à signaler') =>
+          `<div style="margin:16px 0"><h3 style="font-size:14px;font-weight:bold;margin:0 0 8px;color:#1e293b">${icon} ${title}</h3>${rows.length > 0 ? `<ul style="margin:0;padding-left:20px;color:#374151;font-size:13px">${rows.join('')}</ul>` : `<p style="color:#94a3b8;font-size:13px;margin:0">${emptyMsg}</p>`}</div>`;
+
+        const buildHtml = (sieges: typeof siegesRows, questions: typeof questionsRows, incidents: typeof incidentsRows) =>
+          `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:640px;margin:0 auto;padding:20px;background:#f8fafc">
+<div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
+  <div style="background:#01696e;padding:20px 24px">
+    <h1 style="color:#fff;font-size:18px;margin:0">🔍 Relecture matinale — ${company.name}</h1>
+    <p style="color:#a7f3d0;font-size:12px;margin:4px 0 0">${dateLabel7h} — ${ongoingRentals.length} location(s) analysée(s)</p>
+  </div>
+  <div style="padding:20px 24px">
+    ${section7h('🪑', `Sièges auto rattrapés (${sieges.length})`,
+      sieges.map(r => rowHtml(r.driverName, r.vehicleLabel)),
+      'Aucun siège manquant détecté')}
+    ${section7h('❓', `Questions sans réponse (${questions.length})`,
+      questions.map(r => rowHtml(r.driverName, r.vehicleLabel)),
+      'Toutes les questions ont reçu une réponse')}
+    ${section7h('⚠️', `Incidents signalés (${incidents.length})`,
+      incidents.map(r => rowHtml(r.driverName, r.vehicleLabel)),
+      'Aucun incident détecté')}
+  </div>
+  <div style="background:#f1f5f9;padding:12px 24px;font-size:11px;color:#94a3b8">SunanddriveOS — relecture automatique des conversations — 7h</div>
+</div></body></html>`;
+
+        // ── 3) Envoi emails ───────────────────────────────────────────────────
+        const [adminRecipients, carkeepers] = await Promise.all([
+          db.user.findMany({
+            where: { isActive: true, OR: [{ role: { in: ['admin', 'exploitation'] as never[] } }, { roles: { hasSome: ['admin', 'exploitation'] } }] },
+            select: { email: true, name: true },
+          }),
+          db.user.findMany({
+            where: { isActive: true, OR: [{ role: 'carkeeper' as never }, { roles: { has: 'carkeeper' } }] },
+            select: { id: true, email: true, name: true, vehicleCarkeepers: { select: { vehicleId: true } } },
+          }),
+        ]);
+
+        const fullHtml = buildHtml(siegesRows, questionsRows, incidentsRows);
+        let emailsSent = 0;
+
+        if (process.env.RESEND_API_KEY) {
+          for (const r of adminRecipients) {
+            await sendEmail({
+              from: 'appli@sunanddrive.com',
+              to: r.email,
+              subject: `🔍 Relecture matinale — ${company.name} — ${now.toLocaleDateString('fr-FR')}`,
+              html: fullHtml,
+            });
+            emailsSent++;
+          }
+          for (const ck of carkeepers) {
+            const ckVehicleIds = new Set(ck.vehicleCarkeepers.map((vc: { vehicleId: string }) => vc.vehicleId));
+            const ckSieges = siegesRows.filter(r => ckVehicleIds.has(r.vehicleId));
+            const ckIncidents = incidentsRows.filter(r => ckVehicleIds.has(r.vehicleId));
+            if (ckSieges.length === 0 && ckIncidents.length === 0) continue;
+            await sendEmail({
+              from: 'appli@sunanddrive.com',
+              to: ck.email,
+              subject: `🪑 Relecture — vos véhicules — ${now.toLocaleDateString('fr-FR')}`,
+              html: buildHtml(ckSieges, [], ckIncidents),
+            });
+            emailsSent++;
+          }
+        }
+
+        console.log(`[Cron 7h] ${company.slug} Relecture matinale : ${ongoingRentals.length} locations analysées, ${siegesRows.length} sièges rattrapés, ${questionsRows.length} questions sans réponse, ${incidentsRows.length} incidents, rapport envoyé à ${emailsSent} destinataire(s)`);
       } catch (e) { console.error(`[Rebalayage] Erreur tenant ${company.slug}:`, e); }
     }
   } catch (e) { console.error('[Rebalayage] Erreur générale:', e); }

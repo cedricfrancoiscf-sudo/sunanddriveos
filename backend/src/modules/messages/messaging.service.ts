@@ -305,6 +305,10 @@ Locataire : ${rental.driverName}`,
 // ─── Relecture matinale des conversations ─────────────────────────────────────
 
 export interface MorningReviewResult {
+  rentalId: string;
+  driverName: string;
+  vehicleId: string;
+  vehicleLabel: string;
   carSeatCaught: boolean;
   unansweredQuestion: boolean;
   incidentReported: boolean;
@@ -322,7 +326,15 @@ export async function morningConversationReview(
   messages: Array<{ direction: string; content: string }>,
   db: PrismaClient,
 ): Promise<MorningReviewResult> {
-  const result: MorningReviewResult = { carSeatCaught: false, unansweredQuestion: false, incidentReported: false };
+  const result: MorningReviewResult = {
+    rentalId: rental.id,
+    driverName: rental.driverName,
+    vehicleId: rental.vehicleId,
+    vehicleLabel: `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`,
+    carSeatCaught: false,
+    unansweredQuestion: false,
+    incidentReported: false,
+  };
 
   if (messages.length === 0) return result;
 

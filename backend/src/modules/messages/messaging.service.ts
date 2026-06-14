@@ -301,3 +301,125 @@ Locataire : ${rental.driverName}`,
     });
   }
 }
+
+// ─── Relecture matinale des conversations ─────────────────────────────────────
+
+export interface MorningReviewResult {
+  carSeatCaught: boolean;
+  unansweredQuestion: boolean;
+  incidentReported: boolean;
+}
+
+interface ConversationAnalysis {
+  carSeatRequested: boolean;
+  carSeatHandled: boolean;
+  unansweredQuestion: boolean;
+  incidentReported: boolean;
+}
+
+export async function morningConversationReview(
+  rental: RentalForMessaging,
+  messages: Array<{ direction: string; content: string }>,
+  db: PrismaClient,
+): Promise<MorningReviewResult> {
+  const result: MorningReviewResult = { carSeatCaught: false, unansweredQuestion: false, incidentReported: false };
+
+  if (messages.length === 0) return result;
+
+  const conversationText = messages
+    .map(m => `[${m.direction === 'inbound' ? 'LOCATAIRE' : 'PROPRIÉTAIRE'}] ${m.content}`)
+    .join('\n');
+
+  let analysis: ConversationAnalysis;
+  try {
+    const resp = await claude.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
+      system: `Tu analyses une conversation entre un locataire et un propriétaire Getaround.
+Réponds UNIQUEMENT en JSON valide, sans markdown :
+{"carSeatRequested":bool,"carSeatHandled":bool,"unansweredQuestion":bool,"incidentReported":bool}
+- carSeatRequested: le locataire a mentionné un besoin de siège auto enfant
+- carSeatHandled: le propriétaire a répondu à cette demande de siège
+- unansweredQuestion: le locataire a posé une question restée sans réponse du propriétaire
+- incidentReported: un incident, dommage, problème ou accident est mentionné`,
+      messages: [{ role: 'user', content: `Conversation rental ${rental.id} — ${rental.driverName} :\n${conversationText}` }],
+    });
+    const text = resp.content[0]?.type === 'text' ? resp.content[0].text.trim() : '{}';
+    analysis = JSON.parse(text) as ConversationAnalysis;
+  } catch (err) {
+    console.error(`[MorningReview] Erreur Claude rental ${rental.id}:`, err);
+    return result;
+  }
+
+  const settings = await db.companySettings.findFirst({ select: { aiName: true, senderName: true } });
+  const assistantName = settings?.aiName ?? settings?.senderName ?? 'Sun and Drive';
+
+  const admins = await db.user.findMany({
+    where: { isActive: true, OR: [{ role: 'admin' }, { roles: { has: 'admin' } }] },
+    select: { id: true, email: true },
+  });
+
+  // 1. Siège auto demandé non traité → rattraper
+  if (analysis.carSeatRequested && !analysis.carSeatHandled) {
+    const existing = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
+    if (!existing) {
+      const availableSeat = await db.carSeat.findFirst({ where: { isActive: true, availableStock: { gt: 0 } } });
+      if (availableSeat) {
+        await db.carSeat.update({ where: { id: availableSeat.id }, data: { availableStock: { decrement: 1 } } });
+        await db.carSeatRequest.create({
+          data: { vehicleId: rental.vehicleId, rentalId: rental.id, carSeatId: availableSeat.id, status: 'confirmed' },
+        });
+        const staff = await db.user.findMany({
+          where: { isActive: true, OR: [{ role: { in: ['admin', 'carkeeper'] } }, { roles: { hasSome: ['admin', 'carkeeper'] } }] },
+          select: { email: true },
+        });
+        const emails = staff.map(u => u.email).filter(Boolean);
+        void sendCarSeatEmail(emails, rental, assistantName, true).catch(e =>
+          console.error('[MorningReview] Erreur email siège:', e),
+        );
+      } else {
+        await db.carSeatRequest.create({
+          data: { vehicleId: rental.vehicleId, rentalId: rental.id, status: 'unavailable' },
+        });
+      }
+      console.log(`[MorningReview] Demande siège rattrapée — rentalId ${rental.id}`);
+      result.carSeatCaught = true;
+    }
+  }
+
+  // 2. Question sans réponse → notification
+  if (analysis.unansweredQuestion && admins.length > 0) {
+    await db.notification.createMany({
+      data: admins.map(a => ({
+        userId: a.id,
+        type: 'unanswered_message',
+        title: `❓ Question sans réponse — ${rental.driverName}`,
+        body: `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`,
+        relatedEntityType: 'rental',
+        relatedEntityId: rental.id,
+        targetUrl: `/rentals/${rental.id}`,
+      })),
+      skipDuplicates: true,
+    });
+    result.unansweredQuestion = true;
+  }
+
+  // 3. Incident signalé → notification
+  if (analysis.incidentReported && admins.length > 0) {
+    await db.notification.createMany({
+      data: admins.map(a => ({
+        userId: a.id,
+        type: 'incident_reported',
+        title: `⚠️ Incident signalé — ${rental.driverName}`,
+        body: `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`,
+        relatedEntityType: 'rental',
+        relatedEntityId: rental.id,
+        targetUrl: `/rentals/${rental.id}`,
+      })),
+      skipDuplicates: true,
+    });
+    result.incidentReported = true;
+  }
+
+  return result;
+}

@@ -12,7 +12,7 @@ import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client
 import { executePendingSequences, cleanupObsoleteSequences } from './modules/sequences/sequences.service';
 import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayouts, syncUnavailabilitiesForTenant } from './modules/getaround-sync/getaround-sync.service';
 import { generateCeoReportAsync } from './modules/intelligence/report.routes';
-import { analyzeAndProcessMessage, type RentalForMessaging } from './modules/messages/messaging.service';
+import { analyzeAndProcessMessage, morningConversationReview, type RentalForMessaging } from './modules/messages/messaging.service';
 import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
 import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
@@ -385,6 +385,35 @@ async function runMorningRebalayage(): Promise<void> {
           }
         }
         console.log(`[Cron 7h] ${company.slug} Rebalayage : ${locations} location(s), ${msgs} message(s) traité(s)`);
+
+        // ── Relecture matinale des conversations ──────────────────────────────
+        const now = new Date();
+        const ongoingRentals = await db.rental.findMany({
+          where: { status: { in: ['booked', 'active'] }, endAt: { gt: now } },
+          select: {
+            id: true, vehicleId: true, driverName: true,
+            driverGetaroundId: true, getaroundId: true, startAt: true, endAt: true, status: true,
+            vehicle: { select: { make: true, model: true, licensePlate: true, parkingZone: true, deliveryPointName: true } },
+            messages: { orderBy: { createdAt: 'asc' }, select: { direction: true, content: true } },
+          },
+        });
+
+        let reviewed = 0, siegesRattrapes = 0, questionsNonRepondues = 0;
+        for (const rental of ongoingRentals) {
+          try {
+            const rentalData: RentalForMessaging = {
+              id: rental.id, vehicleId: rental.vehicleId, driverName: rental.driverName,
+              driverGetaroundId: rental.driverGetaroundId, getaroundId: rental.getaroundId,
+              startAt: rental.startAt, endAt: rental.endAt, status: rental.status,
+              vehicle: { make: rental.vehicle.make, model: rental.vehicle.model, licensePlate: rental.vehicle.licensePlate, parkingZone: rental.vehicle.parkingZone, deliveryPointName: rental.vehicle.deliveryPointName },
+            };
+            const result = await morningConversationReview(rentalData, rental.messages, db);
+            reviewed++;
+            if (result.carSeatCaught) siegesRattrapes++;
+            if (result.unansweredQuestion) questionsNonRepondues++;
+          } catch (e) { console.error(`[MorningReview] Erreur rental ${rental.id}:`, e); }
+        }
+        console.log(`[Cron 7h] ${company.slug} Relecture matinale : ${reviewed} locations analysées, ${siegesRattrapes} sièges rattrapés, ${questionsNonRepondues} questions sans réponse`);
       } catch (e) { console.error(`[Rebalayage] Erreur tenant ${company.slug}:`, e); }
     }
   } catch (e) { console.error('[Rebalayage] Erreur générale:', e); }

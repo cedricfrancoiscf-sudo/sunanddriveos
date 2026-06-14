@@ -35,9 +35,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       ? await getCarekeeperVehicleIds(db, req.auth.userId)
       : undefined;
 
-    const vehicleFilter = vehicleIds ? { id: { in: vehicleIds } } : {};
-    const rentalVehicleFilter = vehicleIds ? { vehicleId: { in: vehicleIds } } : {};
-    const blockingVehicleFilter = vehicleIds ? { vehicleId: { in: vehicleIds } } : {};
+    console.log(`[Planning] userId=${req.auth?.userId ?? 'n/a'} isCarkeeper=${isCarkeeper} vehicleIds=${JSON.stringify(vehicleIds ?? 'n/a')}`);
+
+    // Empty array is truthy — only apply filter when there are actual IDs
+    const hasVehicleFilter = vehicleIds != null && vehicleIds.length > 0;
+    const vehicleFilter = hasVehicleFilter ? { id: { in: vehicleIds! } } : {};
+    const rentalVehicleFilter = hasVehicleFilter ? { vehicleId: { in: vehicleIds! } } : {};
+    const blockingVehicleFilter = hasVehicleFilter ? { vehicleId: { in: vehicleIds! } } : {};
 
     const [rentals, blockings, vehicles] = await Promise.all([
       db.rental.findMany({

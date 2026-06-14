@@ -221,17 +221,8 @@ export default function PlanningPage(): React.JSX.Element {
     [periodStart, viewMode],
   );
 
-  const { data: assignmentData } = useQuery<{ vehicleIds: string[] }>({
-    queryKey: ['vehicle-assignments', user?.id],
-    queryFn: () => api.get<{ vehicleIds: string[] }>(`/users/${user!.id}/vehicle-assignments`).then(r => r.data),
-    enabled: isCarkeeperOnly && !!user?.id,
-    staleTime: 5 * 60_000,
-  });
-
-  const allVehicles = data?.vehicles ?? [];
-  const vehicles = isCarkeeperOnly && assignmentData
-    ? allVehicles.filter(v => assignmentData.vehicleIds.includes(v.id))
-    : allVehicles;
+  // Backend already filters vehicles/rentals by carkeeper assignment — no client-side filter needed
+  const vehicles = data?.vehicles ?? [];
   const rentals = data?.rentals ?? [];
   const blockings = data?.blockings ?? [];
 

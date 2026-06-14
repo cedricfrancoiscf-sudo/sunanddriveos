@@ -20,12 +20,14 @@ const blockingSchema = z.object({
 // GET /api/v1/planning — retourne locations + blocages pour une période
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const from = req.query.from
-      ? new Date(req.query.from as string)
-      : new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000);
-    const to = req.query.to
-      ? new Date(req.query.to as string)
-      : new Date(from.getTime() + 30 * 86_400_000);
+    const rawStart = (req.query.startDate ?? req.query.from) as string | undefined;
+    const rawEnd = (req.query.endDate ?? req.query.to) as string | undefined;
+    const from = rawStart
+      ? new Date(rawStart)
+      : new Date(Date.now() - 14 * 86_400_000);
+    const to = rawEnd
+      ? new Date(rawEnd)
+      : new Date(Date.now() + 14 * 86_400_000);
 
     const db = getTenantClient(req.tenantDbUrl!);
     const isCarkeeper = req.auth?.role === 'carkeeper' || (req.auth?.roles as string[] | undefined)?.includes('carkeeper');

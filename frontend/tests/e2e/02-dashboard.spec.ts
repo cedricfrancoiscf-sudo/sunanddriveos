@@ -25,12 +25,12 @@ test('Dashboard — Graphique occupation visible', async ({ page }) => {
 })
 
 test('Dashboard — Alertes CT visibles', async ({ page }) => {
-  await page.waitForSelector('main :text("CT")', { timeout: 25000 })
-  await expect(page.locator('main').getByText(/CT/).first()).toBeVisible({ timeout: 25000 })
+  await page.waitForSelector('main :text("Contrôle technique"), main :text("CT expir"), main :text("CT —")', { timeout: 25000 }).catch(() => {})
+  await expect(page.locator('main').getByText(/Contrôle technique|CT expir|CT —/i).first()).toBeVisible({ timeout: 25000 })
 })
 
 test('Dashboard — Navigation vers alertes', async ({ page }) => {
-  const alerte = page.locator('main').getByRole('link', { name: /CT|Entretien/ }).first()
+  const alerte = page.locator('main').getByRole('link', { name: /Contrôle technique|CT expir|CT —|Entretien/i }).first()
   if (await alerte.isVisible()) {
     await alerte.click()
     await expect(page).not.toHaveURL(/dashboard/)

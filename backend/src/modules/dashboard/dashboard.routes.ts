@@ -154,7 +154,7 @@ router.get('/copilot', async (req: Request, res: Response, next: NextFunction) =
       db.message.count({
         where: { direction: 'inbound', createdAt: { lt: new Date(Date.now() - 12 * 3_600_000) }, rental: { status: { in: ['active', 'booked'] } } },
       }),
-      db.technicalControl.count({ where: { expiryAt: { lte: new Date(Date.now() + 45 * 86_400_000) } } }),
+      db.technicalControl.count({ where: { expiryAt: { lte: new Date(Date.now() + 45 * 86_400_000) }, archived: false } }),
     ]);
 
     const caEncaisse = stats.totalEncaisse;

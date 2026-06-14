@@ -45,7 +45,7 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
       }),
       db.vehicle.findMany({ where: { isActive: true }, select: { id: true, healthScore: true } }),
       db.maintenance.count({ where: { nextServiceDate: { not: null, lte: now } } }),
-      db.technicalControl.count({ where: { expiryAt: { gte: now, lte: thirtyDaysFromNow } } }),
+      db.technicalControl.count({ where: { expiryAt: { gte: now, lte: thirtyDaysFromNow }, archived: false } }),
     ]);
 
     const safe = (v: number | null | undefined): number => Math.max(0, v ?? 0);

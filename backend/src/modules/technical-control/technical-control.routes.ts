@@ -37,7 +37,7 @@ router.get('/expiring', async (req: Request, res: Response, next: NextFunction) 
     const db = getTenantClient(req.tenantDbUrl!);
     const threshold = new Date(Date.now() + 60 * 86_400_000);
     const controls = await db.technicalControl.findMany({
-      where: { expiryAt: { lte: threshold }, vehicle: { isActive: true } },
+      where: { expiryAt: { lte: threshold }, vehicle: { isActive: true }, archived: false },
       include: { vehicle: { select: { id: true, make: true, model: true, licensePlate: true } } },
       orderBy: { expiryAt: 'asc' },
     });
@@ -57,6 +57,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         expiryAt: new Date(body.data.expiryAt),
         points: (body.data.points as never) ?? undefined,
       },
+    });
+
+    // Archiver l'ancien CT actif du même véhicule
+    await db.technicalControl.updateMany({
+      where: { vehicleId: body.data.vehicleId, archived: false, id: { not: control.id } },
+      data: { archived: true },
     });
 
     // Notifier admins + carkeepers du véhicule (fire-and-forget)

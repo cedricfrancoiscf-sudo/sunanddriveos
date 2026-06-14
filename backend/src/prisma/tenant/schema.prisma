@@ -324,6 +324,7 @@ model TechnicalControl {
   center      String?
   cost        Float?
   documentUrl String?
+  archived    Boolean     @default(false)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 

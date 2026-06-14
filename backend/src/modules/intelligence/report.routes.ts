@@ -64,7 +64,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
                 vehicle: { select: { make: true, model: true, licensePlate: true } } },
     }),
     db.technicalControl.findMany({
-      where: { expiryAt: { lte: new Date(Date.now() + 90 * 86_400_000) } },
+      where: { expiryAt: { lte: new Date(Date.now() + 90 * 86_400_000) }, archived: false },
       select: { vehicleId: true, expiryAt: true, result: true, cost: true,
                 vehicle: { select: { make: true, model: true, licensePlate: true } } },
     }),
@@ -339,7 +339,7 @@ async function collectMonthlyData(db: ReturnType<typeof getTenantClient>, monthS
       },
     }),
     db.technicalControl.findMany({
-      where: { expiryAt: { lte: new Date(Date.now() + 90 * 86_400_000) } },
+      where: { expiryAt: { lte: new Date(Date.now() + 90 * 86_400_000) }, archived: false },
       select: { expiryAt: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
     }),
     db.carSeatRequest.findMany({

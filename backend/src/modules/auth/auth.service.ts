@@ -14,6 +14,7 @@ export interface LoginResult {
     name: string;
     email: string;
     role?: string;
+    roles?: string[];
     isSuperAdmin?: boolean;
     plan?: string;
     trialEndsAt?: string | null;
@@ -57,14 +58,14 @@ export async function loginUser(
   const hasActiveSubscription = !!company?.stripeSubscriptionId;
 
   const token = jwt.sign(
-    { userId: user.id, tenantSlug, role: user.role, plan, trialEndsAt, hasActiveSubscription },
+    { userId: user.id, tenantSlug, role: user.role, roles: user.roles, plan, trialEndsAt, hasActiveSubscription },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN as never },
   );
 
   return {
     token,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role, plan, trialEndsAt, hasActiveSubscription },
+    user: { id: user.id, name: user.name, email: user.email, role: user.role, roles: user.roles, plan, trialEndsAt, hasActiveSubscription },
   };
 }
 

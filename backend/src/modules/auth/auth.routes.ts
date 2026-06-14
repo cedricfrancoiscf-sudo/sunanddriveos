@@ -85,6 +85,7 @@ router.get(
           name: true,
           email: true,
           role: true,
+          roles: true,
           lastLoginAt: true,
           createdAt: true,
         },

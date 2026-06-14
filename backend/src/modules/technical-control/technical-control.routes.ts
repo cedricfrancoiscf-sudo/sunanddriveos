@@ -1,6 +1,6 @@
 ﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 
@@ -36,8 +36,17 @@ router.get('/expiring', async (req: Request, res: Response, next: NextFunction) 
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const threshold = new Date(Date.now() + 60 * 86_400_000);
+    const isCarkeeper = req.auth?.role === 'carkeeper' || (req.auth?.roles as string[] | undefined)?.includes('carkeeper');
+    const carekeeperIds = isCarkeeper && req.auth?.userId
+      ? await getCarekeeperVehicleIds(db, req.auth.userId)
+      : undefined;
     const controls = await db.technicalControl.findMany({
-      where: { expiryAt: { lte: threshold }, vehicle: { isActive: true }, archived: false },
+      where: {
+        expiryAt: { lte: threshold },
+        vehicle: { isActive: true },
+        archived: false,
+        ...(carekeeperIds ? { vehicleId: { in: carekeeperIds } } : {}),
+      },
       include: { vehicle: { select: { id: true, make: true, model: true, licensePlate: true } } },
       orderBy: { expiryAt: 'asc' },
     });

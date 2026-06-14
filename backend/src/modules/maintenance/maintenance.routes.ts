@@ -26,7 +26,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const vehicleId = req.query.vehicleId as string | undefined;
 
-    if (req.auth?.role === 'carkeeper' && req.auth.userId && !vehicleId) {
+    const isCarkeeper = req.auth?.role === 'carkeeper' || (req.auth?.roles as string[] | undefined)?.includes('carkeeper');
+    if (isCarkeeper && req.auth?.userId && !vehicleId) {
       const vehicleIds = await getCarekeeperVehicleIds(db, req.auth.userId);
       const maintenances = await db.maintenance.findMany({
         where: { vehicleId: { in: vehicleIds } },

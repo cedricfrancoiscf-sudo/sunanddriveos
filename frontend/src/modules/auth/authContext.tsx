@@ -6,6 +6,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role?: string;
+  roles?: string[];
   isSuperAdmin?: boolean;
   plan?: string;
   trialEndsAt?: string | null;

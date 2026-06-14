@@ -62,6 +62,51 @@ function RoleMultiSelectSettings({ userId, currentRoles, onSave, isLastAdmin }: 
     </div>
   );
 }
+function CarekeeperVehiclePanel({ userId, allVehicles }: {
+  userId: string;
+  allVehicles: Array<{ id: string; make: string; model: string; licensePlate: string }>;
+}): React.JSX.Element {
+  const qc = useQueryClient();
+  const { data: assignedIds = [], isLoading } = useQuery({
+    queryKey: ['vehicle-assignments', userId],
+    queryFn: () => api.get<{ vehicleIds: string[] }>(`/users/${userId}/vehicle-assignments`).then(r => r.data.vehicleIds),
+    staleTime: 0,
+  });
+  const [selected, setSelected] = useState<string[]>([]);
+  useEffect(() => { setSelected(assignedIds); }, [assignedIds.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const assignMutation = useMutation({
+    mutationFn: (vehicleIds: string[]) => api.put(`/users/${userId}/vehicle-assignments`, { vehicleIds }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['vehicle-assignments', userId] }),
+  });
+  function toggle(vehicleId: string): void {
+    const next = selected.includes(vehicleId) ? selected.filter(id => id !== vehicleId) : [...selected, vehicleId];
+    setSelected(next);
+    assignMutation.mutate(next);
+  }
+  if (isLoading) return <div className="text-xs text-gray-400 py-2">Chargement...</div>;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-blue-700">Véhicules assignés à ce Car Keeper</p>
+      {allVehicles.length === 0 ? (
+        <p className="text-xs text-gray-400">Aucun véhicule actif</p>
+      ) : (
+        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {allVehicles.map(v => (
+            <label key={v.id} className="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 hover:bg-white/80 select-none">
+              <input type="checkbox" checked={selected.includes(v.id)} onChange={() => toggle(v.id)}
+                className="rounded accent-[#01696e]" />
+              <span className="text-xs text-gray-700 truncate">{v.make} {v.model}</span>
+              <span className="text-[11px] font-mono text-gray-400 shrink-0">{v.licensePlate}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      {assignMutation.isPending && <p className="text-[11px] text-gray-400">Enregistrement...</p>}
+      {assignMutation.isSuccess && <p className="text-[11px] text-green-600">Sauvegardé ✓</p>}
+    </div>
+  );
+}
+
 function UsersSection(): React.JSX.Element {
   const qc = useQueryClient();
   const [showInvite, setShowInvite] = useState(false);
@@ -69,9 +114,15 @@ function UsersSection(): React.JSX.Element {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [vehiclePanel, setVehiclePanel] = useState<string | null>(null);
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users'],
     queryFn: () => api.get<{ users: UserItem[] }>('/users').then(r => r.data.users),
+    staleTime: 5 * 60_000,
+  });
+  const { data: allVehicles = [] } = useQuery<Array<{ id: string; make: string; model: string; licensePlate: string }>>({
+    queryKey: ['vehicles-active'],
+    queryFn: () => api.get<{ vehicles: Array<{ id: string; make: string; model: string; licensePlate: string; isActive: boolean }> }>('/vehicles').then(r => r.data.vehicles.filter(v => v.isActive)),
     staleTime: 5 * 60_000,
   });
   const inviteMutation = useMutation({
@@ -182,36 +233,56 @@ function UsersSection(): React.JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {users.map(u => (
-                <tr key={u.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                  <td className="px-3 py-2.5"><p className="font-medium text-gray-900 text-xs">{u.name}</p><p className="text-[11px] text-gray-400">{u.email}</p></td>
-                  <td className="px-3 py-2.5">
-                    <RoleMultiSelectSettings userId={u.id} currentRoles={u.roles?.length ? u.roles : [u.role]}
-                      onSave={handleSaveRoles} isLastAdmin={isLastAdminFn(u.id)} />
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {(u.roles?.length ? u.roles : [u.role]).map(r => (
-                        <span key={r} className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">{ROLE_LBL[r] ?? r}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="hidden px-3 py-2.5 text-[11px] text-gray-400 sm:table-cell">
-                    {u.lastLoginAt ? format(new Date(u.lastLoginAt), 'dd/MM/yyyy HH:mm', { locale: fr }) : 'Jamais'}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <button type="button" onClick={() => updateMutation.mutate({ id: u.id, isActive: !u.isActive })}
-                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition ${u.isActive ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${u.isActive ? 'bg-green-500' : 'bg-gray-400'}`} />
-                      {u.isActive ? 'Actif' : 'Inactif'}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <button type="button" onClick={() => { if (confirm(`Supprimer ${u.name} ?`)) deleteMutation.mutate(u.id); }}
-                      className="rounded p-1 text-gray-300 hover:text-red-500 transition" title="Supprimer">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {users.map(u => {
+                const uRoles = u.roles?.length ? u.roles : [u.role];
+                const isCarkeeper = uRoles.includes('carkeeper');
+                return (
+                  <React.Fragment key={u.id}>
+                    <tr className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="px-3 py-2.5"><p className="font-medium text-gray-900 text-xs">{u.name}</p><p className="text-[11px] text-gray-400">{u.email}</p></td>
+                      <td className="px-3 py-2.5">
+                        <RoleMultiSelectSettings userId={u.id} currentRoles={uRoles}
+                          onSave={handleSaveRoles} isLastAdmin={isLastAdminFn(u.id)} />
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {uRoles.map(r => (
+                            <span key={r} className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">{ROLE_LBL[r] ?? r}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="hidden px-3 py-2.5 text-[11px] text-gray-400 sm:table-cell">
+                        {u.lastLoginAt ? format(new Date(u.lastLoginAt), 'dd/MM/yyyy HH:mm', { locale: fr }) : 'Jamais'}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <button type="button" onClick={() => updateMutation.mutate({ id: u.id, isActive: !u.isActive })}
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition ${u.isActive ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${u.isActive ? 'bg-green-500' : 'bg-gray-400'}`} />
+                          {u.isActive ? 'Actif' : 'Inactif'}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {isCarkeeper && (
+                          <button type="button" onClick={() => setVehiclePanel(p => p === u.id ? null : u.id)}
+                            className={`mr-1 rounded p-1 transition ${vehiclePanel === u.id ? 'text-blue-600' : 'text-blue-300 hover:text-blue-500'}`}
+                            title="Véhicules assignés">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2 2h8l2-2z" /></svg>
+                          </button>
+                        )}
+                        <button type="button" onClick={() => { if (confirm(`Supprimer ${u.name} ?`)) deleteMutation.mutate(u.id); }}
+                          className="rounded p-1 text-gray-300 hover:text-red-500 transition" title="Supprimer">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </td>
+                    </tr>
+                    {vehiclePanel === u.id && (
+                      <tr className="border-b border-gray-100 bg-blue-50/40">
+                        <td colSpan={5} className="px-4 py-3">
+                          <CarekeeperVehiclePanel userId={u.id} allVehicles={allVehicles} />
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

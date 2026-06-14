@@ -28,7 +28,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       : new Date(from.getTime() + 30 * 86_400_000);
 
     const db = getTenantClient(req.tenantDbUrl!);
-    const vehicleIds = req.auth?.role === 'carkeeper' && req.auth.userId
+    const isCarkeeper = req.auth?.role === 'carkeeper' || (req.auth?.roles as string[] | undefined)?.includes('carkeeper');
+    const vehicleIds = isCarkeeper && req.auth?.userId
       ? await getCarekeeperVehicleIds(db, req.auth.userId)
       : undefined;
 

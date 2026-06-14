@@ -176,6 +176,34 @@ router.put('/:id/roles', async (req: Request, res: Response, next: NextFunction)
   } catch (err: unknown) { next(err); }
 });
 
+router.get('/:id/vehicle-assignments', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const assignments = await db.vehicleCarkeeper.findMany({
+      where: { userId: req.params.id as string },
+      select: { vehicleId: true },
+    });
+    res.json({ vehicleIds: assignments.map(a => a.vehicleId) });
+  } catch (err: unknown) { next(err); }
+});
+
+router.put('/:id/vehicle-assignments', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({ vehicleIds: z.array(z.string()) }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const userId = req.params.id as string;
+    await db.vehicleCarkeeper.deleteMany({ where: { userId } });
+    if (body.data.vehicleIds.length > 0) {
+      await db.vehicleCarkeeper.createMany({
+        data: body.data.vehicleIds.map(vehicleId => ({ vehicleId, userId })),
+        skipDuplicates: true,
+      });
+    }
+    res.json({ success: true, vehicleIds: body.data.vehicleIds });
+  } catch (err: unknown) { next(err); }
+});
+
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = z.object({

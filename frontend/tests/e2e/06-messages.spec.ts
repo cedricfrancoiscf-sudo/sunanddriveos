@@ -18,7 +18,8 @@ test('Messages — Pas de bouton Suggérer', async ({ page }) => {
 
 test('Messages — Clic conversation → détail', async ({ page }) => {
   await page.waitForLoadState('domcontentloaded')
-  const conv = page.locator('main').getByRole('button').first()
+  // Les conversations sont dans div.overflow-hidden, les boutons de filtres (tri, reset) sont en dehors
+  const conv = page.locator('main div.overflow-hidden button').first()
   if (await conv.isVisible()) {
     await conv.click()
     await page.waitForURL(/\/messages\//, { timeout: 15000 })

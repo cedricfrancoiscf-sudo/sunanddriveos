@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test'
-import { existsSync } from 'fs'
 import { seedTestData, loginAsCarkeeper, TENANT_SLUG } from './helpers/auth'
 
 const CARKEEPER_AUTH_FILE = 'tests/e2e/.auth/carkeeper.json'
@@ -13,13 +12,12 @@ test.describe('Rôle Carkeeper — restrictions accès', () => {
       console.log('[29] seedTestData impossible (token absent?) :', e)
     })
 
-    if (!existsSync(CARKEEPER_AUTH_FILE)) {
-      const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } })
-      const page = await ctx.newPage()
-      await loginAsCarkeeper(page)
-      await ctx.storageState({ path: CARKEEPER_AUTH_FILE })
-      await ctx.close()
-    }
+    // Toujours forcer un nouveau login pour éviter les sessions expirées
+    const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+    const page = await ctx.newPage()
+    await loginAsCarkeeper(page)
+    await ctx.storageState({ path: CARKEEPER_AUTH_FILE })
+    await ctx.close()
   })
 
   test('Carkeeper — login réussi', async ({ page }) => {

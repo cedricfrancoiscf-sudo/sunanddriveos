@@ -510,6 +510,12 @@ export default function VehicleDetailPage(): React.JSX.Element {
             <InfoRow label="Couleur" value={vehicle.color} />
             <InfoRow label="Kilométrage" value={`${vehicle.currentMileage.toLocaleString('fr-FR')} km`} />
             <InfoRow label="Statut" value={vehicle.isActive ? 'Actif' : 'Inactif'} />
+            {vehicle.deliveryPointName && (
+              <InfoRow
+                label="Point de livraison"
+                value={vehicle.deliveryPostalCode ? `${vehicle.deliveryPointName} — ${vehicle.deliveryPostalCode}` : vehicle.deliveryPointName}
+              />
+            )}
             {vehicle.getaroundId && <InfoRow label="ID Getaround" value={vehicle.getaroundId} />}
             {vehicle.getaroundAccount && <InfoRow label="Compte Getaround" value={vehicle.getaroundAccount.name} />}
             {vehicle.thirdPartyOwner && <InfoRow label="Propriétaire tiers" value={vehicle.thirdPartyOwner.name} />}

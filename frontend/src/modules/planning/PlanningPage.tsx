@@ -216,7 +216,7 @@ export default function PlanningPage(): React.JSX.Element {
   const vehiclesByZone = useMemo(() => {
     const map: Record<string, Vehicle[]> = {};
     for (const v of vehicles) {
-      const zone = v.deliveryPointName ?? 'Sans point de livraison';
+      const zone = v.deliveryPointName ?? 'Non assigné';
       if (!map[zone]) map[zone] = [];
       map[zone].push(v);
     }

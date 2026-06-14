@@ -354,9 +354,7 @@ export default function VehicleListPage(): React.JSX.Element {
           <div className="space-y-6">
             {sorted.map(([point, list]) => (
               <div key={point || '_none'}>
-                {point && (
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{point}</p>
-                )}
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{point || 'Non assigné'}</p>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {list.map((v) => <VehicleCard key={v.id} vehicle={v} />)}
                 </div>
@@ -383,9 +381,7 @@ export default function VehicleListPage(): React.JSX.Element {
           <div className="space-y-4">
             {sorted.map(([point, list]) => (
               <div key={point || '_none'}>
-                {point && (
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{point}</p>
-                )}
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{point || 'Non assigné'}</p>
                 <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                   <table className="w-full text-left">
                     <thead className="border-b border-gray-200 bg-gray-50">

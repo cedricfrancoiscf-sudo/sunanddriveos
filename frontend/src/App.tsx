@@ -7,7 +7,8 @@ import PwaInstallBanner from './components/PwaInstallBanner';
 import { useAuth } from './hooks/useAuth';
 
 function CarkeeperBlockedRoute({ children }: { children: React.ReactNode }): React.JSX.Element {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <></>;
   const roles = user?.roles ?? (user?.role ? [user.role] : []);
   const isCarkeeperOnly = roles.includes('carkeeper') && !roles.includes('admin') && !roles.includes('exploitation') && !user?.isSuperAdmin;
   if (isCarkeeperOnly) return <Navigate to="/dashboard" replace />;

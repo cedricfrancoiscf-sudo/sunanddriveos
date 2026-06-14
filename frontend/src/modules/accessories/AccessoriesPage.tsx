@@ -580,7 +580,7 @@ function CarSeatsTab(): React.JSX.Element {
                     </div>
                     <div className="mt-1.5 flex items-center gap-3">
                       <StockBar seat={s} />
-                      <span className="shrink-0 text-xs text-gray-500">
+                      <span data-testid="stock-disponible" className="shrink-0 text-xs text-gray-500">
                         {s.availableStock} dispo / {s.totalStock}
                         {s.outOfService > 0 && <span className="ml-1 text-orange-500">· {s.outOfService} HS</span>}
                       </span>
@@ -607,7 +607,7 @@ function CarSeatsTab(): React.JSX.Element {
                         Remise en service
                       </button>
                     )}
-                    <button type="button" onClick={() => startEdit(s)} className="p-1.5 text-gray-400 hover:text-[#01696e]">
+                    <button type="button" data-testid="btn-modifier-siege" onClick={() => startEdit(s)} className="p-1.5 text-gray-400 hover:text-[#01696e]">
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                     </button>
                     <button type="button"

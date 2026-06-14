@@ -477,7 +477,7 @@ export default function ReportPage(): React.JSX.Element {
 
         {/* État : génération en cours */}
         {isGenerating && !reportData && !monthlyData && (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div data-testid="loading-report" className="flex flex-col items-center justify-center py-24 text-center">
             <div className="mb-6 h-12 w-12 animate-spin rounded-full border-4 border-t-transparent"
               style={{ borderColor: theme.primaryColor, borderTopColor: 'transparent' }} />
             <p className="text-base font-medium text-gray-700">Génération en cours...</p>

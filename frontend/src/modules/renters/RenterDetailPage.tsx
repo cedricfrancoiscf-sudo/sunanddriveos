@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../utils/api';
+import { useAuth } from '../../hooks/useAuth';
 
 interface RentalHistory {
   id: string;
@@ -63,8 +64,12 @@ export default function RenterDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [showBlacklistModal, setShowBlacklistModal] = useState(false);
   const [blacklistReason, setBlacklistReason] = useState('');
+
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const isCarkeeperOnly = userRoles.includes('carkeeper') && !userRoles.includes('admin') && !userRoles.includes('exploitation') && !user?.isSuperAdmin;
 
   const { data, isLoading, isError } = useQuery<RenterProfile>({
     queryKey: ['renter-profile', id],
@@ -172,21 +177,23 @@ export default function RenterDetailPage(): React.JSX.Element {
           </div>
           <p className="text-xs text-gray-400 mt-1">ID Getaround : {data.driverGetaroundId}</p>
         </div>
-        <div>
-          {data.isBlacklisted ? (
-            <button type="button"
-              onClick={() => { if (confirm(`Retirer ${data.driverName} de la liste noire ?`)) unblacklistMut.mutate(); }}
-              disabled={unblacklistMut.isPending}
-              className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
-              {unblacklistMut.isPending ? '…' : 'Retirer du blacklist'}
-            </button>
-          ) : (
-            <button type="button" onClick={() => setShowBlacklistModal(true)}
-              className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-100 transition">
-              ⛔ Blacklister
-            </button>
-          )}
-        </div>
+        {!isCarkeeperOnly && (
+          <div>
+            {data.isBlacklisted ? (
+              <button type="button"
+                onClick={() => { if (confirm(`Retirer ${data.driverName} de la liste noire ?`)) unblacklistMut.mutate(); }}
+                disabled={unblacklistMut.isPending}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+                {unblacklistMut.isPending ? '…' : 'Retirer du blacklist'}
+              </button>
+            ) : (
+              <button type="button" onClick={() => setShowBlacklistModal(true)}
+                className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-100 transition">
+                ⛔ Blacklister
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Raison blacklist */}

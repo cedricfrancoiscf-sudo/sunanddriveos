@@ -1303,9 +1303,7 @@ test.describe('Monkey test admin — exhaustif', () => {
       await page.goto('/settings')
       await page.waitForLoadState('domcontentloaded')
       await page.waitForTimeout(1500)
-      const reInviter = /Inviter|\+\s*Inviter/i
-      const inviteBtn = page.getByRole('button', { name: reInviter }).first()
-        .or(page.getByRole('button', { name: /Ajouter.*compte|Nouveau.*compte/i }).first())
+      const inviteBtn = page.getByTestId('btn-inviter')
       if (!await inviteBtn.isVisible({ timeout: 8000 })) {
         rWarn('Paramètres — bouton Inviter', 'Non trouvé')
         return
@@ -1369,8 +1367,7 @@ test.describe('Monkey test admin — exhaustif', () => {
       await page.waitForLoadState('domcontentloaded')
       await page.waitForTimeout(1500)
       // Bouton voiture dans la liste des utilisateurs
-      const carBtn = page.locator('button[aria-label*="véhicule"], button[aria-label*="vehicle"], button[title*="véhicule"]').first()
-        .or(page.locator('button').filter({ hasText: /🚗|Véhicule|Assigner/i }).first())
+      const carBtn = page.getByTestId('btn-assign-vehicles').first()
       if (!await carBtn.isVisible({ timeout: 5000 })) {
         rWarn('Paramètres — assignation carkeeper', 'Bouton assignation non trouvé')
         return

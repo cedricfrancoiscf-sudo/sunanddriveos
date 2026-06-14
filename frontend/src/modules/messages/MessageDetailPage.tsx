@@ -181,8 +181,9 @@ export default function MessageDetailPage(): React.JSX.Element {
                   </label>
                 </div>
                 <textarea
-                  value={replyContent || (aiDraft?.content ?? message.content)}
+                  value={replyContent || (aiDraft?.content ?? '')}
                   onChange={(e) => setReplyContent(e.target.value)}
+                  placeholder="L'IA génère une suggestion..."
                   rows={4}
                   readOnly={isApproved}
                   className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20 read-only:bg-gray-50 read-only:text-gray-500"

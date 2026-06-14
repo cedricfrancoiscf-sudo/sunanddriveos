@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, addDays, startOfWeek, parseISO, isSameDay, differenceInMinutes, startOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
+import { useAuth } from '../../hooks/useAuth';
 
 type ViewMode = 7 | 14 | 30;
 
@@ -161,6 +162,9 @@ export default function PlanningPage(): React.JSX.Element {
   const navigate = useNavigate();
   useEffect(() => { void trackEvent('planning', 'view'); }, []);
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const isCarkeeperOnly = userRoles.includes('carkeeper') && !userRoles.includes('admin') && !userRoles.includes('exploitation') && !user?.isSuperAdmin;
   const [viewMode, setViewMode] = useState<ViewMode>(14);
   const [periodStart, setPeriodStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const periodEnd = addDays(periodStart, viewMode - 1);
@@ -217,7 +221,17 @@ export default function PlanningPage(): React.JSX.Element {
     [periodStart, viewMode],
   );
 
-  const vehicles = data?.vehicles ?? [];
+  const { data: assignmentData } = useQuery<{ vehicleIds: string[] }>({
+    queryKey: ['vehicle-assignments', user?.id],
+    queryFn: () => api.get<{ vehicleIds: string[] }>(`/users/${user!.id}/vehicle-assignments`).then(r => r.data),
+    enabled: isCarkeeperOnly && !!user?.id,
+    staleTime: 5 * 60_000,
+  });
+
+  const allVehicles = data?.vehicles ?? [];
+  const vehicles = isCarkeeperOnly && assignmentData
+    ? allVehicles.filter(v => assignmentData.vehicleIds.includes(v.id))
+    : allVehicles;
   const rentals = data?.rentals ?? [];
   const blockings = data?.blockings ?? [];
 

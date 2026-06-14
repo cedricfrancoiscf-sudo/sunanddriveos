@@ -165,7 +165,7 @@ function UsersSection(): React.JSX.Element {
           <h2 className="text-sm font-semibold text-gray-900">Utilisateurs &amp; rôles</h2>
           <p className="mt-0.5 text-xs text-gray-400">{users.length} membre{users.length !== 1 ? 's' : ''}</p>
         </div>
-        <button type="button" onClick={() => { setShowInvite(true); setInviteLink(null); }}
+        <button type="button" data-testid="btn-inviter" onClick={() => { setShowInvite(true); setInviteLink(null); }}
           className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-white" style={{ backgroundColor: '#01696e' }}>
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
           Inviter
@@ -261,7 +261,7 @@ function UsersSection(): React.JSX.Element {
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {isCarkeeper && (
-                          <button type="button" onClick={() => setVehiclePanel(p => p === u.id ? null : u.id)}
+                          <button type="button" data-testid="btn-assign-vehicles" onClick={() => setVehiclePanel(p => p === u.id ? null : u.id)}
                             className={`mr-1 rounded p-1 transition ${vehiclePanel === u.id ? 'text-blue-600' : 'text-blue-300 hover:text-blue-500'}`}
                             title="Véhicules assignés">
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2 2h8l2-2z" /></svg>

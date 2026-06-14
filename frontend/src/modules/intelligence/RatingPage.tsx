@@ -164,7 +164,9 @@ export default function RatingPage(): React.JSX.Element {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Note Getaround *</label>
-              <StarInput value={rating} onChange={setRating} />
+              <div data-testid="input-note-getaround">
+                <StarInput value={rating} onChange={setRating} />
+              </div>
               {rating > 0 && <p className="mt-0.5 text-xs text-gray-500">{rating}/5</p>}
             </div>
             <div>

@@ -114,12 +114,13 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
     queryFn: () => api.get<{ state: { isRunning: boolean; error: string | null; progress: number }; plan: string }>('/sync/status').then(r => r.data),
     refetchInterval: 5_000,
     staleTime: 4_000,
-    enabled: !!user && user.role !== 'carkeeper',
+    enabled: !!user,
   });
   const syncStatus = syncData?.state;
   const isStarterPlan = !syncData || syncData.plan === 'starter';
 
-  const isCarkeeper = user?.role === 'carkeeper';
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const isCarkeeper = userRoles.includes('carkeeper') && !userRoles.includes('admin') && !userRoles.includes('exploitation') && !user?.isSuperAdmin;
   const isAdmin = user?.role === 'admin' || user?.isSuperAdmin;
   const isPro = user?.plan === 'pro' || user?.plan === 'enterprise' || user?.isSuperAdmin;
 
@@ -342,7 +343,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
       )}
 
       {/* Sync indicator */}
-      {user?.role !== 'carkeeper' && syncStatus && (syncStatus.isRunning || syncStatus.error != null) && (
+      {!isCarkeeper && syncStatus && (syncStatus.isRunning || syncStatus.error != null) && (
         <div className="shrink-0 px-4 pb-2">
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <span className={`h-2 w-2 rounded-full ${syncStatus.isRunning ? 'animate-pulse bg-orange-400' : 'bg-red-500'}`} />

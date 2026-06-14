@@ -44,6 +44,19 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const db = getTenantClient(req.tenantDbUrl!);
 
+    // Vérifier que la location est active/réservée et non terminée
+    if (body.data.rentalId) {
+      const rental = await db.rental.findUnique({
+        where: { id: body.data.rentalId },
+        select: { status: true, endAt: true },
+      });
+      if (rental && (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date())) {
+        console.log(`[CarSeatRequest] Demande siège ignorée — location passée (rentalId ${body.data.rentalId}, status=${rental.status})`);
+        res.status(422).json({ error: 'Demande ignorée — la location est terminée ou passée' });
+        return;
+      }
+    }
+
     // Trouver automatiquement un siège adapté au poids si fourni
     let carSeatId: string | undefined;
     if (body.data.childWeightKg) {

@@ -34,14 +34,23 @@ router.post('/analyze', async (req: Request, res: Response, next: NextFunction) 
     // Crée automatiquement une demande de siège auto si détectée
     let carSeatRequestId: string | undefined;
     if ((analysis as { isCarSeatRequest?: boolean }).isCarSeatRequest && body.data.vehicleId && body.data.rentalId) {
-      const existing = await db.carSeatRequest.findFirst({
-        where: { vehicleId: body.data.vehicleId, rentalId: body.data.rentalId, status: 'pending' },
+      // Vérifier que la location est encore active/réservée avant de créer
+      const rentalCheck = await db.rental.findUnique({
+        where: { id: body.data.rentalId },
+        select: { status: true, endAt: true },
       });
-      if (!existing) {
-        const csr = await db.carSeatRequest.create({
-          data: { vehicleId: body.data.vehicleId, rentalId: body.data.rentalId, status: 'pending' },
+      if (rentalCheck && ['booked', 'active'].includes(rentalCheck.status) && rentalCheck.endAt > new Date()) {
+        const existing = await db.carSeatRequest.findFirst({
+          where: { vehicleId: body.data.vehicleId, rentalId: body.data.rentalId, status: 'pending' },
         });
-        carSeatRequestId = csr.id;
+        if (!existing) {
+          const csr = await db.carSeatRequest.create({
+            data: { vehicleId: body.data.vehicleId, rentalId: body.data.rentalId, status: 'pending' },
+          });
+          carSeatRequestId = csr.id;
+        }
+      } else if (rentalCheck) {
+        console.log(`[ai/analyze] Demande siège ignorée — location passée (rentalId ${body.data.rentalId}, status=${rentalCheck.status})`);
       }
     }
 

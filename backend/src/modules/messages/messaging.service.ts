@@ -26,6 +26,7 @@ export type RentalForMessaging = {
   getaroundId: string | null;
   startAt: Date;
   endAt: Date;
+  status: string;
   vehicle: { make: string; model: string; licensePlate: string; parkingZone: string | null; deliveryPointName: string | null };
 };
 
@@ -175,6 +176,11 @@ Locataire : ${rental.driverName}`,
   // 4. Adapter la réponse selon le type (siège auto + stock)
   let suggestedReply = analysis.suggestedReply;
   if (analysis.type === 'car_seat') {
+    // Ignorer les demandes de siège sur locations terminées ou passées
+    if (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date()) {
+      console.log(`[Messaging] Demande siège ignorée — location passée (rental ${rental.id}, status=${rental.status})`);
+      return;
+    }
     const existing = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
     if (!existing) {
       const availableSeat = await db.carSeat.findFirst({ where: { isActive: true, availableStock: { gt: 0 } } });

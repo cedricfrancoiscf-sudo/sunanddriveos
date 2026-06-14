@@ -239,8 +239,8 @@ async function runProactiveMessaging(): Promise<void> {
     for (const company of companies) {
       try {
         const db = getTenantClient(company.tenantDbUrl);
-        const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
         const cutoff35m = new Date(Date.now() - 35 * 60_000);
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 3_600_000);
 
         const accounts = await db.getaroundAccount.findMany({
           where: { isActive: true },
@@ -253,10 +253,10 @@ async function runProactiveMessaging(): Promise<void> {
             direction: 'inbound',
             createdAt: { gte: cutoff35m },
             rental: {
-              OR: [
-                { status: { in: ['active', 'booked'] } },
-                { status: 'completed', endAt: { gte: sevenDaysAgo } },
-              ],
+              // Traiter uniquement les locations actives/réservées démarrées dans les 24h
+              // Les locations passées (completed) sont ignorées pour éviter les faux positifs
+              status: { in: ['booked', 'active'] },
+              startAt: { gte: twentyFourHoursAgo },
             },
           },
           select: {
@@ -264,7 +264,7 @@ async function runProactiveMessaging(): Promise<void> {
             rental: {
               select: {
                 id: true, vehicleId: true, driverName: true,
-                driverGetaroundId: true, getaroundId: true, startAt: true, endAt: true,
+                driverGetaroundId: true, getaroundId: true, startAt: true, endAt: true, status: true,
                 vehicle: {
                   select: {
                     make: true, model: true, licensePlate: true,
@@ -290,7 +290,7 @@ async function runProactiveMessaging(): Promise<void> {
             const r = msg.rental;
             const rentalData: RentalForMessaging = {
               id: r.id, vehicleId: r.vehicleId, driverName: r.driverName,
-              driverGetaroundId: r.driverGetaroundId, getaroundId: r.getaroundId, startAt: r.startAt, endAt: r.endAt,
+              driverGetaroundId: r.driverGetaroundId, getaroundId: r.getaroundId, startAt: r.startAt, endAt: r.endAt, status: r.status,
               vehicle: { make: r.vehicle.make, model: r.vehicle.model, licensePlate: r.vehicle.licensePlate, parkingZone: r.vehicle.parkingZone, deliveryPointName: r.vehicle.deliveryPointName },
             };
             await analyzeAndProcessMessage({ id: msg.id, content: msg.content }, rentalData, db, ga);
@@ -324,8 +324,8 @@ async function runMorningRebalayage(): Promise<void> {
     for (const company of companies) {
       try {
         const db = getTenantClient(company.tenantDbUrl);
-        const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000);
         const cutoff30m = new Date(Date.now() - 30 * 60_000);
+        const twentyFourHoursAgo2 = new Date(Date.now() - 24 * 3_600_000);
 
         const accounts = await db.getaroundAccount.findMany({
           where: { isActive: true },
@@ -335,14 +335,13 @@ async function runMorningRebalayage(): Promise<void> {
 
         const rentals = await db.rental.findMany({
           where: {
-            OR: [
-              { status: { in: ['active', 'booked'] } },
-              { status: 'completed', endAt: { gte: sevenDaysAgo } },
-            ],
+            // Uniquement les locations actives/réservées démarrées dans les 24h
+            status: { in: ['booked', 'active'] },
+            startAt: { gte: twentyFourHoursAgo2 },
           },
           select: {
             id: true, vehicleId: true, driverName: true,
-            driverGetaroundId: true, getaroundId: true, startAt: true, endAt: true,
+            driverGetaroundId: true, getaroundId: true, startAt: true, endAt: true, status: true,
             vehicle: {
               select: {
                 make: true, model: true, licensePlate: true,
@@ -375,7 +374,7 @@ async function runMorningRebalayage(): Promise<void> {
 
           const rentalData: RentalForMessaging = {
             id: rental.id, vehicleId: rental.vehicleId, driverName: rental.driverName,
-            driverGetaroundId: rental.driverGetaroundId, getaroundId: rental.getaroundId, startAt: rental.startAt, endAt: rental.endAt,
+            driverGetaroundId: rental.driverGetaroundId, getaroundId: rental.getaroundId, startAt: rental.startAt, endAt: rental.endAt, status: rental.status,
             vehicle: { make: rental.vehicle.make, model: rental.vehicle.model, licensePlate: rental.vehicle.licensePlate, parkingZone: rental.vehicle.parkingZone, deliveryPointName: rental.vehicle.deliveryPointName },
           };
           for (const msg of inboundNoReply) {

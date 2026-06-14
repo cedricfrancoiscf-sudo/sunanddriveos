@@ -518,6 +518,8 @@ async function syncMessagesForWindow(
       vehicleId: true,
       driverName: true,
       startAt: true,
+      endAt: true,
+      status: true,
       vehicle: { select: { make: true, model: true, licensePlate: true } },
     },
   });
@@ -564,6 +566,11 @@ async function syncMessagesForWindow(
               try {
                 const analysis = await analyzeMessage(msg.content);
                 if (!analysis.isCarSeatRequest) return;
+                // Ignorer les locations passées ou terminées
+                if (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date()) {
+                  console.log(`[CarSeatDetect] Demande siège ignorée — location passée (rental ${rental.id}, status=${rental.status})`);
+                  return;
+                }
                 const existingReq = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
                 if (existingReq) return;
                 await db.carSeatRequest.create({
@@ -809,6 +816,7 @@ async function autoReplyToMessage(
     driverName: string;
     startAt: Date;
     endAt: Date;
+    status: string;
     vehicleId: string;
     vehicle: {
       make: string; model: string; licensePlate: string;
@@ -876,31 +884,36 @@ async function autoReplyToMessage(
   }
 
   if (analysis.isCarSeatRequest) {
-    const existing = await db.carSeatRequest.findFirst({
-      where: { rentalId: rental.id, status: 'pending' },
-    });
-    if (!existing) {
-      await db.carSeatRequest.create({
-        data: { rentalId: rental.id, vehicleId: rental.vehicleId, status: 'pending' },
+    // Ignorer les locations passées ou terminées
+    if (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date()) {
+      console.log(`[autoReply] Demande siège ignorée — location passée (rental ${rental.id}, status=${rental.status})`);
+    } else {
+      const existing = await db.carSeatRequest.findFirst({
+        where: { rentalId: rental.id, status: 'pending' },
+      });
+      if (!existing) {
+        await db.carSeatRequest.create({
+          data: { rentalId: rental.id, vehicleId: rental.vehicleId, status: 'pending' },
+        });
+      }
+      const seatCarkeepers = await db.carSeat.findMany({
+        where: { isActive: true, carkeeperId: { not: null } },
+        select: { carkeeperId: true },
+      });
+      const seatCarkeeperIds = seatCarkeepers.map(s => s.carkeeperId).filter((id): id is string => id !== null);
+      const carSeatRecipientIds = [...new Set([...admins.map(a => a.id), ...seatCarkeeperIds])];
+      await db.notification.createMany({
+        data: carSeatRecipientIds.map(userId => ({
+          userId,
+          type: 'car_seat_request',
+          title: '🪑 Demande de siège auto',
+          body: `${rental.driverName} demande un siège auto`,
+          relatedEntityId: rental.id,
+          targetUrl: `/rentals/${rental.id}`,
+        })),
+        skipDuplicates: true,
       });
     }
-    const seatCarkeepers = await db.carSeat.findMany({
-      where: { isActive: true, carkeeperId: { not: null } },
-      select: { carkeeperId: true },
-    });
-    const seatCarkeeperIds = seatCarkeepers.map(s => s.carkeeperId).filter((id): id is string => id !== null);
-    const carSeatRecipientIds = [...new Set([...admins.map(a => a.id), ...seatCarkeeperIds])];
-    await db.notification.createMany({
-      data: carSeatRecipientIds.map(userId => ({
-        userId,
-        type: 'car_seat_request',
-        title: '🪑 Demande de siège auto',
-        body: `${rental.driverName} demande un siège auto`,
-        relatedEntityId: rental.id,
-        targetUrl: `/rentals/${rental.id}`,
-      })),
-      skipDuplicates: true,
-    });
   }
 
   if (analysis.isAccessoryRequest && analysis.detectedAccessory) {
@@ -1178,13 +1191,18 @@ export async function analyzeExistingMessages(db: PrismaClient, tenantSlug = 'de
         if (!existing) {
           const rental = await db.rental.findUnique({
             where: { id: msg.rentalId },
-            select: { vehicleId: true },
+            select: { vehicleId: true, status: true, endAt: true },
           });
           if (rental) {
-            await db.carSeatRequest.create({
-              data: { rentalId: msg.rentalId, vehicleId: rental.vehicleId, status: 'pending' },
-            });
-            carSeatFound++;
+            // Ignorer les locations passées ou terminées
+            if (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date()) {
+              console.log(`[IA] Demande siège ignorée — location passée (rentalId ${msg.rentalId}, status=${rental.status})`);
+            } else {
+              await db.carSeatRequest.create({
+                data: { rentalId: msg.rentalId, vehicleId: rental.vehicleId, status: 'pending' },
+              });
+              carSeatFound++;
+            }
           }
         }
       }

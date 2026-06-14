@@ -487,7 +487,7 @@ router.post('/tenants/:slug/simulate-rental', async (req: Request, res: Response
           const ga = createGetaroundClient(decrypt(account.apiKeyHash));
           const rentalData: RentalForMessaging = {
             id: rental.id, vehicleId: vehicle.id, driverName: 'Test Locataire',
-            driverGetaroundId: null, getaroundId: testGetaroundId, startAt, endAt,
+            driverGetaroundId: null, getaroundId: testGetaroundId, startAt, endAt, status: 'booked',
             vehicle: { make: vehicle.make, model: vehicle.model, licensePlate: vehicle.licensePlate, parkingZone: vehicle.parkingZone, deliveryPointName: vehicle.deliveryPointName },
           };
           await analyzeAndProcessMessage({ id: message.id, content: message.content }, rentalData, db, ga);

@@ -500,6 +500,201 @@ router.post('/tenants/:slug/simulate-rental', async (req: Request, res: Response
   } catch (err) { next(err); }
 });
 
+// ─── Seed données de test (août 2026) ────────────────────────────────────────
+
+// POST /api/v1/superadmin/seed-test-data
+router.post('/seed-test-data', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({ slug: z.string().min(1) }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'slug requis dans le body' }); return; }
+
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug: body.data.slug },
+      select: { tenantDbUrl: true },
+    });
+    if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
+
+    const db = getTenantClient(company.tenantDbUrl);
+
+    // Getaround client pour l'analyse IA
+    let gaClient: ReturnType<typeof createGetaroundClient> | null = null;
+    const gaAccount = await db.getaroundAccount.findFirst({
+      where: { isActive: true },
+      select: { apiKeyHash: true },
+    });
+    if (gaAccount) gaClient = createGetaroundClient(decrypt(gaAccount.apiKeyHash));
+
+    const driverName = 'Test Playwright';
+    const driverEmail = 'test.playwright@sunanddrive.fr';
+    const driverGetaroundId = '999999';
+
+    const SEED_CASES = [
+      {
+        getaroundId: 'test_playwright_cas1',
+        vehicleGetaroundId: '1472640',
+        startAt: new Date('2026-08-04T10:00:00'),
+        endAt: new Date('2026-08-07T18:00:00'),
+        status: 'booked' as const,
+        message: "Bonjour, nous voyageons avec notre bébé de 8kg. Est-il possible d'avoir un siège auto adapté ? Merci d'avance",
+        isCarSeat: true,
+      },
+      {
+        getaroundId: 'test_playwright_cas2',
+        vehicleGetaroundId: '1212044',
+        startAt: new Date('2026-08-11T09:00:00'),
+        endAt: new Date('2026-08-14T19:00:00'),
+        status: 'booked' as const,
+        message: "Bonjour, nous avons besoin d'un siège auto pour notre enfant de 15kg. Pouvez-vous nous en fournir un ?",
+        isCarSeat: true,
+      },
+      {
+        getaroundId: 'test_playwright_cas3',
+        vehicleGetaroundId: '1488949',
+        startAt: new Date('2026-08-18T14:00:00'),
+        endAt: new Date('2026-08-21T11:00:00'),
+        status: 'booked' as const,
+        message: "Bonjour, mon fils de 25kg a besoin d'un rehausseur pour le trajet. Est-ce que vous en avez un disponible ?",
+        isCarSeat: true,
+      },
+      {
+        getaroundId: 'test_playwright_cas4',
+        vehicleGetaroundId: '1487582',
+        startAt: new Date('2026-08-25T08:00:00'),
+        endAt: new Date('2026-08-28T20:00:00'),
+        status: 'active' as const,
+        message: "Bonjour, la voiture fait un bruit bizarre au démarrage, comme un grincement. Est-ce normal ? Je suis un peu inquiet pour le trajet prévu demain.",
+        isCarSeat: false,
+      },
+      {
+        getaroundId: 'test_playwright_cas5',
+        vehicleGetaroundId: '1470595',
+        startAt: new Date('2026-08-01T09:00:00'),
+        endAt: new Date('2026-08-03T18:00:00'),
+        status: 'active' as const,
+        message: "Bonjour, je suis vraiment désolé mais j'ai un empêchement et je ne pourrai pas rendre la voiture à l'heure prévue. Je pense avoir 2h de retard. Comment procéder ?",
+        isCarSeat: false,
+      },
+    ];
+
+    let rentalsCreated = 0;
+    let messagesCreated = 0;
+    let carSeatRequestsTriggered = 0;
+
+    for (const cas of SEED_CASES) {
+      const vehicle = await db.vehicle.findFirst({
+        where: { getaroundId: cas.vehicleGetaroundId },
+        select: { id: true, make: true, model: true, licensePlate: true, parkingZone: true, deliveryPointName: true },
+      });
+      if (!vehicle) {
+        console.warn(`[SeedTestData] Véhicule getaroundId=${cas.vehicleGetaroundId} introuvable, cas ignoré`);
+        continue;
+      }
+
+      // Idempotence — skip si déjà créé
+      const existing = await db.rental.findFirst({ where: { getaroundId: cas.getaroundId }, select: { id: true } });
+      if (existing) continue;
+
+      const rental = await db.rental.create({
+        data: {
+          getaroundId: cas.getaroundId,
+          vehicleId: vehicle.id,
+          driverName,
+          driverEmail,
+          driverGetaroundId,
+          startAt: cas.startAt,
+          endAt: cas.endAt,
+          status: cas.status,
+          isTest: true,
+        },
+      });
+      rentalsCreated++;
+
+      const message = await db.message.create({
+        data: {
+          rentalId: rental.id,
+          direction: 'inbound',
+          content: cas.message,
+          status: 'pending_approval',
+          isTest: true,
+        },
+      });
+      messagesCreated++;
+
+      if (gaClient) {
+        try {
+          const rentalForMessaging: RentalForMessaging = {
+            id: rental.id,
+            vehicleId: vehicle.id,
+            driverName,
+            driverGetaroundId,
+            getaroundId: cas.getaroundId,
+            startAt: cas.startAt,
+            endAt: cas.endAt,
+            status: cas.status,
+            vehicle: {
+              make: vehicle.make,
+              model: vehicle.model,
+              licensePlate: vehicle.licensePlate,
+              parkingZone: vehicle.parkingZone,
+              deliveryPointName: vehicle.deliveryPointName,
+            },
+          };
+          await analyzeAndProcessMessage({ id: message.id, content: cas.message }, rentalForMessaging, db, gaClient);
+          console.log(`[SeedTestData] Analyse IA déclenchée — cas ${cas.getaroundId}`);
+        } catch (e) {
+          console.error(`[SeedTestData] Erreur analyse IA cas ${cas.getaroundId}:`, e);
+        }
+      }
+
+      if (cas.isCarSeat) carSeatRequestsTriggered++;
+    }
+
+    res.json({
+      rentalsCreated,
+      messagesCreated,
+      renterCreated: rentalsCreated > 0 ? 1 : 0,
+      carSeatRequestsTriggered,
+    });
+  } catch (err: unknown) { next(err); }
+});
+
+// DELETE /api/v1/superadmin/test-data?slug=...
+router.delete('/test-data', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const slug = typeof req.query.slug === 'string' ? req.query.slug : undefined;
+    if (!slug) { res.status(400).json({ error: 'Query param slug requis' }); return; }
+
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug },
+      select: { tenantDbUrl: true },
+    });
+    if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
+
+    const db = getTenantClient(company.tenantDbUrl);
+
+    const testRentals = await db.rental.findMany({ where: { isTest: true }, select: { id: true } });
+    const rentalIds = testRentals.map(r => r.id);
+
+    let deletedMessages = 0;
+    let deletedCarSeatRequests = 0;
+    let deletedRentals = 0;
+
+    if (rentalIds.length > 0) {
+      await db.sequenceExecution.deleteMany({ where: { rentalId: { in: rentalIds } } });
+      const msgs = await db.message.deleteMany({ where: { rentalId: { in: rentalIds } } });
+      deletedMessages = msgs.count;
+      const seats = await db.carSeatRequest.deleteMany({ where: { rentalId: { in: rentalIds } } });
+      deletedCarSeatRequests = seats.count;
+      const rentals = await db.rental.deleteMany({ where: { id: { in: rentalIds } } });
+      deletedRentals = rentals.count;
+    }
+
+    res.json({ success: true, deletedRentals, deletedMessages, deletedCarSeatRequests });
+  } catch (err: unknown) { next(err); }
+});
+
 // DELETE /api/v1/superadmin/tenants/:slug/cleanup-simulation
 router.delete('/tenants/:slug/cleanup-simulation', async (req: Request, res: Response, next: NextFunction) => {
   try {

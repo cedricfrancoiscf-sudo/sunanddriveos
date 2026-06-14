@@ -221,6 +221,7 @@ model Rental {
   repatriationFee      Float?             // repatriation_fee
   cancellationFee      Float?             // driver_cancellation_fee + drivy_cancellation_fee
   status              RentalStatus        @default(booked)
+  isTest              Boolean             @default(false)
   evaluationStatus    EvaluationStatus    @default(pending)
   evaluationRating    Int?
   evaluationComment   String?
@@ -254,6 +255,7 @@ model Message {
   approvedBy   User?            @relation("ApprovedBy", fields: [approvedById], references: [id])
   approvedAt   DateTime?
   cancelledAt  DateTime?
+  isTest       Boolean          @default(false)
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
@@ -501,6 +503,7 @@ model CarSeatRequest {
   requestedAt   DateTime  @default(now())
   status        String    @default("pending") // pending | confirmed | denied | returned
   notes         String?
+  isTest        Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

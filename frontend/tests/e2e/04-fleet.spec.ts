@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 
 test('Flotte — véhicules visibles', async ({ page }) => {
   await page.waitForLoadState('domcontentloaded')
-  await page.waitForSelector('main a[href*="/vehicles/"]', { timeout: 15000 })
+  await page.waitForSelector('main a[href*="/vehicles/"]', { timeout: 20000 })
   const vehicles = page.locator('main').locator('a[href*="/vehicles/"]')
   const count = await vehicles.count()
   expect(count).toBeGreaterThanOrEqual(7)

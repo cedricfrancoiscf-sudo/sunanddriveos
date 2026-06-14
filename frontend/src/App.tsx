@@ -4,6 +4,15 @@ import { AuthProvider } from './modules/auth/authContext';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import AppLayout from './components/layout/AppLayout';
 import PwaInstallBanner from './components/PwaInstallBanner';
+import { useAuth } from './hooks/useAuth';
+
+function CarkeeperBlockedRoute({ children }: { children: React.ReactNode }): React.JSX.Element {
+  const { user } = useAuth();
+  const roles = user?.roles ?? (user?.role ? [user.role] : []);
+  const isCarkeeperOnly = roles.includes('carkeeper') && !roles.includes('admin') && !roles.includes('exploitation') && !user?.isSuperAdmin;
+  if (isCarkeeperOnly) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
 
 const SYSTEM_FONTS = new Set(['system-ui', 'sans-serif', 'serif', 'monospace']);
 
@@ -152,12 +161,12 @@ export default function App(): React.JSX.Element {
               <Route path="/scoring" element={<Navigate to="/renters?tab=scoring" replace />} />
               <Route path="/third-party-owners" element={<ThirdPartyOwnersPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
-              <Route path="/intelligence" element={<IntelligencePage />} />
-              <Route path="/intelligence/report" element={<ReportPage />} />
-              <Route path="/intelligence/ratings" element={<RatingPage />} />
+              <Route path="/intelligence" element={<CarkeeperBlockedRoute><IntelligencePage /></CarkeeperBlockedRoute>} />
+              <Route path="/intelligence/report" element={<CarkeeperBlockedRoute><ReportPage /></CarkeeperBlockedRoute>} />
+              <Route path="/intelligence/ratings" element={<CarkeeperBlockedRoute><RatingPage /></CarkeeperBlockedRoute>} />
               <Route path="/renters" element={<RentersPage />} />
               <Route path="/renters/:id" element={<RenterDetailPage />} />
-              <Route path="/rentability" element={<RentabilityPage />} />
+              <Route path="/rentability" element={<CarkeeperBlockedRoute><RentabilityPage /></CarkeeperBlockedRoute>} />
               {/* Alias routes */}
               <Route path="/technical-controls" element={<Navigate to="/technical-control" replace />} />
               <Route path="/fleet" element={<Navigate to="/vehicles" replace />} />

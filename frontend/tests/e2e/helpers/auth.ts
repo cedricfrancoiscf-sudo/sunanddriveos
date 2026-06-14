@@ -10,7 +10,7 @@ export const TENANT_SLUG = 'sun-and-drive'
 export const CARKEEPER_EMAIL = 'carkeeper.test@sunanddrive.fr'
 export const CARKEEPER_PASSWORD = 'CarTest2026!'
 
-async function getSuperadminToken(): Promise<string> {
+export async function getSuperadminToken(): Promise<string> {
   const res = await fetch(`${API_URL}/api/v1/auth/superadmin/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

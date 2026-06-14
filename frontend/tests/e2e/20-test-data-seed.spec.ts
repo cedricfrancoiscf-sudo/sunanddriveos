@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { seedTestData, navigatePlanningToAugust2026, API_URL, SUPERADMIN_TOKEN, TENANT_SLUG } from './helpers/auth'
+import { seedTestData, navigatePlanningToAugust2026, getSuperadminToken, API_URL, TENANT_SLUG } from './helpers/auth'
 
 test.describe('Seed données test août 2026', () => {
   test.beforeAll(async () => {
@@ -21,7 +21,7 @@ test.describe('Seed données test août 2026', () => {
   test('Seed — 5 locations août accessibles via API', async () => {
     const res = await fetch(
       `${API_URL}/api/v1/rentals?startDate=2026-08-01&endDate=2026-08-31&limit=50`,
-      { headers: { 'Authorization': `Bearer ${SUPERADMIN_TOKEN}` } },
+      { headers: { 'Authorization': `Bearer ${await getSuperadminToken()}` } },
     )
     if (res.ok) {
       const data = await res.json() as { rentals?: unknown[] }

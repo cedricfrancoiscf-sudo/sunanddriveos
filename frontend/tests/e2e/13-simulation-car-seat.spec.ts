@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { simulateRental, API_URL, SUPERADMIN_TOKEN } from './helpers/auth'
+import { simulateRental, getSuperadminToken, API_URL } from './helpers/auth'
 
 test('Simulation — Flux siège auto complet', async ({ page }) => {
   const rental = await simulateRental('sun-and-drive').catch(() => null)
@@ -32,6 +32,6 @@ test('Simulation — Flux siège auto complet', async ({ page }) => {
 
   await fetch(`${API_URL}/api/v1/superadmin/tenants/sun-and-drive/cleanup-simulation`, {
     method: 'DELETE',
-    headers: { 'Authorization': `Bearer ${SUPERADMIN_TOKEN}` }
+    headers: { 'Authorization': `Bearer ${await getSuperadminToken()}` }
   }).catch(console.error)
 })

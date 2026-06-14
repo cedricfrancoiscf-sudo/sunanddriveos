@@ -417,7 +417,7 @@ model Unavailability {
   vehicleId      String
   vehicle        Vehicle  @relation(fields: [vehicleId], references: [id])
   getaroundCarId Int
-  getaroundId    Int      @unique
+  getaroundId    String   @unique
   startsAt       DateTime
   endsAt         DateTime
   reason         String?

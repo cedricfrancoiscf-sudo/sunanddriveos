@@ -70,11 +70,11 @@ function RentalBar({ rental, periodStart, totalDays, onClick }: { rental: Planni
   const tooltip = `${rental.driverName}\n${format(parseISO(rental.startAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(rental.endAt), 'dd/MM HH:mm', { locale: fr })}${hasCarSeat ? '\n🪑 Siège auto' : ''}${hasAccessory ? '\n📦 Accessoire' : ''}`;
   const durationMin = differenceInMinutes(parseISO(rental.endAt), parseISO(rental.startAt));
   const isShort = durationMin < 120; // moins de 2h — barre courte, pas de texte
-  const isPast = rental.status === 'completed';
+  const isPast = parseISO(rental.endAt) < startOfDay(new Date());
 
   return (
     <div
-      className={`absolute top-1.5 h-7 rounded flex items-center overflow-hidden cursor-pointer group z-10 transition-opacity hover:opacity-90 ${isPast ? 'opacity-60' : ''}`}
+      className={`absolute top-1.5 h-7 rounded flex items-center overflow-hidden cursor-pointer group z-10 transition-opacity hover:opacity-90 ${isPast ? 'opacity-50' : ''}`}
       style={{
         ...getBarStyle(rental.startAt, rental.endAt, periodStart, totalDays),
         backgroundColor: hasCarSeat
@@ -378,8 +378,8 @@ export default function PlanningPage(): React.JSX.Element {
           <span>Incident</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-3 w-6 rounded-sm opacity-60" style={{ backgroundColor: '#01696eaa' }} />
-          <span>Terminée</span>
+          <div className="h-3 w-6 rounded-sm opacity-50" style={{ backgroundColor: '#01696eaa' }} />
+          <span>Passée</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span>📦</span><span>Accessoire</span>

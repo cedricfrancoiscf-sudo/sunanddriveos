@@ -35,13 +35,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       ? await getCarekeeperVehicleIds(db, req.auth.userId)
       : undefined;
 
-    const vehicleFilter = vehicleIds ? { id: { in: vehicleIds } } : { isActive: true };
+    const vehicleFilter = vehicleIds ? { id: { in: vehicleIds } } : {};
     const rentalVehicleFilter = vehicleIds ? { vehicleId: { in: vehicleIds } } : {};
     const blockingVehicleFilter = vehicleIds ? { vehicleId: { in: vehicleIds } } : {};
 
     const [rentals, blockings, vehicles] = await Promise.all([
       db.rental.findMany({
-        where: { startAt: { lte: to }, endAt: { gte: from }, status: { in: ['booked', 'active', 'completed'] }, ...rentalVehicleFilter },
+        where: { startAt: { lte: to }, endAt: { gte: from }, ...rentalVehicleFilter },
         select: {
           id: true, vehicleId: true, driverName: true, startAt: true, endAt: true, status: true,
           _count: { select: { carSeatRequests: true, accessoryReservations: true } },

@@ -439,7 +439,7 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
         where: { startAt: { gte: monthStart }, status: { in: ['booked', 'active', 'completed'] } },
         select: { vehicleId: true, ownerPayout: true, grossRevenue: true },
       }),
-      db.vehicleCost.findMany({ select: { vehicleId: true, amount: true, type: true } }),
+      db.vehicleCost.findMany({ select: { vehicleId: true, amount: true, type: true, amortizationMonths: true, endDate: true } }),
       db.rental.findMany({
         where: { startAt: { gte: yearStart }, status: { in: ['booked', 'active', 'completed'] } },
         select: { vehicleId: true, ownerPayout: true, grossRevenue: true },
@@ -452,10 +452,12 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
       const vRentals = rentals.filter(r => r.vehicleId === v.id);
       const caNet = vRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
       const caGross = vRentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
-      const vCosts = costs.filter(c => c.vehicleId === v.id);
+      const now = new Date();
+      const vCosts = costs.filter(c => c.vehicleId === v.id && (!c.endDate || new Date(c.endDate) > now));
       const fixedCosts = vCosts.filter(c => c.type === 'fixed').reduce((s, c) => s + c.amount, 0);
-      const variableCosts = vCosts.filter(c => c.type !== 'fixed').reduce((s, c) => s + c.amount, 0);
+      const variableCosts = vCosts.filter(c => c.type === 'onetime').reduce((s, c) => s + c.amount / (c.amortizationMonths ?? 1), 0);
       const totalCosts = fixedCosts + variableCosts;
+      const breakEven = totalCosts;
       const margin = caNet - totalCosts;
 
       const vAnnualRentals = annualRentals.filter(r => r.vehicleId === v.id);
@@ -475,8 +477,10 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
         fixedCosts: Math.round(fixedCosts * 100) / 100,
         variableCosts: Math.round(variableCosts * 100) / 100,
         totalCosts: Math.round(totalCosts * 100) / 100,
+        breakEven: Math.round(breakEven * 100) / 100,
         margin: Math.round(margin * 100) / 100,
         isProfit: margin >= 0,
+        status: margin >= 0 ? 'rentable' : 'déficitaire',
         caAnnuel: Math.round(caAnnuel * 100) / 100,
         costsAnnuels: Math.round(costsAnnuels * 100) / 100,
         margeAnnuelle: Math.round(margeAnnuelle * 100) / 100,

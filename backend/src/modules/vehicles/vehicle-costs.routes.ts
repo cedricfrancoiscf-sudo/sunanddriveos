@@ -25,7 +25,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const body = z.object({
       label: z.string().min(1),
       amount: z.number().positive(),
-      type: z.string().optional(),
+      type: z.enum(['fixed', 'onetime']).default('fixed'),
+      amortizationMonths: z.number().int().positive().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
     const db = getTenantClient(req.tenantDbUrl!);
@@ -34,7 +37,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         vehicleId: req.params.vehicleId as string,
         label: body.data.label,
         amount: body.data.amount,
-        ...(body.data.type ? { type: body.data.type } : {}),
+        type: body.data.type,
+        ...(body.data.amortizationMonths ? { amortizationMonths: body.data.amortizationMonths } : {}),
+        ...(body.data.startDate ? { startDate: new Date(body.data.startDate) } : {}),
+        ...(body.data.endDate ? { endDate: new Date(body.data.endDate) } : {}),
       },
     });
     res.status(201).json({ cost });
@@ -47,12 +53,19 @@ router.put('/:costId', async (req: Request, res: Response, next: NextFunction) =
     const body = z.object({
       label: z.string().min(1).optional(),
       amount: z.number().positive().optional(),
+      type: z.enum(['fixed', 'onetime']).optional(),
+      amortizationMonths: z.number().int().positive().nullable().optional(),
+      endDate: z.string().nullable().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
     const db = getTenantClient(req.tenantDbUrl!);
+    const data = {
+      ...body.data,
+      ...(body.data.endDate !== undefined ? { endDate: body.data.endDate ? new Date(body.data.endDate) : null } : {}),
+    };
     const cost = await db.vehicleCost.update({
       where: { id: req.params.costId as string },
-      data: body.data,
+      data,
     });
     res.json({ cost });
   } catch (err: unknown) { next(err); }

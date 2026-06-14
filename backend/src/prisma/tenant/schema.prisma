@@ -591,13 +591,16 @@ model GetaroundInvoice {
 }
 
 model VehicleCost {
-  id        String   @id @default(cuid())
-  vehicleId String
-  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  label     String
-  amount    Float
-  type      String   @default("fixed")
-  createdAt DateTime @default(now())
+  id                 String    @id @default(cuid())
+  vehicleId          String
+  vehicle            Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  label              String
+  amount             Float
+  type               String    @default("fixed") // fixed | onetime
+  amortizationMonths Int?      // si onetime, sur combien de mois amortir
+  startDate          DateTime  @default(now())
+  endDate            DateTime? // null = en cours
+  createdAt          DateTime  @default(now())
 
   @@map("vehicle_costs")
 }

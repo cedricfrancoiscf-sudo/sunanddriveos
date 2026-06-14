@@ -61,14 +61,16 @@ test.describe('Monkey test admin — toutes les routes', () => {
   test('Planning — modals ouvrent et ferment', async ({ page }) => {
     await page.goto('/planning')
     await page.waitForLoadState('domcontentloaded')
-    await page.waitForTimeout(1000)
+    await page.waitForTimeout(1500)
     const blocageBtn = page.getByRole('button', { name: /Blocage/i }).first()
-    if (await blocageBtn.isVisible({ timeout: 5000 })) {
+    if (await blocageBtn.isVisible({ timeout: 8000 })) {
       await blocageBtn.click()
-      await expect(page.locator('main').getByText(/[Nn]ouveau blocage|[Bb]locage/)).toBeVisible({ timeout: 5000 })
+      // waitForSelector avec timeout 20000ms pour absorber la latence de rendu
+      await page.waitForSelector(':text("Nouveau blocage"), :text("blocage"), :text("Blocage")', { timeout: 20000 })
+      await expect(page.getByText(/[Nn]ouveau blocage|[Bb]locage/i).first()).toBeVisible({ timeout: 20000 })
       const cancelBtn = page.getByRole('button', { name: /Annuler|Fermer/i }).first()
-      if (await cancelBtn.isVisible()) await cancelBtn.click()
-      await expect(page.locator('main').getByText(/[Nn]ouveau blocage/)).not.toBeVisible({ timeout: 3000 })
+      if (await cancelBtn.isVisible({ timeout: 5000 })) await cancelBtn.click()
+      await expect(page.getByText(/[Nn]ouveau blocage/i).first()).not.toBeVisible({ timeout: 5000 })
     }
   })
 

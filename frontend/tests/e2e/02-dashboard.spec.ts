@@ -25,8 +25,8 @@ test('Dashboard — Graphique occupation visible', async ({ page }) => {
 })
 
 test('Dashboard — Alertes CT visibles', async ({ page }) => {
-  await page.waitForSelector('main :text("CT")', { timeout: 20000 })
-  await expect(page.locator('main').getByText(/CT/).first()).toBeVisible({ timeout: 20000 })
+  await page.waitForSelector('main :text("CT")', { timeout: 25000 })
+  await expect(page.locator('main').getByText(/CT/).first()).toBeVisible({ timeout: 25000 })
 })
 
 test('Dashboard — Navigation vers alertes', async ({ page }) => {

@@ -72,33 +72,22 @@ test.describe('Profil locataire — Test Playwright', () => {
     if (!await renter.isVisible({ timeout: 8000 })) return
     await renter.click()
     await page.waitForLoadState('domcontentloaded')
-    await page.waitForTimeout(500)
-    // Chercher bouton blacklist
-    const blacklistBtn = page.locator('main').getByRole('button', { name: /Blacklist|Bannir|blacklist/i }).first()
-    if (!await blacklistBtn.isVisible({ timeout: 5000 })) {
-      console.log('[24] Bouton blacklist non trouvé — skip')
+    await page.waitForTimeout(800)
+    // Bouton exact du composant : "⛔ Blacklister" (pas encore blacklisté)
+    const blacklistBtn = page.locator('button').filter({ hasText: '⛔ Blacklister' }).first()
+    if (!await blacklistBtn.isVisible({ timeout: 8000 })) {
+      console.log('[24] Bouton ⛔ Blacklister non trouvé — déjà blacklisté ou renter absent')
       return
     }
     await blacklistBtn.click()
-    await page.waitForTimeout(500)
-    // Remplir le motif dans le modal
-    const motifInput = page.locator('textarea, input[placeholder*="motif"], input[placeholder*="raison"]').first()
-    if (await motifInput.isVisible({ timeout: 5000 })) {
-      await motifInput.fill('Test blacklist Playwright')
-    }
-    const confirmBtn = page.locator('button').filter({ hasText: /Confirmer|Blacklister|Valider|Ajouter/i }).last()
-    await confirmBtn.click()
+    // Modal fixe — textarea avec placeholder "Motif de blacklistage…"
+    await page.waitForSelector('textarea[placeholder*="Motif"]', { timeout: 8000 })
+    await page.locator('textarea[placeholder*="Motif"]').fill('Test blacklist Playwright')
+    // Bouton de confirmation dans le modal : "Blacklister"
+    await page.locator('button').filter({ hasText: /^Blacklister$/ }).last().click()
     await page.waitForTimeout(1000)
-    // Vérifier le badge ⛔ rouge
-    const badge = page.locator('main').getByText('⛔').first()
-    if (await badge.isVisible({ timeout: 8000 })) {
-      await expect(badge).toBeVisible()
-    } else {
-      const bannedBadge = page.locator('main').getByText(/Blacklist|Banni/i).first()
-      if (await bannedBadge.isVisible({ timeout: 5000 })) {
-        await expect(bannedBadge).toBeVisible()
-      }
-    }
+    // Badge attendu : "⛔ Blacklisté"
+    await expect(page.locator('main').getByText('⛔ Blacklisté')).toBeVisible({ timeout: 10000 })
   })
 
   test('Fiche locataire — retirer du blacklist', async ({ page }) => {
@@ -106,19 +95,18 @@ test.describe('Profil locataire — Test Playwright', () => {
     if (!await renter.isVisible({ timeout: 8000 })) return
     await renter.click()
     await page.waitForLoadState('domcontentloaded')
-    await page.waitForTimeout(500)
-    // Chercher bouton "Retirer du blacklist" ou similaire
-    const removeBtn = page.locator('main').getByRole('button', { name: /Retirer|Débannir|Supprimer blacklist/i }).first()
-    if (!await removeBtn.isVisible({ timeout: 5000 })) {
-      console.log('[24] Bouton retrait blacklist non trouvé — skip')
+    await page.waitForTimeout(800)
+    // Bouton exact du composant : "Retirer du blacklist" (déclenche confirm() natif)
+    const removeBtn = page.locator('button').filter({ hasText: 'Retirer du blacklist' }).first()
+    if (!await removeBtn.isVisible({ timeout: 8000 })) {
+      console.log('[24] Bouton "Retirer du blacklist" non trouvé — pas blacklisté ou skip')
       return
     }
+    // Accepter le confirm() natif du navigateur
+    page.once('dialog', dialog => void dialog.accept())
     await removeBtn.click()
     await page.waitForTimeout(1000)
-    // Le badge ⛔ doit avoir disparu
-    const badge = page.locator('main').getByText('⛔').first()
-    await expect(badge).not.toBeVisible({ timeout: 8000 }).catch(() => {
-      console.log('[24] Badge ⛔ encore visible après retrait — à vérifier')
-    })
+    // Le badge ⛔ Blacklisté doit avoir disparu
+    await expect(page.locator('main').getByText('⛔ Blacklisté')).not.toBeVisible({ timeout: 10000 })
   })
 })

@@ -650,11 +650,49 @@ router.post('/seed-test-data', async (req: Request, res: Response, next: NextFun
       if (cas.isCarSeat) carSeatRequestsTriggered++;
     }
 
+    // Carkeeper test user — idempotent
+    const CARKEEPER_EMAIL = 'carkeeper.test@sunanddrive.fr';
+    let carkeeperCreated = 0;
+    try {
+      const existingCarkeeper = await db.user.findFirst({
+        where: { email: CARKEEPER_EMAIL },
+        select: { id: true },
+      });
+      if (!existingCarkeeper) {
+        const passwordHash = await hashPassword('CarTest2026!');
+        const carkeeper = await db.user.create({
+          data: {
+            email: CARKEEPER_EMAIL,
+            name: 'Carkeeper Test',
+            role: 'carkeeper',
+            roles: ['carkeeper'],
+            passwordHash,
+          },
+        });
+        const vehiclesToAssign = await db.vehicle.findMany({
+          where: { getaroundId: { in: ['1472640', '1212044'] } },
+          select: { id: true },
+        });
+        for (const vehicle of vehiclesToAssign) {
+          await db.vehicleCarkeeper.upsert({
+            where: { vehicleId_userId: { vehicleId: vehicle.id, userId: carkeeper.id } },
+            create: { vehicleId: vehicle.id, userId: carkeeper.id },
+            update: {},
+          });
+        }
+        carkeeperCreated = 1;
+        console.log(`[SeedTestData] Carkeeper créé — ${CARKEEPER_EMAIL}`);
+      }
+    } catch (e) {
+      console.error('[SeedTestData] Erreur création carkeeper:', e);
+    }
+
     res.json({
       rentalsCreated,
       messagesCreated,
       renterCreated: rentalsCreated > 0 ? 1 : 0,
       carSeatRequestsTriggered,
+      carkeeperCreated,
     });
   } catch (err: unknown) { next(err); }
 });
@@ -691,7 +729,16 @@ router.delete('/test-data', async (req: Request, res: Response, next: NextFuncti
       deletedRentals = rentals.count;
     }
 
-    res.json({ success: true, deletedRentals, deletedMessages, deletedCarSeatRequests });
+    // Supprimer le user carkeeper test
+    let deletedUsers = 0;
+    try {
+      const result = await db.user.deleteMany({ where: { email: 'carkeeper.test@sunanddrive.fr' } });
+      deletedUsers = result.count;
+    } catch (e) {
+      console.error('[DeleteTestData] Erreur suppression carkeeper:', e);
+    }
+
+    res.json({ success: true, deletedRentals, deletedMessages, deletedCarSeatRequests, deletedUsers });
   } catch (err: unknown) { next(err); }
 });
 

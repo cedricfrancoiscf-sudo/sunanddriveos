@@ -106,9 +106,12 @@ test.describe('Monkey test admin — exhaustif', () => {
 
         // Contenu suspect
         const body = (await page.locator('main').textContent({ timeout: 5000 }) ?? '').substring(0, 2000)
-        const hasRawError   = /\berror\b/i.test(body) && !/[Ee]rreur|Erreurs/.test(body)
-        const hasUndefined  = /\bundefined\b/.test(body)
-        const hasNaN        = /\bNaN\b/.test(body)
+        const reRawError  = /\berror\b/i
+        const reUndefined = /\bundefined\b/
+        const reNaN       = /\bNaN\b/
+        const hasRawError   = reRawError.test(body) && !/[Ee]rreur|Erreurs/.test(body)
+        const hasUndefined  = reUndefined.test(body)
+        const hasNaN        = reNaN.test(body)
 
         if (hasRawError || hasUndefined || hasNaN) {
           const suspects = [hasRawError && '"error"', hasUndefined && '"undefined"', hasNaN && '"NaN"']
@@ -207,11 +210,13 @@ test.describe('Monkey test admin — exhaustif', () => {
 
       // Vérifier champs clés
       const body = await page.locator('main').textContent() ?? ''
+      const reImmat      = /[A-Z]{2}\d{3}[A-Z]{2}/
+      const reGetaround  = /getaround|GET\d|id.{0,10}\d{5,}/i
       const checks = {
-        'immatriculation': /[A-Z]{2}\d{3}[A-Z]{2}/.test(body),
+        'immatriculation': reImmat.test(body),
         'statut/actif':    /[Ss]tatut|[Aa]ctif|[Aa]ctive/.test(body),
         'point livraison': /livraison|parking|gare/i.test(body),
-        'ID Getaround':    /getaround|GET\d|id.{0,10}\d{5,}/i.test(body),
+        'ID Getaround':    reGetaround.test(body),
         'bouton Modifier': await page.getByRole('link', { name: /Modifier/i }).first().isVisible({ timeout: 5000 }),
       }
       const found = Object.entries(checks).filter(([, v]) => v).map(([k]) => k)
@@ -603,13 +608,17 @@ test.describe('Monkey test admin — exhaustif', () => {
       await page.waitForLoadState('domcontentloaded')
       await page.waitForTimeout(1000)
       const body = await page.locator('main').textContent() ?? ''
-      /locations|location|\d+\s*loc/i.test(body)
+      const reLocKPI  = /locations|location/i
+      const reLocNum  = /\d+\s*loc/i
+      const reCA      = /€|CA|chiffre/i
+      const reHistory = /historique|[Ll]ocation|[Rr]ental|[Pp]ériode|[Dd]ate/i
+      ;(reLocKPI.test(body) || reLocNum.test(body))
         ? rPass('Locataires — fiche KPIs locations visible')
         : rWarn('Locataires — KPIs', 'Compteur locations non détecté')
-      /€|CA|chiffre/i.test(body)
+      reCA.test(body)
         ? rPass('Locataires — fiche KPIs CA visible')
         : rWarn('Locataires — KPIs CA', 'Montant CA non détecté')
-      /historique|[Ll]ocation|[Rr]ental|[Pp]ériode|[Dd]ate/i.test(body)
+      reHistory.test(body)
         ? rPass('Locataires — fiche historique locations visible')
         : rWarn('Locataires — historique', 'Section historique non détectée')
     } catch (e) { rFail('Locataires — fiche KPIs', String(e)) }
@@ -682,7 +691,9 @@ test.describe('Monkey test admin — exhaustif', () => {
         .or(page.getByRole('button', { name: /Siège/i }).first())
       if (await siegeTab.isVisible({ timeout: 4000 })) { await siegeTab.click(); await page.waitForTimeout(500) }
       const body = await page.locator('main').textContent() ?? ''
-      /stock|Stock|\d+\s*siège|\d+\s*dispo/i.test(body)
+      const reStock = /stock|Stock/i
+      const reStockNum = /\d+\s*si/i
+      ;(reStock.test(body) || reStockNum.test(body))
         ? rPass('Accessoires — sièges avec stock visibles')
         : rWarn('Accessoires — liste sièges', 'Stock non détecté dans le contenu')
     } catch (e) { rFail('Accessoires — liste sièges', String(e)) }
@@ -873,7 +884,8 @@ test.describe('Monkey test admin — exhaustif', () => {
       await page.waitForLoadState('domcontentloaded')
       await page.waitForTimeout(2500)
       const body = await page.locator('main').textContent() ?? ''
-      /[A-Z]{2}\d{3}[A-Z]{2}|FZ671YT|Citroen|Peugeot|Fiat|véhicule/i.test(body)
+      const reVehicleGrid = /[A-Z]{2}\d{3}[A-Z]{2}|FZ671YT|Citroen|Peugeot|Fiat|véhicule/i
+      reVehicleGrid.test(body)
         ? rPass('Planning — véhicules visibles dans la grille')
         : rWarn('Planning — véhicules', 'Aucun véhicule détecté (bug connu si filtre actif)')
     } catch (e) { rFail('Planning — véhicules', String(e)) }
@@ -884,9 +896,10 @@ test.describe('Monkey test admin — exhaustif', () => {
       await page.goto('/planning')
       await page.waitForLoadState('domcontentloaded')
       await page.waitForTimeout(1500)
+      const re14j = /14\s*j|Quinzaine/i
       const viewBtns = [
         { name: 'Semaine', btn: page.getByRole('button', { name: /^Semaine$/ }).first() },
-        { name: '14j',     btn: page.getByRole('button', { name: /14\s*j|Quinzaine/i }).first() },
+        { name: '14j',     btn: page.getByRole('button', { name: re14j }).first() },
         { name: 'Mois',    btn: page.getByRole('button', { name: /^Mois$/ }).first() },
       ]
       let ok = 0
@@ -943,7 +956,8 @@ test.describe('Monkey test admin — exhaustif', () => {
       await page.goto('/planning')
       await page.waitForLoadState('domcontentloaded')
       await page.waitForTimeout(1500)
-      const blocageBtn = page.getByRole('button', { name: /Blocage|\+\s*Blocage/i }).first()
+      const reBlocage = /Blocage|\+\s*Blocage/i
+      const blocageBtn = page.getByRole('button', { name: reBlocage }).first()
       if (!await blocageBtn.isVisible({ timeout: 8000 })) {
         rWarn('Planning — modal +Blocage', 'Bouton +Blocage non trouvé')
         return
@@ -1289,7 +1303,8 @@ test.describe('Monkey test admin — exhaustif', () => {
       await page.goto('/settings')
       await page.waitForLoadState('domcontentloaded')
       await page.waitForTimeout(1500)
-      const inviteBtn = page.getByRole('button', { name: /Inviter|\+\s*Inviter/i }).first()
+      const reInviter = /Inviter|\+\s*Inviter/i
+      const inviteBtn = page.getByRole('button', { name: reInviter }).first()
         .or(page.getByRole('button', { name: /Ajouter.*compte|Nouveau.*compte/i }).first())
       if (!await inviteBtn.isVisible({ timeout: 8000 })) {
         rWarn('Paramètres — bouton Inviter', 'Non trouvé')

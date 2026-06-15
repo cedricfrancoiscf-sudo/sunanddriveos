@@ -663,7 +663,7 @@ export default function AccessoriesPage(): React.JSX.Element {
           onClick={() => setActiveTab('car-seats')}
           badge={outOfStockCount > 0 ? outOfStockCount : undefined}
         />
-        <TabBtn label="Accessoires" active={activeTab === 'accessories'} onClick={() => setActiveTab('accessories')} />
+        <TabBtn label="Accessoires" active={activeTab === 'accessories'} onClick={() => setActiveTab('accessories')} testId="tab-accessoires" />
       </div>
 
       {activeTab === 'accessories' ? <AccessoriesTab /> : <CarSeatsTab />}
@@ -671,11 +671,11 @@ export default function AccessoriesPage(): React.JSX.Element {
   );
 }
 
-function TabBtn({ label, active, onClick, badge }: {
-  label: string; active: boolean; onClick: () => void; badge?: number | undefined;
+function TabBtn({ label, active, onClick, badge, testId }: {
+  label: string; active: boolean; onClick: () => void; badge?: number | undefined; testId?: string;
 }): React.JSX.Element {
   return (
-    <button type="button" onClick={onClick}
+    <button type="button" onClick={onClick} data-testid={testId}
       className={`relative flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
         active ? 'bg-white text-[#01696e] shadow-sm' : 'text-gray-500 hover:text-gray-700'
       }`}>

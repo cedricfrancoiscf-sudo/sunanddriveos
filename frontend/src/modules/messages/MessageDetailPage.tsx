@@ -81,9 +81,10 @@ export default function MessageDetailPage(): React.JSX.Element {
   );
 
   useEffect(() => {
-    if (aiDraft && !replyContent) setReplyContent(aiDraft.content);
+    const suggestion = aiDraft?.content ?? message?.aiSuggestion;
+    if (suggestion && !replyContent) setReplyContent(suggestion);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiDraft?.id]);
+  }, [aiDraft?.id, message?.aiSuggestion]);
 
   const approveMutation = useMutation({
     mutationFn: ({ msgId, content }: { msgId: string; content?: string }) =>
@@ -222,7 +223,7 @@ export default function MessageDetailPage(): React.JSX.Element {
           {/* Réponse libre si le message est entrant et envoyé/aucun brouillon */}
           {message.direction === 'inbound' && message.status === 'sent' && (
             <div className="space-y-2">
-              {aiDraft && (
+              {(aiDraft ?? message.aiSuggestion) && (
                 <div className="flex items-center gap-1.5 text-xs font-medium text-[#01696e]">
                   <span>✨</span>
                   <span>Brouillon IA — modifiable avant envoi</span>

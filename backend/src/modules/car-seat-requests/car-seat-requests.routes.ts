@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
+import { sendCarSeatEmail, type RentalForMessaging } from '../messages/messaging.service';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -31,7 +32,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   } catch (err: unknown) { next(err); }
 });
 
-// POST /api/v1/car-seat-requests — créer une demande avec poids enfant
+// POST /api/v1/car-seat-requests — créer une demande et exécuter le flux complet
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = z.object({
@@ -44,23 +45,29 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const db = getTenantClient(req.tenantDbUrl!);
 
-    // Vérifier que la location est active/réservée et non terminée
+    // Vérifier que la location est active/réservée et non terminée — récupère toute l'info rental
+    let rentalInfo: RentalForMessaging | null = null;
     if (body.data.rentalId) {
       const rental = await db.rental.findUnique({
         where: { id: body.data.rentalId },
-        select: { status: true, endAt: true },
+        select: {
+          id: true, status: true, endAt: true, startAt: true, driverName: true,
+          vehicleId: true, driverGetaroundId: true, getaroundId: true,
+          vehicle: { select: { make: true, model: true, licensePlate: true, parkingZone: true, deliveryPointName: true } },
+        },
       });
       if (rental && (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date())) {
         console.log(`[CarSeatRequest] Demande siège ignorée — location passée (rentalId ${body.data.rentalId}, status=${rental.status})`);
         res.status(422).json({ error: 'Demande ignorée — la location est terminée ou passée' });
         return;
       }
+      rentalInfo = rental as RentalForMessaging | null;
     }
 
-    // Trouver automatiquement un siège adapté au poids si fourni
-    let carSeatId: string | undefined;
+    // Chercher un siège adapté au poids de l'enfant ET avec stock disponible
+    let matchingSeat: { id: string; name: string; minWeightKg: number; maxWeightKg: number } | null = null;
     if (body.data.childWeightKg) {
-      const match = await db.carSeat.findFirst({
+      matchingSeat = await db.carSeat.findFirst({
         where: {
           isActive: true,
           minWeightKg: { lte: body.data.childWeightKg },
@@ -69,7 +76,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         },
         orderBy: { minWeightKg: 'asc' },
       });
-      carSeatId = match?.id;
+    }
+    // Fallback : n'importe quel siège disponible si pas de correspondance par poids
+    if (!matchingSeat) {
+      matchingSeat = await db.carSeat.findFirst({ where: { isActive: true, availableStock: { gt: 0 } } });
+    }
+
+    const requestStatus = matchingSeat ? 'confirmed' : 'unavailable';
+
+    // Décrémenter le stock immédiatement si un siège est assigné
+    if (matchingSeat) {
+      await db.carSeat.update({ where: { id: matchingSeat.id }, data: { availableStock: { decrement: 1 } } });
     }
 
     const request = await db.carSeatRequest.create({
@@ -77,14 +94,61 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         vehicleId: body.data.vehicleId,
         rentalId: body.data.rentalId,
         childWeightKg: body.data.childWeightKg,
-        carSeatId,
+        carSeatId: matchingSeat?.id,
         notes: body.data.notes,
-        status: 'pending',
+        status: requestStatus,
       },
-      include: {
-        carSeat: { select: { id: true, name: true, minWeightKg: true, maxWeightKg: true } },
-      },
+      include: { carSeat: { select: { id: true, name: true, minWeightKg: true, maxWeightKg: true } } },
     });
+
+    console.log(`[CarSeatRequest] Créée — status=${requestStatus} carSeatId=${matchingSeat?.id ?? 'null'} rental=${body.data.rentalId ?? 'n/a'}`);
+
+    // Traitements asynchrones (email + aiSuggestion) si location connue
+    if (body.data.rentalId && rentalInfo) {
+      const rentalId = body.data.rentalId;
+      const seatName = matchingSeat?.name ?? '';
+      const confirmed = requestStatus === 'confirmed';
+      const rental = rentalInfo;
+      void (async () => {
+        try {
+          const settings = await db.companySettings.findFirst({ select: { aiName: true, senderName: true } });
+          const assistantName = settings?.aiName ?? settings?.senderName ?? 'Sun and Drive';
+
+          // Email carkeeper + admin
+          const staff = await db.user.findMany({
+            where: { isActive: true, OR: [{ role: { in: ['admin', 'carkeeper'] } }, { roles: { hasSome: ['admin', 'carkeeper'] } }] },
+            select: { email: true },
+          });
+          const emails = staff.map(u => u.email).filter((e): e is string => Boolean(e));
+          void sendCarSeatEmail(emails, rental, assistantName, confirmed).catch(e =>
+            console.error('[CarSeatRequest] Erreur email carkeeper:', e),
+          );
+
+          // Générer aiSuggestion (template)
+          const firstName = rental.driverName.split(' ')[0] ?? rental.driverName;
+          const startStr = rental.startAt.toLocaleDateString('fr-FR');
+          const endStr = rental.endAt.toLocaleDateString('fr-FR');
+          const aiSuggestion = confirmed
+            ? `Bonjour ${firstName}, nous avons bien noté votre demande de siège auto. Nous vous confirmons la disponibilité d'un siège ${seatName} pour votre location du ${startStr} au ${endStr}. Il sera préparé par notre équipe. Cordialement, ${assistantName}`
+            : `Bonjour ${firstName}, nous avons bien reçu votre demande de siège auto. Malheureusement nous ne disposons pas de siège adapté pour le moment. Nous vous recontacterons dès que possible. Cordialement, ${assistantName}`;
+
+          // Trouver le dernier message inbound de cette location et y attacher l'aiSuggestion
+          const lastInbound = await db.message.findFirst({
+            where: { rentalId, direction: 'inbound' },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (lastInbound) {
+            await db.message.update({ where: { id: lastInbound.id }, data: { aiSuggestion } });
+            await db.message.create({
+              data: { rentalId, direction: 'outbound', content: aiSuggestion, status: 'pending_approval', aiSuggestion },
+            });
+            console.log(`[CarSeatRequest] aiSuggestion + brouillon outbound créés — rental ${rentalId}`);
+          }
+        } catch (e) {
+          console.error('[CarSeatRequest] Erreur traitement async:', e);
+        }
+      })();
+    }
 
     res.status(201).json({ request });
   } catch (err: unknown) { next(err); }

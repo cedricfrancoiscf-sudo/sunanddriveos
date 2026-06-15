@@ -79,7 +79,7 @@ function buildIcal(rental: RentalForMessaging): string {
   ].join('\r\n');
 }
 
-async function sendCarSeatEmail(
+export async function sendCarSeatEmail(
   recipients: string[],
   rental: RentalForMessaging,
   assistantName: string,
@@ -120,6 +120,7 @@ export async function analyzeAndProcessMessage(
   db: PrismaClient,
   ga: GetaroundClient,
 ): Promise<void> {
+  console.log(`[Messaging] IA analyse message ${message.id} — rental ${rental.id} (${rental.driverName})`);
   const settings = await db.companySettings.findFirst({
     select: {
       aiModeCarSeat: true, aiModeIncident: true, aiModeGeneral: true,
@@ -221,6 +222,14 @@ Locataire : ${rental.driverName}`,
         suggestedReply = `Bonjour ${rental.driverName}, je suis désolé(e), nous n'avons pas de siège auto disponible pour votre location. Cordialement, ${assistantName}`;
       }
     }
+  }
+
+  // Toujours sauvegarder aiSuggestion sur le message inbound source
+  try {
+    await db.message.update({ where: { id: message.id }, data: { aiSuggestion: suggestedReply } });
+    console.log(`[Messaging] aiSuggestion sauvegardée — message ${message.id}`);
+  } catch (e) {
+    console.error('[Messaging] Erreur sauvegarde aiSuggestion:', e);
   }
 
   const admins = await db.user.findMany({

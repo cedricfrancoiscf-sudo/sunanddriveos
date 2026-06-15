@@ -419,7 +419,11 @@ async function processRental(
       if (Object.keys(checkinData).length > 0) {
         await db.rental.update({ where: { id: upserted.id }, data: checkinData });
       }
-    } catch (err: unknown) { console.error(`[Sync][${tenantSlug}] Checkin ${r.id}:`, err); }
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404) { console.log(`[Sync] Checkin non disponible pour rental ${r.id} — location future, ignoré`); }
+      else { console.error(`[Sync][${tenantSlug}] Checkin ${r.id}:`, err); }
+    }
   }
 
   // Checkout
@@ -468,7 +472,11 @@ async function processRental(
           } catch (e) { console.error('[Telegram] Fuel:', e); }
         })();
       }
-    } catch (err: unknown) { console.error(`[Sync][${tenantSlug}] Checkout ${r.id}:`, err); }
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 404) { console.log(`[Sync] Checkout non disponible pour rental ${r.id} — location future, ignoré`); }
+      else { console.error(`[Sync][${tenantSlug}] Checkout ${r.id}:`, err); }
+    }
   }
 
   // Décomposition CA depuis les factures de la location
@@ -528,6 +536,7 @@ async function syncMessagesForWindow(
 
   for (const rental of rentals) {
     if (!rental.getaroundId) continue;
+    if (rental.getaroundId.startsWith('test_')) continue;
     const gaRentalId = parseInt(rental.getaroundId, 10);
 
     try {

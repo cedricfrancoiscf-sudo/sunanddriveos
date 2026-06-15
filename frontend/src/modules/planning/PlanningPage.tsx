@@ -37,6 +37,12 @@ interface PlanningBlocking {
   startAt: string;
   endAt: string;
 }
+interface PlanningUnavailability {
+  id: string;
+  vehicleId: string;
+  startsAt: string;
+  endsAt: string;
+}
 
 const BLOCKING_LABELS: Record<string, string> = {
   maintenance: 'Maintenance',
@@ -145,6 +151,23 @@ function BlockingBar({ blocking, onDelete, periodStart, totalDays }: {
   );
 }
 
+function UnavailabilityBar({ unavailability, periodStart, totalDays }: {
+  unavailability: PlanningUnavailability;
+  periodStart: Date;
+  totalDays: number;
+}) {
+  const tooltip = `Indisponible Getaround\n${format(parseISO(unavailability.startsAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(unavailability.endsAt), 'dd/MM HH:mm', { locale: fr })}`;
+  return (
+    <div
+      className="absolute bottom-1.5 h-5 rounded flex items-center overflow-hidden bg-gray-400 z-10 opacity-80"
+      style={getBarStyle(unavailability.startsAt, unavailability.endsAt, periodStart, totalDays)}
+      title={tooltip}
+    >
+      <span className="flex-1 truncate pl-1 text-[10px] text-white font-medium">Indisponible</span>
+    </div>
+  );
+}
+
 function ZoneHeader({ zone, count }: { zone: string; count: number }) {
   return (
     <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-1.5">
@@ -177,7 +200,7 @@ export default function PlanningPage(): React.JSX.Element {
     queryKey: ['planning', periodStart.toISOString(), viewMode],
     staleTime: 30_000,
     queryFn: () =>
-      api.get<{ rentals: PlanningRental[]; blockings: PlanningBlocking[]; vehicles: Vehicle[] }>(
+      api.get<{ rentals: PlanningRental[]; blockings: PlanningBlocking[]; vehicles: Vehicle[]; unavailabilities: PlanningUnavailability[] }>(
         '/planning',
         { params: { from: periodStart.toISOString(), to: addDays(periodStart, viewMode).toISOString() } },
       ).then(r => r.data),
@@ -225,6 +248,7 @@ export default function PlanningPage(): React.JSX.Element {
   const vehicles = data?.vehicles ?? [];
   const rentals = data?.rentals ?? [];
   const blockings = data?.blockings ?? [];
+  const unavailabilities = data?.unavailabilities ?? [];
 
   // Groupement des véhicules par point de livraison
   const vehiclesByZone = useMemo(() => {
@@ -396,6 +420,10 @@ export default function PlanningPage(): React.JSX.Element {
           <span>Passée</span>
         </div>
         <div className="flex items-center gap-1.5">
+          <div className="h-3 w-6 rounded-sm bg-gray-400 opacity-80" />
+          <span>Indisponible Getaround</span>
+        </div>
+        <div className="flex items-center gap-1.5">
           <span>📦</span><span>Accessoire</span>
         </div>
       </div>
@@ -445,6 +473,7 @@ export default function PlanningPage(): React.JSX.Element {
               {(filteredVehiclesByZone[zone] ?? []).map(v => {
                 const vRentals = rentals.filter(r => r.vehicleId === v.id);
                 const vBlockings = blockings.filter(b => b.vehicleId === v.id);
+                const vUnavailabilities = unavailabilities.filter(u => u.vehicleId === v.id);
                 return (
                   <div key={v.id} className="flex border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     {/* Infos véhicule */}
@@ -477,6 +506,11 @@ export default function PlanningPage(): React.JSX.Element {
                       {/* Barres blocages */}
                       {vBlockings.map(b => (
                         <BlockingBar key={b.id} blocking={b} onDelete={id => deleteBlocking.mutate(id)} periodStart={periodStart} totalDays={viewMode} />
+                      ))}
+
+                      {/* Indisponibilités Getaround */}
+                      {vUnavailabilities.map(u => (
+                        <UnavailabilityBar key={u.id} unavailability={u} periodStart={periodStart} totalDays={viewMode} />
                       ))}
                     </div>
                   </div>

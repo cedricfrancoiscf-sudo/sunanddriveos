@@ -42,8 +42,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const vehicleFilter = hasVehicleFilter ? { id: { in: vehicleIds! } } : {};
     const rentalVehicleFilter = hasVehicleFilter ? { vehicleId: { in: vehicleIds! } } : {};
     const blockingVehicleFilter = hasVehicleFilter ? { vehicleId: { in: vehicleIds! } } : {};
+    const unavailabilityVehicleFilter = hasVehicleFilter ? { vehicleId: { in: vehicleIds! } } : {};
 
-    const [rentals, blockings, vehicles] = await Promise.all([
+    const [rentals, blockings, vehicles, unavailabilities] = await Promise.all([
       db.rental.findMany({
         where: { startAt: { lte: to }, endAt: { gte: from }, ...rentalVehicleFilter },
         select: {
@@ -61,9 +62,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
         select: { id: true, make: true, model: true, licensePlate: true, photoUrl: true, parkingZone: true, deliveryPointName: true },
         orderBy: [{ deliveryPointName: 'asc' }, { make: 'asc' }],
       }),
+      db.unavailability.findMany({
+        where: { startsAt: { lte: to }, endsAt: { gte: from }, ...unavailabilityVehicleFilter },
+        select: { id: true, vehicleId: true, startsAt: true, endsAt: true },
+      }),
     ]);
 
-    res.json({ rentals, blockings, vehicles, period: { from, to } });
+    res.json({ rentals, blockings, vehicles, unavailabilities, period: { from, to } });
   } catch (err: unknown) { next(err); }
 });
 

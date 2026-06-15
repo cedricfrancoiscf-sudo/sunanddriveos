@@ -172,6 +172,7 @@ export default function RatingPage(): React.JSX.Element {
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Nombre d'avis</label>
               <input type="number" min="0" value={reviewCount} onChange={e => setReviewCount(e.target.value)}
+                data-testid="input-nb-avis"
                 placeholder="ex: 12"
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
             </div>
@@ -190,6 +191,7 @@ export default function RatingPage(): React.JSX.Element {
             {formError && <p className="text-xs text-red-600">{formError}</p>}
             {saveMut.isError && <p className="text-xs text-red-600">Erreur lors de la sauvegarde</p>}
             <button type="submit" disabled={saveMut.isPending}
+              data-testid="btn-sauvegarder-note"
               className="w-full rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
               style={{ backgroundColor: PRIMARY }}>
               {saveMut.isPending ? 'Sauvegarde…' : 'Enregistrer la note'}

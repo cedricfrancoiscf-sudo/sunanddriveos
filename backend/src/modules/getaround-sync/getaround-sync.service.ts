@@ -1709,7 +1709,7 @@ export async function syncUnavailabilitiesForTenant(db: PrismaClient, tenantSlug
     const apiKey = decrypt(account.apiKeyHash);
     const ga = createGetaroundClient(apiKey);
     const vehicles = await db.vehicle.findMany({
-      where: { getaroundAccountId: account.id, getaroundId: { not: null }, isActive: true },
+      where: { getaroundAccountId: account.id, getaroundId: { not: null } },
       select: { id: true, getaroundId: true },
     });
     console.log(`[Unavailabilities] Début sync — tenant ${tenantSlug} compte ${account.id} : ${vehicles.length} véhicule(s)`);
@@ -1718,6 +1718,7 @@ export async function syncUnavailabilitiesForTenant(db: PrismaClient, tenantSlug
       try {
         const carId = parseInt(vehicle.getaroundId, 10);
         const unavs = await ga.getUnavailabilities(carId, startDate, endDate);
+        console.log(`[Unavailabilities] Véhicule getaroundId=${carId} → ${unavs.length} indisponibilité(s)`);
         for (const unav of unavs) {
           const startsAt = new Date(unav.starts_at);
           const getaroundId = `${carId}-${startsAt.toISOString()}`;

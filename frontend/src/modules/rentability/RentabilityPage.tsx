@@ -98,6 +98,7 @@ function AddCostModal({ vehicleId, make, model, onClose }: {
                 {type === 'fixed' ? 'Montant / mois (€) *' : 'Montant total (€) *'}
               </label>
               <input required type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}
+                data-testid="input-cost-amount"
                 placeholder="0"
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
             </div>

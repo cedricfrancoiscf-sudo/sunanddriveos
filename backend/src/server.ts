@@ -239,9 +239,6 @@ async function runProactiveMessaging(): Promise<void> {
     for (const company of companies) {
       try {
         const db = getTenantClient(company.tenantDbUrl);
-        const cutoff35m = new Date(Date.now() - 35 * 60_000);
-        const twentyFourHoursAgo = new Date(Date.now() - 24 * 3_600_000);
-
         const accounts = await db.getaroundAccount.findMany({
           where: { isActive: true },
           select: { id: true, apiKeyHash: true },
@@ -251,12 +248,11 @@ async function runProactiveMessaging(): Promise<void> {
         const newInbound = await db.message.findMany({
           where: {
             direction: 'inbound',
-            createdAt: { gte: cutoff35m },
+            status: 'pending_approval',
+            aiSuggestion: null,
             rental: {
-              // Traiter uniquement les locations actives/réservées démarrées dans les 24h
-              // Les locations passées (completed) sont ignorées pour éviter les faux positifs
               status: { in: ['booked', 'active'] },
-              startAt: { gte: twentyFourHoursAgo },
+              endAt: { gt: new Date() },
             },
           },
           select: {
@@ -276,6 +272,7 @@ async function runProactiveMessaging(): Promise<void> {
           },
         });
 
+        console.log(`[ProactiveMsg] ${newInbound.length} message(s) à traiter pour tenant ${company.slug}`);
         let processed = 0;
         for (const msg of newInbound) {
           if (!msg.rental) continue;

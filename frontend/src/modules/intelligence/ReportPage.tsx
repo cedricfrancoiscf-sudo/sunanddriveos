@@ -363,7 +363,7 @@ export default function ReportPage(): React.JSX.Element {
     { id: 'resume', label: 'Résumé' }, { id: 'performance', label: 'Performance' },
     { id: 'flotte', label: 'Flotte' }, { id: 'swot', label: 'SWOT' },
     { id: 'pestel', label: 'PESTEL' }, { id: 'zones', label: 'Zones' },
-    { id: 'veille', label: 'Veille' }, { id: 'reco', label: 'Recommandations' },
+    { id: 'veille', label: 'Veille' }, { id: 'recommandations', label: 'Recommandations' },
   ];
 
   return (
@@ -766,7 +766,7 @@ export default function ReportPage(): React.JSX.Element {
             )}
 
             {/* RECOMMANDATIONS */}
-            <section id="reco" className="page-break">
+            <section id="recommandations" className="page-break">
               <h2 className="mb-4 text-lg font-bold text-gray-900">Recommandations CEO</h2>
               <div className="space-y-3">
                 {report.recommandations_ceo.map((r, i) => (

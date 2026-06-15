@@ -11,6 +11,14 @@ function getResend(): Resend {
 
 const FROM_ADDR = process.env.RESEND_FROM ?? 'noreply@sunanddrive.fr';
 
+function cleanClaudeJson(raw: string): string {
+  return raw
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+}
+
 interface ProactiveAnalysis {
   type: 'car_seat' | 'remise' | 'incident' | 'general' | 'remerciement';
   urgent: boolean;
@@ -152,7 +160,7 @@ Locataire : ${rental.driverName}`,
       }],
     });
     const text = resp.content[0]?.type === 'text' ? resp.content[0].text : '{}';
-    analysis = JSON.parse(text) as ProactiveAnalysis;
+    analysis = JSON.parse(cleanClaudeJson(text)) as ProactiveAnalysis;
   } catch (error) {
     console.error('[Messaging] Erreur Claude API:', error);
     return;
@@ -365,8 +373,8 @@ Réponds UNIQUEMENT en JSON valide, sans markdown :
 - incidentReported: un incident, dommage, problème ou accident est mentionné`,
       messages: [{ role: 'user', content: `Conversation rental ${rental.id} — ${rental.driverName} :\n${conversationText}` }],
     });
-    const text = resp.content[0]?.type === 'text' ? resp.content[0].text.trim() : '{}';
-    analysis = JSON.parse(text) as ConversationAnalysis;
+    const text = resp.content[0]?.type === 'text' ? resp.content[0].text : '{}';
+    analysis = JSON.parse(cleanClaudeJson(text)) as ConversationAnalysis;
   } catch (err) {
     console.error(`[MorningReview] Erreur Claude rental ${rental.id}:`, err);
     return result;

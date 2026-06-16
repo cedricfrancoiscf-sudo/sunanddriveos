@@ -111,6 +111,8 @@ export default function RentalDetailPage(): React.JSX.Element {
   const isAdmin = user?.role === 'admin' || user?.isSuperAdmin;
   const [showIncidentForm, setShowIncidentForm] = useState(false);
   const [incidentForm, setIncidentForm] = useState({ type: 'damage', description: '', cost: '' });
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState<string>('annulation_locataire');
 
   const { data: rental, isLoading, isError } = useQuery({
     queryKey: ['rental', id],
@@ -164,6 +166,14 @@ export default function RentalDetailPage(): React.JSX.Element {
     mutationFn: ({ incidentId, status }: { incidentId: string; status: string }) =>
       api.put(`/incidents/${incidentId}`, { status }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['rental', id] }),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (reason: string) => rentalsApi.cancel(id!, reason),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['rental', id] });
+      setShowCancelModal(false);
+    },
   });
 
   if (isLoading) {
@@ -241,6 +251,13 @@ export default function RentalDetailPage(): React.JSX.Element {
             <Row label="Immatriculation" value={<span className="tracking-wide">{rental.vehicle.licensePlate}</span>} />
             {rental.driverGetaroundId && (
               <Row label="ID Getaround" value={`Location #${rental.getaroundId} · Driver #${rental.driverGetaroundId}`} />
+            )}
+            {rental.status === 'cancelled' && rental.cancellationReason && (
+              <Row label="Motif d'annulation" value={
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                  {{ annulation_locataire: 'Annulation locataire', annulation_proprio: 'Annulation propriétaire', no_show: 'No-show', litige: 'Litige', sans_suite: 'Sans suite' }[rental.cancellationReason] ?? rental.cancellationReason}
+                </span>
+              } />
             )}
           </div>
 
@@ -481,6 +498,16 @@ export default function RentalDetailPage(): React.JSX.Element {
             {rental.evaluationComment && (
               <p className="text-sm text-gray-600 italic">"{rental.evaluationComment}"</p>
             )}
+            {isAdmin && (rental.status === 'completed' || rental.status === 'booked') && rental.ownerPayout == null && (
+              <button
+                type="button"
+                data-testid="btn-marquer-annulee"
+                onClick={() => setShowCancelModal(true)}
+                className="mt-3 w-full rounded-lg border border-red-200 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+              >
+                Marquer comme annulée
+              </button>
+            )}
             {rental.status === 'completed' && rental.evaluationStatus === 'pending' && (
               <button
                 type="button"
@@ -576,6 +603,49 @@ export default function RentalDetailPage(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      {/* Modal annulation */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="mb-4 text-base font-bold text-gray-900">Marquer comme annulée</h2>
+            <p className="mb-4 text-sm text-gray-500">
+              Cette action est irréversible. La location sera exclue des statistiques.
+            </p>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Motif d'annulation</label>
+            <select
+              data-testid="select-motif-annulation"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              className="mb-4 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400"
+            >
+              <option value="annulation_locataire">Annulation locataire</option>
+              <option value="annulation_proprio">Annulation propriétaire</option>
+              <option value="no_show">No-show</option>
+              <option value="litige">Litige</option>
+              <option value="sans_suite">Sans suite</option>
+            </select>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="btn-confirmer-annulation"
+                onClick={() => cancelMutation.mutate(cancelReason)}
+                disabled={cancelMutation.isPending}
+                className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {cancelMutation.isPending ? 'En cours...' : 'Confirmer l\'annulation'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

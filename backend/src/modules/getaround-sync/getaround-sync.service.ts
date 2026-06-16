@@ -277,6 +277,41 @@ export async function syncRecentWindowForAccount(
     await sleep(3_000);
   }
 
+  // ── Pass annulation auto ─────────────────────────────────────────────────────
+  // Locations marquées 'completed' sans paiement ni checkin depuis >1j → vérifier via API
+  try {
+    const oneDayAgo = new Date(Date.now() - 86_400_000);
+    const suspected = await db.rental.findMany({
+      where: {
+        vehicle: { getaroundAccountId: accountId },
+        status: 'completed',
+        ownerPayout: null,
+        startMileage: null,
+        endAt: { lt: oneDayAgo },
+        getaroundId: { not: { startsWith: 'test_' } },
+      },
+      select: { id: true, getaroundId: true },
+      take: 50,
+    });
+
+    if (suspected.length > 0) {
+      console.log(`[Cron][${tenantSlug}] ${suspected.length} location(s) à vérifier pour annulation`);
+      for (const rental of suspected) {
+        if (!rental.getaroundId) continue;
+        try {
+          await ga.getCheckin(parseInt(rental.getaroundId, 10));
+          await sleep(1_000);
+        } catch (err: unknown) {
+          const httpStatus = (err as { response?: { status?: number } }).response?.status;
+          if (httpStatus === 404) {
+            await db.rental.update({ where: { id: rental.id }, data: { status: 'cancelled' } });
+            console.log(`[Cron][${tenantSlug}] Location ${rental.getaroundId} → annulée (checkin 404)`);
+          }
+        }
+      }
+    }
+  } catch (e) { console.error(`[Cron][${tenantSlug}] Erreur pass annulation:`, e); }
+
   console.log(`[Cron][${tenantSlug}] Fenêtre glissante terminée — +${result.created} créés, ${result.updated} mis à jour`);
   return result;
 }

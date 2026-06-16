@@ -17,6 +17,10 @@ const filtersSchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 
+const cancelSchema = z.object({
+  cancellationReason: z.enum(['annulation_locataire', 'annulation_proprio', 'no_show', 'litige', 'sans_suite']).optional(),
+});
+
 const updateSchema = z.object({
   startMileage: z.number().int().min(0).optional(),
   endMileage: z.number().int().min(0).optional(),
@@ -71,6 +75,28 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const db = getTenantClient(req.tenantDbUrl!);
     const rental = await getRental(db, (req.params.id as string));
     if (!rental) { res.status(404).json({ error: 'Location introuvable' }); return; }
+    res.json({ rental });
+  } catch (err: unknown) { next(err); }
+});
+
+// PATCH /api/v1/rentals/:id/cancel
+router.patch('/:id/cancel', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = cancelSchema.safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const existing = await db.rental.findUnique({
+      where: { id: req.params.id as string },
+      select: { id: true, status: true, ownerPayout: true },
+    });
+    if (!existing) { res.status(404).json({ error: 'Location introuvable' }); return; }
+    if (existing.ownerPayout != null) {
+      res.status(400).json({ error: 'Impossible d\'annuler une location déjà payée' }); return;
+    }
+    const rental = await db.rental.update({
+      where: { id: req.params.id as string },
+      data: { status: 'cancelled', cancellationReason: body.data.cancellationReason ?? null },
+    });
     res.json({ rental });
   } catch (err: unknown) { next(err); }
 });

@@ -46,7 +46,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const [rentals, blockings, vehicles, unavailabilities] = await Promise.all([
       db.rental.findMany({
-        where: { startAt: { lte: to }, endAt: { gte: from }, ...rentalVehicleFilter },
+        where: { startAt: { lte: to }, endAt: { gte: from }, status: { not: 'cancelled' }, ...rentalVehicleFilter },
         select: {
           id: true, vehicleId: true, driverName: true, startAt: true, endAt: true, status: true,
           _count: { select: { carSeatRequests: true, accessoryReservations: true } },

@@ -96,6 +96,7 @@ function RentalRow({ rental }: { rental: Rental }): React.JSX.Element {
 export default function RentalListPage(): React.JSX.Element {
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<RentalStatus | ''>('');
   useEffect(() => { void trackEvent('rentals', 'view'); }, []);
 
   const monthStart = currentMonth;
@@ -115,8 +116,8 @@ export default function RentalListPage(): React.JSX.Element {
   const isMinMonth = currentMonth.getFullYear() === 2024 && currentMonth.getMonth() === 6; // juillet 2024
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['rentals', fromIso, toIso],
-    queryFn: () => rentalsApi.list({ from: fromIso, to: toIso, limit: 500 }),
+    queryKey: ['rentals', fromIso, toIso, statusFilter],
+    queryFn: () => rentalsApi.list({ from: fromIso, to: toIso, limit: 500, ...(statusFilter ? { status: statusFilter } : {}) }),
     staleTime: 2 * 60_000,
   });
 
@@ -227,6 +228,19 @@ export default function RentalListPage(): React.JSX.Element {
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-4 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
           />
         </div>
+
+        <select
+          data-testid="select-status-filter"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as RentalStatus | '')}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#01696e]"
+        >
+          <option value="">Tous statuts (hors annulées)</option>
+          <option value="booked">Réservées</option>
+          <option value="active">En cours</option>
+          <option value="completed">Terminées</option>
+          <option value="cancelled">Annulées</option>
+        </select>
       </div>
 
       {/* États */}

@@ -1011,6 +1011,42 @@ router.delete('/tenants/:slug/cleanup-maintenance', async (req: Request, res: Re
   } catch (err: unknown) { next(err); }
 });
 
+// POST /api/v1/superadmin/tenants/:slug/fix-cancelled-rentals — corriger 2 locations annulées connues
+router.post('/tenants/:slug/fix-cancelled-rentals', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug: (req.params.slug as string) },
+      select: { tenantDbUrl: true, name: true },
+    });
+    if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
+    const db = getTenantClient(company.tenantDbUrl);
+
+    const fixes: string[] = [];
+
+    // Tiphaine De Courson — getaroundId 10087414
+    const r1 = await db.rental.findFirst({ where: { getaroundId: '10087414' }, select: { id: true, status: true } });
+    if (r1) {
+      await db.rental.update({ where: { id: r1.id }, data: { status: 'cancelled', cancellationReason: 'annulation_locataire' } });
+      fixes.push(`Rental 10087414 (Tiphaine De Courson) → cancelled, annulation_locataire`);
+    } else {
+      fixes.push('Rental 10087414 introuvable');
+    }
+
+    // Erlend Du Réau — getaroundId 10199259
+    const r2 = await db.rental.findFirst({ where: { getaroundId: '10199259' }, select: { id: true, status: true } });
+    if (r2) {
+      await db.rental.update({ where: { id: r2.id }, data: { status: 'cancelled', cancellationReason: 'sans_suite' } });
+      fixes.push(`Rental 10199259 (Erlend Du Réau) → cancelled, sans_suite`);
+    } else {
+      fixes.push('Rental 10199259 introuvable');
+    }
+
+    console.log(`[FixCancelledRentals] ${company.name} : ${fixes.join(' | ')}`);
+    res.json({ success: true, fixes });
+  } catch (err: unknown) { next(err); }
+});
+
 // POST /api/v1/superadmin/tenants/:slug/fix-ct-data — corrections CT post-tests
 router.post('/tenants/:slug/fix-ct-data', async (req: Request, res: Response, next: NextFunction) => {
   try {

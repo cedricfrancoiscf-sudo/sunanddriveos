@@ -31,6 +31,7 @@ export interface Rental {
   gasRefillFee: number | null;
   lateReturnFee: number | null;
   status: RentalStatus;
+  cancellationReason: string | null;
   evaluationStatus: EvaluationStatus;
   evaluationRating: number | null;
   evaluationComment: string | null;
@@ -82,6 +83,9 @@ export const rentalsApi = {
 
   update: (id: string, data: Partial<Rental>) =>
     api.put<{ rental: Rental }>(`/rentals/${id}`, data).then((r) => r.data.rental),
+
+  cancel: (id: string, cancellationReason?: string) =>
+    api.patch<{ rental: Rental }>(`/rentals/${id}/cancel`, { cancellationReason }).then((r) => r.data.rental),
 
   stats: (from?: string, to?: string) =>
     api

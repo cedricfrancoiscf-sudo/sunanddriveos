@@ -221,6 +221,7 @@ model Rental {
   repatriationFee      Float?             // repatriation_fee
   cancellationFee      Float?             // driver_cancellation_fee + drivy_cancellation_fee
   status              RentalStatus        @default(booked)
+  cancellationReason  String?             // annulation_locataire | annulation_proprio | no_show | litige | sans_suite
   isTest              Boolean             @default(false)
   evaluationStatus    EvaluationStatus    @default(pending)
   evaluationRating    Int?

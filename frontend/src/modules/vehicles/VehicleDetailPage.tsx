@@ -784,6 +784,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Note /5</label>
                   <input
+                    data-testid="input-note-getaround"
                     type="number" min="0" max="5" step="0.1"
                     placeholder="ex : 4.2"
                     value={ratingValue}
@@ -794,6 +795,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Nombre d'avis</label>
                   <input
+                    data-testid="input-nb-avis"
                     type="number" min="0" step="1"
                     placeholder="ex : 12"
                     value={ratingReviewCount}
@@ -839,6 +841,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
               </div>
 
               <button
+                data-testid="btn-sauvegarder-note"
                 type="button"
                 onClick={() => upsertRating.mutate()}
                 disabled={!ratingValue || upsertRating.isPending}

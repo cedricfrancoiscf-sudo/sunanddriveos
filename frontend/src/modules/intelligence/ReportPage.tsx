@@ -396,7 +396,7 @@ export default function ReportPage(): React.JSX.Element {
               <nav className="hidden md:flex items-center gap-0.5 ml-4">
                 {ANNUAL_SECTIONS.map(s => (
                   <button key={s.id} type="button" onClick={() => scrollTo(s.id)}
-                    data-testid={`section-${s.id}`}
+                    data-testid={`nav-section-${s.id}`}
                     className="rounded-lg px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors">
                     {s.label}
                   </button>

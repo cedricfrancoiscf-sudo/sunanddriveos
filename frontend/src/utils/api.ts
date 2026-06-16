@@ -22,12 +22,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Redirige vers /login si le token est expiré, /upgrade si trial expiré
+// Redirige vers /login si le token est expiré, /upgrade si trial expiré, /blocked si tenant suspendu
 api.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
-    const status = (error as { response?: { status?: number } }).response?.status;
+    const err = error as { response?: { status?: number; data?: { error?: string } } };
+    const status = err.response?.status;
+    const errorCode = err.response?.data?.error;
     const currentPath = window.location.pathname;
+
+    if (status === 403 && errorCode === 'TENANT_SUSPENDED') {
+      if (currentPath !== '/blocked') {
+        window.location.href = '/blocked';
+      }
+      return Promise.reject(error);
+    }
 
     if (status === 402) {
       if (currentPath !== '/login' && currentPath !== '/upgrade') {

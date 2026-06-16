@@ -7,6 +7,7 @@ import { resetCorruptedPayouts } from '../getaround-sync/getaround-sync.service'
 import { analyzeAndProcessMessage, type RentalForMessaging } from '../messages/messaging.service';
 import { createGetaroundClient } from '../getaround-sync/getaround-api';
 import { decrypt } from '../../utils/crypto';
+import { sendEmail } from '../../utils/mailer';
 
 const router: Router = Router();
 router.use(requireAuth, requireSuperAdmin);
@@ -133,6 +134,11 @@ router.get('/companies/:id', async (req: Request, res: Response, next: NextFunct
         plan: true, isActive: true, trialEndsAt: true,
         createdAt: true, updatedAt: true,
         stripeCustomerId: true, stripeSubscriptionId: true, icalToken: true,
+        siret: true, managerName: true, phone: true, contactEmail: true,
+        address: true, city: true, postalCode: true,
+        subscriptionStatus: true, subscriptionMode: true, subscriptionStartedAt: true,
+        forcedPrice: true, commercialNote: true,
+        onboardingCompleted: true, onboardingStep: true,
         billingEvents: {
           orderBy: { processedAt: 'desc' },
           take: 20,
@@ -167,7 +173,7 @@ router.post('/companies', async (req: Request, res: Response, next: NextFunction
   try {
     const body = z.object({
       name: z.string().min(1),
-      slug: z.string().min(2).regex(/^[a-z0-9-]+$/, 'Slug : lettres minuscules, chiffres, tirets uniquement'),
+      slug: z.string().min(2).regex(/^[a-z0-9-]+$/, 'Slug : lettres minuscules, chiffres, tirets uniquement').optional(),
       tenantDbUrl: z.string().url(),
       plan: z.enum(PLANS).default('starter'),
       trialDays: z.number().int().min(0).max(365).default(14),
@@ -179,11 +185,19 @@ router.post('/companies', async (req: Request, res: Response, next: NextFunction
       address: z.string().optional(),
       city: z.string().optional(),
       postalCode: z.string().optional(),
+      mode: z.enum(['standard', 'trial', 'forced']).default('standard'),
+      adminPassword: z.string().min(8).optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
 
+    function autoSlug(name: string): string {
+      return name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
+
+    const slug = body.data.slug ?? autoSlug(body.data.name);
+
     const master = getMasterClient();
-    const exists = await master.company.findUnique({ where: { slug: body.data.slug } });
+    const exists = await master.company.findUnique({ where: { slug } });
     if (exists) { res.status(409).json({ error: 'Ce slug est déjà utilisé' }); return; }
 
     const trialEndsAt = body.data.trialDays > 0
@@ -193,7 +207,7 @@ router.post('/companies', async (req: Request, res: Response, next: NextFunction
     const company = await master.company.create({
       data: {
         name: body.data.name,
-        slug: body.data.slug,
+        slug,
         tenantDbUrl: body.data.tenantDbUrl,
         plan: body.data.plan,
         primaryColor: body.data.primaryColor,
@@ -206,11 +220,44 @@ router.post('/companies', async (req: Request, res: Response, next: NextFunction
         address: body.data.address,
         city: body.data.city,
         postalCode: body.data.postalCode,
+        subscriptionMode: body.data.mode,
       },
-      select: { id: true, name: true, slug: true, plan: true, isActive: true, trialEndsAt: true, createdAt: true },
+      select: { id: true, name: true, slug: true, plan: true, isActive: true, trialEndsAt: true, createdAt: true, contactEmail: true, managerName: true },
     });
 
-    res.status(201).json({ company });
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
+    const generatedPassword = body.data.adminPassword ?? Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+
+    let adminCreated = false;
+    if (body.data.contactEmail) {
+      try {
+        const db = getTenantClient(body.data.tenantDbUrl);
+        const passwordHash = await hashPassword(generatedPassword);
+        await db.user.create({
+          data: {
+            email: body.data.contactEmail,
+            name: body.data.managerName ?? body.data.name,
+            role: 'admin',
+            roles: ['admin'],
+            passwordHash,
+            isActive: true,
+          },
+        });
+        adminCreated = true;
+      } catch (e) { console.error('[CreateCompany] Erreur création user admin tenant:', e); }
+    }
+
+    if (body.data.contactEmail && adminCreated) {
+      try {
+        await sendEmail({
+          to: body.data.contactEmail,
+          subject: 'Bienvenue sur SunanddriveOS',
+          html: `<p>Bonjour ${body.data.managerName ?? body.data.name},</p><p>Votre espace SunanddriveOS est prêt. Connectez-vous sur <a href="https://appli.sunanddrive.com">appli.sunanddrive.com</a></p><p>Email : ${body.data.contactEmail}<br/>Mot de passe temporaire : <strong>${generatedPassword}</strong></p><p>Pensez à changer votre mot de passe à la première connexion.</p>`,
+        });
+      } catch { /* non bloquant */ }
+    }
+
+    res.status(201).json({ company, generatedPassword: adminCreated ? generatedPassword : undefined });
   } catch (err: unknown) { next(err); }
 });
 
@@ -739,6 +786,185 @@ router.delete('/test-data', async (req: Request, res: Response, next: NextFuncti
     }
 
     res.json({ success: true, deletedRentals, deletedMessages, deletedCarSeatRequests, deletedUsers });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Plans & Tarifs ───────────────────────────────────────────────────────────
+
+// GET /api/v1/superadmin/plans
+router.get('/plans', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const plans = await master.planConfig.findMany({ orderBy: { name: 'asc' } });
+    res.json({ plans });
+  } catch (err: unknown) { next(err); }
+});
+
+// PUT /api/v1/superadmin/plans/:name
+router.put('/plans/:name', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      priceMonthly: z.number().min(0).optional(),
+      priceYearly: z.number().min(0).optional(),
+      description: z.string().optional(),
+      features: z.array(z.string()).optional(),
+      isActive: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
+
+    const master = getMasterClient();
+    const plan = await master.planConfig.upsert({
+      where: { name: req.params.name as string },
+      create: {
+        name: req.params.name as string,
+        priceMonthly: body.data.priceMonthly ?? 0,
+        priceYearly: body.data.priceYearly ?? 0,
+        description: body.data.description ?? '',
+        features: body.data.features ?? [],
+        isActive: body.data.isActive ?? true,
+      },
+      update: {
+        ...(body.data.priceMonthly !== undefined ? { priceMonthly: body.data.priceMonthly } : {}),
+        ...(body.data.priceYearly !== undefined ? { priceYearly: body.data.priceYearly } : {}),
+        ...(body.data.description !== undefined ? { description: body.data.description } : {}),
+        ...(body.data.features !== undefined ? { features: body.data.features } : {}),
+        ...(body.data.isActive !== undefined ? { isActive: body.data.isActive } : {}),
+      },
+    });
+    res.json({ plan });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Abonnement tenant ────────────────────────────────────────────────────────
+
+// PATCH /api/v1/superadmin/companies/:id/subscription
+router.patch('/companies/:id/subscription', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      plan: z.enum(PLANS).optional(),
+      mode: z.enum(['standard', 'trial', 'forced']).optional(),
+      trialEndsAt: z.string().datetime().nullable().optional(),
+      forcedPrice: z.number().nullable().optional(),
+      commercialNote: z.string().nullable().optional(),
+      status: z.enum(['active', 'suspendu', 'résilié']).optional(),
+      subscriptionStartedAt: z.string().datetime().nullable().optional(),
+    }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+
+    const master = getMasterClient();
+    const existing = await master.company.findUnique({
+      where: { id: req.params.id as string },
+      select: { subscriptionStatus: true, contactEmail: true, name: true },
+    });
+    if (!existing) { res.status(404).json({ error: 'Société introuvable' }); return; }
+
+    const data: Record<string, unknown> = {};
+    if (body.data.plan !== undefined) data.plan = body.data.plan;
+    if (body.data.mode !== undefined) data.subscriptionMode = body.data.mode;
+    if (body.data.trialEndsAt !== undefined) data.trialEndsAt = body.data.trialEndsAt ? new Date(body.data.trialEndsAt) : null;
+    if (body.data.forcedPrice !== undefined) data.forcedPrice = body.data.forcedPrice;
+    if (body.data.commercialNote !== undefined) data.commercialNote = body.data.commercialNote;
+    if (body.data.status !== undefined) data.subscriptionStatus = body.data.status;
+    if (body.data.subscriptionStartedAt !== undefined) data.subscriptionStartedAt = body.data.subscriptionStartedAt ? new Date(body.data.subscriptionStartedAt) : null;
+
+    const company = await master.company.update({
+      where: { id: req.params.id as string },
+      data,
+      select: { id: true, name: true, plan: true, subscriptionStatus: true, subscriptionMode: true, trialEndsAt: true, forcedPrice: true, commercialNote: true, subscriptionStartedAt: true },
+    });
+
+    if (body.data.status && body.data.status !== (existing.subscriptionStatus as string) && existing.contactEmail) {
+      const emailMap: Record<string, { subject: string; html: string }> = {
+        suspendu: {
+          subject: 'Votre accès SunanddriveOS a été suspendu',
+          html: `<p>Bonjour,</p><p>Votre accès à SunanddriveOS pour <strong>${existing.name}</strong> a été suspendu. Contactez-nous pour régulariser votre situation : <a href="mailto:contact@sunanddrive.fr">contact@sunanddrive.fr</a></p>`,
+        },
+        résilié: {
+          subject: 'Votre abonnement SunanddriveOS a été résilié',
+          html: `<p>Bonjour,</p><p>Votre abonnement SunanddriveOS pour <strong>${existing.name}</strong> a été résilié. Contactez-nous si vous souhaitez reprendre : <a href="mailto:contact@sunanddrive.fr">contact@sunanddrive.fr</a></p>`,
+        },
+        active: {
+          subject: 'Votre accès SunanddriveOS a été réactivé',
+          html: `<p>Bonjour,</p><p>Votre accès à SunanddriveOS pour <strong>${existing.name}</strong> a été réactivé. Connectez-vous sur <a href="https://appli.sunanddrive.com">appli.sunanddrive.com</a></p>`,
+        },
+      };
+      const tpl = emailMap[body.data.status];
+      if (tpl) {
+        try { await sendEmail({ to: existing.contactEmail, subject: tpl.subject, html: tpl.html }); } catch { /* non bloquant */ }
+      }
+    }
+
+    res.json({ company });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Notes internes ───────────────────────────────────────────────────────────
+
+// GET /api/v1/superadmin/companies/:id/notes
+router.get('/companies/:id/notes', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const notes = await master.tenantNote.findMany({
+      where: { companyId: req.params.id as string },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ notes });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/superadmin/companies/:id/notes
+router.post('/companies/:id/notes', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({ content: z.string().min(1) }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Contenu requis' }); return; }
+
+    const master = getMasterClient();
+    const note = await master.tenantNote.create({
+      data: { companyId: req.params.id as string, content: body.data.content },
+    });
+    res.status(201).json({ note });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Email superadmin → tenant ────────────────────────────────────────────────
+
+// POST /api/v1/superadmin/companies/:id/send-email
+router.post('/companies/:id/send-email', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      subject: z.string().min(1),
+      body: z.string().min(1),
+    }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
+
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { id: req.params.id as string },
+      select: { contactEmail: true, name: true },
+    });
+    if (!company?.contactEmail) { res.status(400).json({ error: 'Aucun email de contact pour cette société' }); return; }
+
+    await sendEmail({ to: company.contactEmail, subject: body.data.subject, html: `<p>${body.data.body.replace(/\n/g, '<br/>')}</p>` });
+    res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Paiements tenant ─────────────────────────────────────────────────────────
+
+// GET /api/v1/superadmin/companies/:id/payments
+router.get('/companies/:id/payments', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const payments = await master.billingEvent.findMany({
+      where: {
+        companyId: req.params.id as string,
+        type: 'invoice.payment_succeeded',
+      },
+      orderBy: { processedAt: 'desc' },
+      take: 50,
+      select: { id: true, type: true, stripeEventId: true, processedAt: true, data: true },
+    });
+    res.json({ payments });
   } catch (err: unknown) { next(err); }
 });
 

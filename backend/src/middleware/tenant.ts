@@ -12,11 +12,17 @@ export async function resolveTenant(req: Request, res: Response, next: NextFunct
     const master = getMasterClient();
     const company = await master.company.findUnique({
       where: { slug: tenantSlug, isActive: true },
-      select: { tenantDbUrl: true },
+      select: { tenantDbUrl: true, subscriptionStatus: true },
     });
 
     if (!company) {
       res.status(403).json({ error: 'Société inactive ou introuvable' });
+      return;
+    }
+
+    const status = (company as { tenantDbUrl: string; subscriptionStatus?: string }).subscriptionStatus;
+    if (status === 'suspendu' || status === 'résilié') {
+      res.status(403).json({ error: 'TENANT_SUSPENDED' });
       return;
     }
 

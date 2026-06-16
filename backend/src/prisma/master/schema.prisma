@@ -41,11 +41,19 @@ model Company {
   address              String?
   city                 String?
   postalCode           String?
+  subscriptionStatus   String         @default("active") // active | suspendu | résilié
+  subscriptionMode     String         @default("standard") // standard | trial | forced
+  subscriptionStartedAt DateTime?
+  forcedPrice          Float?
+  commercialNote       String?
+  onboardingCompleted  Boolean        @default(false)
+  onboardingStep       Int            @default(1)
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
   billingEvents        BillingEvent[]
   tenantEvents         TenantEvent[]
   tenantFeedbacks      TenantFeedback[]
+  tenantNotes          TenantNote[]
 
   @@map("companies")
 }
@@ -87,6 +95,32 @@ model TenantFeedback {
   submittedAt DateTime @default(now())
 
   @@map("tenant_feedbacks")
+}
+
+// Configuration des plans tarifaires
+model PlanConfig {
+  id           String   @id @default(cuid())
+  name         String   @unique // starter | pro | enterprise
+  priceMonthly Float    @default(0)
+  priceYearly  Float    @default(0)
+  description  String   @default("")
+  features     Json     @default("[]")
+  isActive     Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+
+  @@map("plan_configs")
+}
+
+// Notes internes superadmin sur un tenant
+model TenantNote {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  content   String
+  createdBy String   @default("superadmin")
+  createdAt DateTime @default(now())
+
+  @@map("tenant_notes")
 }
 
 // Événements de facturation Stripe

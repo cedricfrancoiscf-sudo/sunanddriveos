@@ -40,16 +40,16 @@ function LockedItem({ label, icon, requiredPlan, collapsed }: {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowModal(false)}>
           <div className="rounded-2xl bg-white p-6 shadow-xl max-w-sm mx-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gray-900">
-              Disponible dans le plan {requiredPlan === 'pro' ? 'Pro' : 'Enterprise'}
+              🔒 Abonnement {requiredPlan === 'pro' ? 'Pro' : 'Enterprise'} requis
             </h3>
             <p className="mt-2 text-sm text-gray-500">
-              Passez au plan {requiredPlan === 'pro' ? 'Pro (59€/mois)' : 'Enterprise'} pour accéder à cette fonctionnalité.
+              Ce module est disponible avec l'abonnement {requiredPlan === 'pro' ? 'Pro' : 'Enterprise'}. Contactez Sun and Drive pour activer votre abonnement.
             </p>
-            <button type="button" onClick={() => { window.location.href = '/upgrade'; }}
-              className="mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-white"
+            <a href="mailto:contact@sunanddrive.fr"
+              className="mt-4 flex w-full items-center justify-center rounded-xl py-2.5 text-sm font-semibold text-white"
               style={{ backgroundColor: PRIMARY }}>
-              Voir les plans →
-            </button>
+              Envoyer un email →
+            </a>
             <button type="button" onClick={() => setShowModal(false)}
               className="mt-2 w-full text-sm text-gray-400 hover:text-gray-600">
               Fermer

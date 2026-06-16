@@ -71,7 +71,11 @@ const TvDashboardPage = React.lazy(() => import('./modules/tv/TvDashboardPage'))
 const ThirdPartyOwnersPage = React.lazy(() => import('./modules/third-party-owners/ThirdPartyOwnersPage'));
 const SuperAdminLoginPage = React.lazy(() => import('./modules/superadmin/SuperAdminLoginPage'));
 const SuperAdminDashboard = React.lazy(() => import('./modules/superadmin/SuperAdminDashboard'));
+const SuperAdminPlansPage = React.lazy(() => import('./modules/superadmin/SuperAdminPlansPage'));
 const OnboardingPage = React.lazy(() => import('./modules/onboarding/OnboardingPage'));
+const OnboardingWizardPage = React.lazy(() => import('./modules/onboarding/OnboardingWizardPage'));
+const BlockedPage = React.lazy(() => import('./modules/billing/BlockedPage'));
+const BillingPage = React.lazy(() => import('./modules/billing/BillingPage'));
 const IntelligencePage = React.lazy(() => import('./modules/intelligence/IntelligencePage'));
 const ReportPage = React.lazy(() => import('./modules/intelligence/ReportPage'));
 const TrialExpiredPage = React.lazy(() => import('./modules/billing/TrialExpiredPage'));
@@ -131,8 +135,12 @@ export default function App(): React.JSX.Element {
             {/* TV dashboard — protégé mais sans sidebar */}
             <Route path="/tv" element={<ProtectedRoute><TvDashboardPage /></ProtectedRoute>} />
 
+            {/* Page accès suspendu */}
+            <Route path="/blocked" element={<BlockedPage />} />
+
             {/* Super admin — auth séparée, token localStorage superadmin_token */}
             <Route path="/superadmin/login" element={<SuperAdminLoginPage />} />
+            <Route path="/superadmin/plans" element={<SuperAdminPlansPage />} />
             <Route path="/superadmin" element={<SuperAdminDashboard />} />
             <Route path="/superadmin/*" element={<SuperAdminDashboard />} />
 
@@ -162,6 +170,8 @@ export default function App(): React.JSX.Element {
               <Route path="/scoring" element={<Navigate to="/renters?tab=scoring" replace />} />
               <Route path="/third-party-owners" element={<ThirdPartyOwnersPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
+              <Route path="/onboarding/wizard" element={<OnboardingWizardPage />} />
+              <Route path="/billing" element={<BillingPage />} />
               <Route path="/intelligence" element={<CarkeeperBlockedRoute><IntelligencePage /></CarkeeperBlockedRoute>} />
               <Route path="/intelligence/report" element={<CarkeeperBlockedRoute><ReportPage /></CarkeeperBlockedRoute>} />
               <Route path="/intelligence/ratings" element={<CarkeeperBlockedRoute><RatingPage /></CarkeeperBlockedRoute>} />

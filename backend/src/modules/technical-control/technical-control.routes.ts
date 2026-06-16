@@ -58,6 +58,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = schema.safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+    const performedAt = new Date(body.data.performedAt);
+    const expiryAt = new Date(body.data.expiryAt);
+    if (expiryAt <= performedAt) {
+      res.status(400).json({ error: 'La date d\'expiration doit être postérieure à la date du contrôle' }); return;
+    }
     const db = getTenantClient(req.tenantDbUrl!);
     const control = await db.technicalControl.create({
       data: {
@@ -115,6 +120,11 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = schema.partial().safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
+    if (body.data.performedAt && body.data.expiryAt) {
+      if (new Date(body.data.expiryAt) <= new Date(body.data.performedAt)) {
+        res.status(400).json({ error: 'La date d\'expiration doit être postérieure à la date du contrôle' }); return;
+      }
+    }
     const db = getTenantClient(req.tenantDbUrl!);
     const data = {
       ...body.data,

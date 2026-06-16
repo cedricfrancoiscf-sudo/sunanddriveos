@@ -47,7 +47,7 @@ export async function getVehicle(db: PrismaClient, id: string) {
       getaroundAccount: { select: { id: true, name: true } },
       thirdPartyOwner: { select: { id: true, name: true } },
       documents: { orderBy: { createdAt: 'desc' } },
-      technicalControls: { orderBy: { performedAt: 'desc' }, take: 1 },
+      technicalControls: { where: { archived: false }, orderBy: { performedAt: 'desc' }, take: 1 },
       maintenances: { orderBy: { performedAt: 'desc' }, take: 5 },
       blockings: {
         where: { endAt: { gte: new Date() } },

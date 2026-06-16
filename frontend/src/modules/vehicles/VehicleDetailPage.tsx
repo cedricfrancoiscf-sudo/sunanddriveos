@@ -604,8 +604,8 @@ export default function VehicleDetailPage(): React.JSX.Element {
           </div>
 
           {/* Derniers entretiens */}
-          {vehicle.maintenances.length > 0 && (
-            <Section title="Derniers entretiens">
+          <Section title="Derniers entretiens">
+            {vehicle.maintenances.length > 0 ? (
               <div className="space-y-2">
                 {vehicle.maintenances.map((m) => (
                   <div key={m.id} className="flex items-center justify-between text-sm">
@@ -616,8 +616,10 @@ export default function VehicleDetailPage(): React.JSX.Element {
                   </div>
                 ))}
               </div>
-            </Section>
-          )}
+            ) : (
+              <p className="text-sm text-gray-400">Aucun entretien enregistré</p>
+            )}
+          </Section>
 
           {/* Photos */}
           <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -736,7 +738,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
                 />
               </>
             ) : (
-              <p className="text-sm text-gray-400">Aucun contrôle enregistré</p>
+              <p className="text-sm text-gray-400">Aucun contrôle technique enregistré</p>
             )}
           </Section>
 

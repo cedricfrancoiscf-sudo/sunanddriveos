@@ -1,6 +1,6 @@
 ﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth, getCarekeeperVehicleIds } from '../../middleware/auth';
+import { requireAuth, getCarekeeperVehicleIds, isOnlyCarkeeper } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import { decrypt } from '../../utils/crypto';
@@ -30,20 +30,22 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       : new Date(Date.now() + 14 * 86_400_000);
 
     const db = getTenantClient(req.tenantDbUrl!);
-    const isCarkeeper = req.auth?.role === 'carkeeper' || (req.auth?.roles as string[] | undefined)?.includes('carkeeper');
-    const vehicleIds = isCarkeeper && req.auth?.userId
+    const ckOnly = isOnlyCarkeeper(req.auth);
+    const vehicleIds = ckOnly && req.auth?.userId
       ? await getCarekeeperVehicleIds(db, req.auth.userId)
       : undefined;
 
     const assignedIds = vehicleIds ?? [];
-    console.log(`[Planning] Carkeeper ${req.auth?.userId ?? 'n/a'} → ${isCarkeeper ? assignedIds.length : 'n/a (admin)'} véhicule(s) assigné(s)`);
+    if (ckOnly) {
+      console.log(`[Planning] Carkeeper ${req.auth?.userId ?? 'n/a'} → ${assignedIds.length} véhicule(s) assigné(s)`);
+    }
 
-    // Carkeeper : filtrer strictement par ses véhicules assignés (tableau vide = aucun véhicule)
-    // Admin/exploit : aucun filtre véhicule
-    const vehicleFilter = isCarkeeper ? { id: { in: assignedIds } } : {};
-    const rentalVehicleFilter = isCarkeeper ? { vehicleId: { in: assignedIds } } : {};
-    const blockingVehicleFilter = isCarkeeper ? { vehicleId: { in: assignedIds } } : {};
-    const unavailabilityVehicleFilter = isCarkeeper ? { vehicleId: { in: assignedIds } } : {};
+    // Carkeeper seul : filtre strictement sur ses véhicules assignés
+    // Admin/multi-rôle admin+carkeeper : tous les véhicules
+    const vehicleFilter = ckOnly ? { id: { in: assignedIds } } : {};
+    const rentalVehicleFilter = ckOnly ? { vehicleId: { in: assignedIds } } : {};
+    const blockingVehicleFilter = ckOnly ? { vehicleId: { in: assignedIds } } : {};
+    const unavailabilityVehicleFilter = ckOnly ? { vehicleId: { in: assignedIds } } : {};
 
     const [rentals, blockings, vehicles, unavailabilities, cancelledCount] = await Promise.all([
       db.rental.findMany({

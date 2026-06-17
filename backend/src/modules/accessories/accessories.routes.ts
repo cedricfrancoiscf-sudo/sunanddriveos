@@ -1,6 +1,6 @@
 ﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, isOnlyCarkeeper } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 
@@ -12,7 +12,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     // Carkeeper : ne voit que les accessoires qui lui sont assignés
-    const where = req.auth?.role === 'carkeeper' && req.auth.userId
+    const where = isOnlyCarkeeper(req.auth) && req.auth?.userId
       ? { carekeeperUserId: req.auth.userId }
       : {};
     const accessories = await db.accessory.findMany({

@@ -160,3 +160,15 @@ export async function getCarekeeperVehicleIds(db: PrismaClient, userId: string):
   });
   return assignments.map((a) => a.vehicleId);
 }
+
+// Retourne true UNIQUEMENT si l'utilisateur a carkeeper sans aucun rôle élevé.
+// Admin + carkeeper → false (admin prime). Carkeeper seul → true.
+export function isOnlyCarkeeper(auth: AuthPayload | undefined): boolean {
+  const allRoles = [
+    ...(auth?.role ? [auth.role] : []),
+    ...((auth?.roles as string[] | undefined) ?? []),
+  ];
+  const elevated = ['admin', 'exploitation', 'exploitant', 'comptable'];
+  const hasElevated = allRoles.some(r => elevated.includes(r));
+  return allRoles.includes('carkeeper') && !hasElevated;
+}

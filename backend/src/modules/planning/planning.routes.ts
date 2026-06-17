@@ -35,14 +35,15 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       ? await getCarekeeperVehicleIds(db, req.auth.userId)
       : undefined;
 
-    console.log(`[Planning] userId=${req.auth?.userId ?? 'n/a'} isCarkeeper=${isCarkeeper} vehicleIds=${JSON.stringify(vehicleIds ?? 'n/a')}`);
+    const assignedIds = vehicleIds ?? [];
+    console.log(`[Planning] Carkeeper ${req.auth?.userId ?? 'n/a'} → ${isCarkeeper ? assignedIds.length : 'n/a (admin)'} véhicule(s) assigné(s)`);
 
-    // Empty array is truthy — only apply filter when there are actual IDs
-    const hasVehicleFilter = vehicleIds != null && vehicleIds.length > 0;
-    const vehicleFilter = hasVehicleFilter ? { id: { in: vehicleIds! } } : {};
-    const rentalVehicleFilter = hasVehicleFilter ? { vehicleId: { in: vehicleIds! } } : {};
-    const blockingVehicleFilter = hasVehicleFilter ? { vehicleId: { in: vehicleIds! } } : {};
-    const unavailabilityVehicleFilter = hasVehicleFilter ? { vehicleId: { in: vehicleIds! } } : {};
+    // Carkeeper : filtrer strictement par ses véhicules assignés (tableau vide = aucun véhicule)
+    // Admin/exploit : aucun filtre véhicule
+    const vehicleFilter = isCarkeeper ? { id: { in: assignedIds } } : {};
+    const rentalVehicleFilter = isCarkeeper ? { vehicleId: { in: assignedIds } } : {};
+    const blockingVehicleFilter = isCarkeeper ? { vehicleId: { in: assignedIds } } : {};
+    const unavailabilityVehicleFilter = isCarkeeper ? { vehicleId: { in: assignedIds } } : {};
 
     const [rentals, blockings, vehicles, unavailabilities] = await Promise.all([
       db.rental.findMany({

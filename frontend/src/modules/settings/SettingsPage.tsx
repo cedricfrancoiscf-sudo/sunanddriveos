@@ -172,7 +172,7 @@ function UsersSection(): React.JSX.Element {
         </button>
       </div>
       {showInvite && (
-        <div className="mb-4 rounded-xl border border-[#01696e]/20 bg-[#01696e]/5 p-4 space-y-3">
+        <div data-testid="modal-inviter" className="mb-4 rounded-xl border border-[#01696e]/20 bg-[#01696e]/5 p-4 space-y-3">
           <h3 className="text-xs font-semibold text-gray-900">Inviter un membre</h3>
           {inviteLink ? (
             <div className="space-y-2">

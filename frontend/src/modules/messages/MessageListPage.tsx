@@ -214,11 +214,11 @@ export default function MessageListPage(): React.JSX.Element {
               key={conv.rentalId}
               type="button"
               onClick={() => navigate(`/messages/${conv.lastMessage.id}?rentalId=${conv.rentalId}`)}
-              className={`w-full flex items-center gap-4 px-4 py-4 text-left hover:bg-gray-50 transition-colors ${idx > 0 ? 'border-t border-gray-100' : ''}`}
+              className={`w-full flex items-start gap-3 px-4 py-4 text-left hover:bg-gray-50 transition-colors ${idx > 0 ? 'border-t border-gray-100' : ''}`}
             >
               {/* Avatar initiale conducteur */}
               <div
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+                className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white mt-0.5"
                 style={{ backgroundColor: '#01696e' }}
               >
                 {conv.driverName.charAt(0).toUpperCase()}
@@ -226,33 +226,40 @@ export default function MessageListPage(): React.JSX.Element {
 
               {/* Contenu */}
               <div className="min-w-0 flex-1">
+                {/* Ligne 1 : Nom + horodatage */}
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-semibold text-gray-900 truncate">{conv.driverName}</span>
-                    {conv.isUnanswered && (
-                      <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                        Sans réponse
-                      </span>
-                    )}
-                    {conv.hasPending && (
-                      <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
-                        En attente
-                      </span>
-                    )}
-                  </div>
+                  <span className="font-semibold text-gray-900 truncate">{conv.driverName}</span>
                   <span className="shrink-0 text-xs text-gray-400">
                     {formatDistanceToNow(new Date(conv.lastMessage.createdAt), { addSuffix: true, locale: fr })}
                   </span>
                 </div>
-                <p className="text-xs text-gray-400 truncate">{conv.vehicleLabel}</p>
-                <p className="mt-1 text-sm text-gray-600 line-clamp-1">
+
+                {/* Ligne 2 : Badges (leur propre ligne pour éviter la superposition) */}
+                {(conv.isUnanswered || conv.hasPending) && (
+                  <div className="mt-0.5 flex flex-wrap gap-1">
+                    {conv.isUnanswered && (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                        Sans réponse
+                      </span>
+                    )}
+                    {conv.hasPending && (
+                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
+                        En attente
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Ligne 3 : Véhicule + aperçu message */}
+                <p className="mt-0.5 text-xs text-gray-400 truncate">{conv.vehicleLabel}</p>
+                <p className="mt-0.5 text-sm text-gray-600 line-clamp-1">
                   {conv.lastMessage.direction === 'inbound' ? '← ' : '→ '}
                   {conv.lastMessage.content.slice(0, 60)}{conv.lastMessage.content.length > 60 ? '…' : ''}
                 </p>
               </div>
 
               {/* Compteur messages */}
-              <div className="shrink-0 text-right">
+              <div className="shrink-0 pt-0.5">
                 <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
                   {conv.messageCount}
                 </span>

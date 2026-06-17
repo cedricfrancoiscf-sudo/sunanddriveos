@@ -42,23 +42,26 @@ router.get('/renter/:getaroundId/profile', async (req: Request, res: Response, n
     }
 
     const driverName = rentals[0]?.driverName ?? blacklistEntry?.driverName ?? 'Inconnu';
-    const totalRentals = rentals.length;
-    const totalKm = rentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
-    const totalRevenue = rentals.reduce((s, r) => {
+
+    // Exclure les annulées des statistiques (elles restent dans l'historique)
+    const activeRentals = rentals.filter(r => r.status !== 'cancelled');
+    const totalRentals = activeRentals.length;
+    const totalKm = activeRentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
+    const totalRevenue = activeRentals.reduce((s, r) => {
       const ca = (r.ownerPayout ?? 0) > 0 ? (r.ownerPayout ?? 0) : Math.max(0, r.grossRevenue ?? 0);
       return s + ca;
     }, 0);
 
-    // Incidents = lateReturnFee OU damageCompensation > 0
-    const nbIncidents = rentals.filter(r => (r.lateReturnFee ?? 0) > 0 || (r.damageCompensation ?? 0) > 0).length;
+    // Incidents = lateReturnFee OU damageCompensation > 0 (hors annulées)
+    const nbIncidents = activeRentals.filter(r => (r.lateReturnFee ?? 0) > 0 || (r.damageCompensation ?? 0) > 0).length;
 
-    const ratedRentals = rentals.filter(r => r.evaluationRating !== null);
+    const ratedRentals = activeRentals.filter(r => r.evaluationRating !== null);
     const avgRating = ratedRentals.length > 0
       ? Math.round((ratedRentals.reduce((s, r) => s + (r.evaluationRating ?? 0), 0) / ratedRentals.length) * 10) / 10
       : null;
 
     const plates = [...new Set(rentals.map(r => r.vehicle.licensePlate))];
-    const completed = rentals.filter(r => r.status === 'completed');
+    const completed = activeRentals.filter(r => r.status === 'completed');
     const isVip = completed.length >= 5 && nbIncidents === 0 && (avgRating === null || avgRating >= 4.5);
 
     const rentalHistory = [...rentals]

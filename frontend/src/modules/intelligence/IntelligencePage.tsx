@@ -327,13 +327,16 @@ export default function IntelligencePage(): React.JSX.Element {
                   <Bar yAxisId="ca" dataKey="encaisse.insuranceFee" stackId="monthly" fill="#0891b2" name="Assurance" />
                   <Bar yAxisId="ca" dataKey="encaisse.driverMessFee" stackId="monthly" fill="#d97706" name="Nettoyage" />
                   <Bar yAxisId="ca" dataKey="encaisse.damageCompensation" stackId="monthly" fill="#dc2626" name="Réparations" />
-                  <Bar yAxisId="ca" dataKey="encaisse.autres" stackId="monthly" fill="#7c3aed" name="Autres"
+                  <Bar yAxisId="ca" dataKey="encaisse.autres" stackId="monthly" fill="#7c3aed" name="Autres" />
+                  <Bar yAxisId="ca" dataKey="previsionnel" stackId="monthly" fill="#3b82f6" radius={[3,3,0,0]} name="Prévisionnel"
                     label={(props: Record<string, unknown>) => {
                       const { x, y, width, index } = props as { x: number; y: number; width: number; index: number };
                       const d = annual.monthlyData[index];
-                      if (!d || d.encaisse.total === 0) return <g />;
+                      if (!d) return <g />;
                       const margin = d.margin ?? 0;
                       if (margin === 0) return <g />;
+                      // Afficher sur mois passés (encaisse > 0, previsionnel = 0 → y est au top de l'encaissé)
+                      // et sur mois futurs (encaisse = 0, previsionnel > 0 → y est au top du prévisionnel)
                       return (
                         <text x={(x as number) + (width as number) / 2} y={(y as number) - 8} textAnchor="middle" fontSize={11} fontWeight="bold" fill={margin >= 0 ? '#16a34a' : '#dc2626'}>
                           {margin >= 0 ? '+' : ''}{fmtEuro(margin)}
@@ -341,7 +344,6 @@ export default function IntelligencePage(): React.JSX.Element {
                       );
                     }}
                   />
-                  <Bar yAxisId="ca" dataKey="previsionnel" stackId="monthly" fill="#3b82f6" radius={[3,3,0,0]} name="Prévisionnel" />
                   <Bar yAxisId="ca" dataKey="costsTotal" fill="#f97316" radius={[3,3,0,0]} name="Coûts" />
                   <Line yAxisId="km" type="monotone" dataKey="km" stroke="#94a3b8" strokeWidth={2} dot={{ r: 3 }} name="Km" />
                 </ComposedChart>

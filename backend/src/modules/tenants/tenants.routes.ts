@@ -23,7 +23,6 @@ router.get('/stats', async (_req: Request, res: Response, next: NextFunction) =>
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
     const threeDaysFromNow = new Date(now.getTime() + 3 * 86_400_000);
-    const oneMonthAgo = new Date(now.getTime() - 30 * 86_400_000);
 
     const [total, active, onTrial, perPlan, trialExpiringSoon, activeCompanies] = await Promise.all([
       master.company.count(),
@@ -35,6 +34,9 @@ router.get('/stats', async (_req: Request, res: Response, next: NextFunction) =>
         where: { isActive: true },
         select: {
           tenantDbUrl: true,
+          plan: true,
+          subscriptionMode: true,
+          forcedPrice: true,
           tenantEvents: { where: { occurredAt: { gte: sevenDaysAgo } }, take: 1, select: { id: true } },
         },
       }),
@@ -42,15 +44,19 @@ router.get('/stats', async (_req: Request, res: Response, next: NextFunction) =>
 
     const churnRisk = activeCompanies.filter(c => c.tenantEvents.length === 0).length;
 
-    const payouts = await Promise.allSettled(activeCompanies.map(async (c) => {
-      const db = getTenantClient(c.tenantDbUrl);
-      const agg = await db.rental.aggregate({
-        _sum: { ownerPayout: true },
-        where: { endAt: { gte: oneMonthAgo } },
-      });
-      return Math.max(0, agg._sum.ownerPayout ?? 0);
-    }));
-    const mrrTotal = Math.round(payouts.reduce((sum, p) => sum + (p.status === 'fulfilled' ? p.value : 0), 0));
+    // MRR basé sur les vrais prix d'abonnement (pas les payouts Getaround)
+    const planConfigs = await master.planConfig.findMany({ select: { name: true, priceMonthly: true } });
+    const planPrices = Object.fromEntries(planConfigs.map(p => [p.name, p.priceMonthly ?? 0]));
+
+    const mrrTotal = Math.round(
+      activeCompanies.reduce((sum, c) => {
+        if (c.subscriptionMode === 'trial') return sum;
+        const price = c.subscriptionMode === 'forced'
+          ? (c.forcedPrice ?? 0)
+          : (planPrices[c.plan] ?? 0);
+        return sum + price;
+      }, 0),
+    );
 
     const planDistribution = { starter: 0, pro: 0, enterprise: 0 };
     for (const p of perPlan) {

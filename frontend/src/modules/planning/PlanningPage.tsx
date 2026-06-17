@@ -440,7 +440,7 @@ export default function PlanningPage(): React.JSX.Element {
         <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
           {/* En-tête des jours */}
           <div className="flex border-b border-gray-200 sticky top-0 bg-white z-20">
-            <div className="w-44 shrink-0 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-500">
+            <div className="w-[90px] sm:w-44 shrink-0 border-r border-gray-200 px-2 sm:px-3 py-2 text-xs font-semibold text-gray-500">
               Véhicule
             </div>
             <div className="flex flex-1 min-w-[500px]">
@@ -463,7 +463,7 @@ export default function PlanningPage(): React.JSX.Element {
             <React.Fragment key={zone}>
               {/* En-tête zone */}
               <div className="flex border-b border-gray-200 sticky top-[41px] z-10">
-                <div className="w-44 shrink-0 border-r border-gray-200" />
+                <div className="w-[90px] sm:w-44 shrink-0 border-r border-gray-200" />
                 <div className="flex-1 min-w-[500px]">
                   <ZoneHeader zone={zone} count={filteredVehiclesByZone[zone]?.length ?? 0} />
                 </div>
@@ -477,9 +477,12 @@ export default function PlanningPage(): React.JSX.Element {
                 return (
                   <div key={v.id} className="flex border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     {/* Infos véhicule */}
-                    <div className="w-44 shrink-0 border-r border-gray-200 px-3 py-2.5 flex flex-col justify-center">
-                      <p className="text-xs font-semibold text-gray-800 truncate">{v.make} {v.model}</p>
-                      <p className="text-[11px] text-gray-400 tracking-wide">{v.licensePlate}</p>
+                    <div className="w-[90px] sm:w-44 shrink-0 border-r border-gray-200 px-2 sm:px-3 py-2.5 flex flex-col justify-center">
+                      <p className="text-xs font-semibold text-gray-800 truncate">
+                        <span className="sm:hidden">{v.model}</span>
+                        <span className="hidden sm:inline">{v.make} {v.model}</span>
+                      </p>
+                      <p className="text-[11px] text-gray-400 tracking-wide truncate">{v.licensePlate}</p>
                     </div>
 
                     {/* Barre timeline */}

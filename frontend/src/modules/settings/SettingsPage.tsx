@@ -437,6 +437,14 @@ interface CompanySettings {
   invoiceSyncWindowDays: number;
   invoiceActiveTypes: string[];
   invoiceMalusConfig: Record<string, number>;
+  journalCode: string;
+  compteLocationsProduit: string;
+  compteCompensationsProduit: string;
+  compteEntretienCharge: string;
+  compteAssuranceCharge: string;
+  compteParkingCharge: string;
+  formatExportPreference: string;
+  objectifSeuilAlerte: number;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -1230,6 +1238,118 @@ function BillingSection(): React.JSX.Element {
   );
 }
 
+function ComptabiliteSection(): React.JSX.Element {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<{ settings: CompanySettings }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
+  });
+
+  const [form, setForm] = React.useState({
+    journalCode: 'VT',
+    compteLocationsProduit: '706100',
+    compteCompensationsProduit: '706200',
+    compteEntretienCharge: '615000',
+    compteAssuranceCharge: '616000',
+    compteParkingCharge: '613000',
+    formatExportPreference: 'fec',
+    objectifSeuilAlerte: 80,
+  });
+  const [saved, setSaved] = React.useState(false);
+
+  React.useEffect(() => {
+    if (settings) {
+      setForm({
+        journalCode: settings.journalCode ?? 'VT',
+        compteLocationsProduit: settings.compteLocationsProduit ?? '706100',
+        compteCompensationsProduit: settings.compteCompensationsProduit ?? '706200',
+        compteEntretienCharge: settings.compteEntretienCharge ?? '615000',
+        compteAssuranceCharge: settings.compteAssuranceCharge ?? '616000',
+        compteParkingCharge: settings.compteParkingCharge ?? '613000',
+        formatExportPreference: settings.formatExportPreference ?? 'fec',
+        objectifSeuilAlerte: settings.objectifSeuilAlerte ?? 80,
+      });
+    }
+  }, [settings]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.put('/settings', form),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  function field(key: keyof typeof form, label: string, hint?: string, type: 'text' | 'number' = 'text') {
+    return (
+      <div key={key}>
+        <label className="mb-1 block text-xs font-medium text-gray-600">{label}</label>
+        {hint && <p className="mb-1.5 text-[11px] text-gray-400">{hint}</p>}
+        <input type={type} value={form[key]}
+          onChange={e => setForm(f => ({ ...f, [key]: type === 'number' ? parseInt(e.target.value) || 0 : e.target.value }))}
+          data-testid={`input-compta-${key}`}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+      </div>
+    );
+  }
+
+  return (
+    <section data-testid="comptabilite-section" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-900">Comptabilité</h2>
+        <p className="mt-0.5 text-xs text-gray-400">Configuration des exports FEC DGFiP et numéros de comptes</p>
+      </div>
+
+      <div>
+        <p className="mb-3 text-xs font-semibold text-gray-700">Format d'export préféré</p>
+        <div className="flex gap-3">
+          {([['fec', 'FEC DGFiP'], ['csv', 'CSV brut']] as const).map(([v, lbl]) => (
+            <label key={v} className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="radio" name="formatExport" value={v} checked={form.formatExportPreference === v}
+                onChange={() => setForm(f => ({ ...f, formatExportPreference: v }))}
+                className="accent-[#01696e]" />
+              <span className="text-sm text-gray-700">{lbl}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {field('journalCode', 'Code journal', 'Préfixe des écritures FEC (ex : VT)')}
+        {field('objectifSeuilAlerte', 'Seuil alerte objectif CA (%)', 'En dessous de ce % du CA cible, indicateur orange', 'number')}
+      </div>
+
+      <div>
+        <p className="mb-3 text-xs font-semibold text-gray-700">Comptes de produits</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {field('compteLocationsProduit', 'Locations (produit)')}
+          {field('compteCompensationsProduit', 'Compensations (produit)')}
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-3 text-xs font-semibold text-gray-700">Comptes de charges</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {field('compteEntretienCharge', 'Entretien')}
+          {field('compteAssuranceCharge', 'Assurance')}
+          {field('compteParkingCharge', 'Parking')}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 pt-1">
+        <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+          className="rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          style={{ backgroundColor: '#01696e' }}>
+          {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+        </button>
+        {saved && <p className="text-sm font-medium text-green-600">Sauvegardé ✓</p>}
+      </div>
+    </section>
+  );
+}
+
 const FLAG_CONFIG = [
   { key: 'blocked_cleaning',   label: 'Nettoyage' },
   { key: 'blocked_damage',     label: 'Dommage' },
@@ -1654,6 +1774,9 @@ export default function SettingsPage(): React.JSX.Element {
 
         {/* Frais supplémentaires */}
         <ExtraChargesSection />
+
+        {/* Comptabilité */}
+        <ComptabiliteSection />
 
       </div>
     </div>

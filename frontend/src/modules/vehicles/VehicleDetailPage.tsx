@@ -66,6 +66,41 @@ const emptyForm: BlockingFormData = {
   type: 'maintenance',
 };
 
+function CoutKmSection({ vehicleId, totalMonthlyCosts }: { vehicleId: string; totalMonthlyCosts: number }): React.JSX.Element {
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const { data } = useQuery<{ month: string; kmTotal: number }>({
+    queryKey: ['monthly-km', vehicleId, currentMonth],
+    queryFn: () => api.get<{ month: string; kmTotal: number }>(`/vehicles/${vehicleId}/monthly-km`, { params: { month: currentMonth } }).then(r => r.data),
+    enabled: Boolean(vehicleId),
+    staleTime: 10 * 60_000,
+  });
+  const kmTotal = data?.kmTotal ?? 0;
+  const coutParKm = kmTotal > 0 ? totalMonthlyCosts / kmTotal : null;
+
+  return (
+    <div data-testid="cout-km-section" className="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">Coût réel au km</h2>
+      <div className="space-y-2 text-sm">
+        <div className="flex justify-between">
+          <span className="text-gray-500">Km parcourus ({currentMonth})</span>
+          <span className="font-semibold text-gray-900">{kmTotal.toLocaleString('fr-FR')} km</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-500">Charges mensuelles</span>
+          <span className="font-semibold text-red-600">{totalMonthlyCosts.toFixed(2)} €</span>
+        </div>
+        <div className="flex justify-between border-t border-gray-100 pt-2">
+          <span className="text-gray-700 font-medium">Coût / km</span>
+          <span className={`font-bold text-base ${coutParKm === null ? 'text-gray-400' : 'text-[#01696e]'}`}>
+            {coutParKm !== null ? `${coutParKm.toFixed(2)} €/km` : '— (km non disponibles)'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function VehicleDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -881,6 +916,9 @@ export default function VehicleDetailPage(): React.JSX.Element {
               </div>
             )}
           </div>
+
+          {/* Coût réel au km */}
+          <CoutKmSection vehicleId={id!} totalMonthlyCosts={totalMonthlyCosts} />
 
           {/* Carkeepers assignés — admin only */}
           {isAdmin && (

@@ -164,6 +164,7 @@ model Vehicle {
   photos                VehiclePhoto[]
   ratings               VehicleRating[]
   costs                 VehicleCost[]
+  objectives            VehicleObjective[]
 
   @@map("vehicles")
 }
@@ -656,17 +657,39 @@ model CompanySettings {
   alertEmails          String[] @default([])   // Destinataires des alertes email
   replyToEmail         String?                 // Email de réponse affiché aux locataires
   senderName           String?                 // Nom affiché dans le champ "De"
-  maintenancePolicies    Json     @default("{}")
-  notificationSettings   Json     @default("{}")
-  invoiceSyncWindowDays  Int      @default(7)
-  invoiceActiveTypes     String[] @default(["blocked_cleaning","blocked_damage","blocked_claim","blocked_late","blocked_infraction","blocked_gas"])
-  invoiceMalusConfig     Json     @default("{}")
+  maintenancePolicies      Json     @default("{}")
+  notificationSettings     Json     @default("{}")
+  invoiceSyncWindowDays    Int      @default(7)
+  invoiceActiveTypes       String[] @default(["blocked_cleaning","blocked_damage","blocked_claim","blocked_late","blocked_infraction","blocked_gas"])
+  invoiceMalusConfig       Json     @default("{}")
+  // Comptabilité
+  journalCode              String   @default("VT")
+  compteLocationsProduit   String   @default("706100")
+  compteCompensationsProduit String @default("706200")
+  compteEntretienCharge    String   @default("615000")
+  compteAssuranceCharge    String   @default("616000")
+  compteParkingCharge      String   @default("613000")
+  formatExportPreference   String   @default("fec")
+  objectifSeuilAlerte      Int      @default(80)
   getaroundWebhookPath String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
   @@map("company_settings")
 }
+model VehicleObjective {
+  id        String   @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  month     String   // format YYYY-MM
+  targetCA  Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([vehicleId, month])
+  @@map("vehicle_objectives")
+}
+
 model CeoReport {
   id          String    @id @default(cuid())
   companyId   String

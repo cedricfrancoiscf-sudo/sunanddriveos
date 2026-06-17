@@ -131,6 +131,20 @@ router.patch('/:id/unblock-evaluation', async (req: Request, res: Response, next
   } catch (err: unknown) { next(err); }
 });
 
+// GET /api/v1/rentals/flagged — locations avec evaluationFlag actif non débloqué
+router.get('/flagged', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const rentals = await db.rental.findMany({
+      where: { evaluationFlag: { not: null }, evaluationFlagUnblockedAt: null },
+      include: { vehicle: { select: { make: true, model: true, licensePlate: true } } },
+      orderBy: { startAt: 'desc' },
+      take: 100,
+    });
+    res.json({ rentals });
+  } catch (err: unknown) { next(err); }
+});
+
 // PUT /api/v1/rentals/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {

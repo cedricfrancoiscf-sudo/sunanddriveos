@@ -288,4 +288,56 @@ router.delete('/:id/carkeepers/:userId', async (req: Request, res: Response, nex
   } catch (err: unknown) { next(err); }
 });
 
+// PATCH /api/v1/vehicles/:id/objective — upsert objectif CA mensuel
+router.patch('/:id/objective', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { month, targetCA } = req.body as { month?: string; targetCA?: number };
+    if (!month || typeof targetCA !== 'number') {
+      res.status(400).json({ error: 'month (YYYY-MM) et targetCA requis' }); return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      res.status(400).json({ error: 'Format month invalide, attendu YYYY-MM' }); return;
+    }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const objective = await db.vehicleObjective.upsert({
+      where: { vehicleId_month: { vehicleId: req.params.id as string, month } },
+      update: { targetCA },
+      create: { vehicleId: req.params.id as string, month, targetCA },
+    });
+    res.json({ objective });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/vehicles/:id/objectives — liste objectifs par mois
+router.get('/:id/objectives', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const objectives = await db.vehicleObjective.findMany({
+      where: { vehicleId: req.params.id as string },
+      orderBy: { month: 'desc' },
+      take: 13,
+    });
+    res.json({ objectives });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/vehicles/:id/monthly-km?month=YYYY-MM — km parcourus ce mois
+router.get('/:id/monthly-km', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const month = (req.query.month as string | undefined) ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const [year, mon] = month.split('-').map(Number) as [number, number];
+    const from = new Date(year, mon - 1, 1);
+    const to = new Date(year, mon, 0, 23, 59, 59);
+
+    const rentals = await db.rental.findMany({
+      where: { vehicleId: req.params.id as string, startAt: { gte: from, lte: to }, status: { in: ['active', 'completed'] } },
+      select: { kmDriven: true },
+    });
+    const kmTotal = rentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
+    res.json({ month, kmTotal });
+  } catch (err: unknown) { next(err); }
+});
+
 export default router;

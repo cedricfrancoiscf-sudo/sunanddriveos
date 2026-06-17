@@ -23,6 +23,24 @@ interface RenterProfile {
   vehicles: string[];
 }
 
+const FLAG_LABELS: Record<string, string> = {
+  blocked_cleaning: 'Frais de nettoyage',
+  blocked_damage: 'Compensation dommage',
+  blocked_claim: 'Frais sinistre',
+  blocked_late: 'Retard de retour',
+  blocked_infraction: 'Infraction',
+  blocked_gas: 'Frais carburant',
+};
+
+const CHARGE_TYPE_LABELS: Record<string, string> = {
+  driver_mess_fee: 'Nettoyage', damage_compensation: 'Dommage',
+  claims_owner_fee_cg: 'Sinistre', driver_late_return_fee: 'Retard',
+  driver_infraction_fee: 'Infraction', driver_gas_refill_fee: 'Carburant',
+  driver_rental_payment: 'Location', extra_distance_payment: 'Km sup.',
+  self_insurance_payment: 'Assurance', additional_self_insurance_payment: 'Assurance sup.',
+  assistance_fee: 'Assistance', delivery_fee: 'Livraison',
+};
+
 const INCIDENT_TYPE_LABELS: Record<string, string> = {
   damage: 'Dommage', theft: 'Vol', accident: 'Accident', vandalism: 'Vandalisme', other: 'Autre',
 };
@@ -113,6 +131,7 @@ export default function RentalDetailPage(): React.JSX.Element {
   const [incidentForm, setIncidentForm] = useState({ type: 'damage', description: '', cost: '' });
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState<string>('annulation_locataire');
+  const [showUnblockModal, setShowUnblockModal] = useState(false);
 
   const { data: rental, isLoading, isError } = useQuery({
     queryKey: ['rental', id],
@@ -126,6 +145,13 @@ export default function RentalDetailPage(): React.JSX.Element {
     queryFn: () => api.get<RenterProfile>(`/rentals/renter/${rental!.driverGetaroundId}/profile`).then(r => r.data),
     enabled: Boolean(rental?.driverGetaroundId),
     staleTime: 2 * 60_000,
+  });
+
+  const { data: rentalInvoices = [] } = useQuery({
+    queryKey: ['rental-invoices', id],
+    queryFn: () => rentalsApi.getInvoices(id!),
+    enabled: Boolean(id) && Boolean(rental?.evaluationFlag),
+    staleTime: 5 * 60_000,
   });
 
   const blacklistMutation = useMutation({
@@ -178,6 +204,15 @@ export default function RentalDetailPage(): React.JSX.Element {
     },
   });
 
+  const unblockEvalMutation = useMutation({
+    mutationFn: () => rentalsApi.unblockEvaluation(id!),
+    onSuccess: () => {
+      void qc.refetchQueries({ queryKey: ['rental', id] });
+      void qc.invalidateQueries({ queryKey: ['renter-profile', rental?.driverGetaroundId] });
+      setShowUnblockModal(false);
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-20">
@@ -223,6 +258,33 @@ export default function RentalDetailPage(): React.JSX.Element {
           <span className="rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-semibold text-yellow-700">⭐ VIP</span>
         )}
       </div>
+
+      {/* Bannière frais supplémentaire Getaround */}
+      {rental.evaluationFlag && !rental.evaluationFlagUnblockedAt && (
+        <div data-testid="evaluation-flag-banner"
+          className="mb-4 flex items-center justify-between gap-4 rounded-xl border border-orange-300 bg-orange-50 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <p className="text-sm font-semibold text-orange-800">
+                Frais supplémentaire détecté — {FLAG_LABELS[rental.evaluationFlag] ?? rental.evaluationFlag}
+              </p>
+              {rental.evaluationFlagAmount != null && (
+                <p className="text-xs text-orange-600">
+                  Montant : {(rental.evaluationFlagAmount / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                </p>
+              )}
+            </div>
+          </div>
+          {isAdmin && (
+            <button type="button" data-testid="btn-debloquer-flag"
+              onClick={() => setShowUnblockModal(true)}
+              className="shrink-0 rounded-lg border border-orange-300 bg-white px-3 py-1.5 text-xs font-semibold text-orange-700 hover:bg-orange-50 transition">
+              Débloquer
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Colonne principale */}
@@ -472,6 +534,22 @@ export default function RentalDetailPage(): React.JSX.Element {
                 <span className="text-xs italic text-gray-400">En attente de paiement</span>
               )}
             </div>
+
+            {/* Détail facturation Getaround */}
+            {rentalInvoices.length > 0 && (
+              <>
+                <div className="my-2 border-t border-dashed border-gray-200" />
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Détail facturation</p>
+                {rentalInvoices.map(inv => (
+                  <div key={inv.id} className="flex items-center justify-between py-1">
+                    <span className="text-xs text-gray-500">{CHARGE_TYPE_LABELS[inv.chargeType] ?? inv.chargeType}</span>
+                    <span className="text-xs font-medium text-gray-700">
+                      {(inv.amountCentimes / 100).toLocaleString('fr-FR', { style: 'currency', currency: inv.currency })}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
 
           {/* Évaluation */}
@@ -605,6 +683,39 @@ export default function RentalDetailPage(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      {/* Modal déblocage évaluation flag */}
+      {showUnblockModal && rental.evaluationFlag && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="mb-3 text-base font-bold text-gray-900">Débloquer le frais</h2>
+            <p className="mb-2 text-sm text-gray-600">
+              Frais détecté : <strong>{FLAG_LABELS[rental.evaluationFlag] ?? rental.evaluationFlag}</strong>
+            </p>
+            {rental.evaluationFlagAmount != null && (
+              <p className="mb-4 text-sm text-orange-700 font-semibold">
+                Montant : {(rental.evaluationFlagAmount / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+              </p>
+            )}
+            <p className="mb-4 text-xs text-gray-500">
+              En confirmant, ce frais ne sera plus considéré comme un incident. Le locataire ne sera plus pénalisé pour ce type de charge.
+            </p>
+            <div className="flex gap-2">
+              <button type="button" data-testid="btn-confirmer-deblocage"
+                onClick={() => unblockEvalMutation.mutate()}
+                disabled={unblockEvalMutation.isPending}
+                className="flex-1 rounded-lg py-2 text-sm font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: '#01696e' }}>
+                {unblockEvalMutation.isPending ? 'En cours...' : 'Confirmer le déblocage'}
+              </button>
+              <button type="button" onClick={() => setShowUnblockModal(false)}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal annulation */}
       {showCancelModal && (

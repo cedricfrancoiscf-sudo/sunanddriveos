@@ -3,6 +3,16 @@ import { api } from '../../utils/api';
 export type RentalStatus = 'booked' | 'active' | 'completed' | 'cancelled';
 export type EvaluationStatus = 'pending' | 'posted' | 'blocked';
 
+export interface RentalInvoice {
+  id: string;
+  rentalId: string;
+  getaroundInvoiceId: number;
+  chargeType: string;
+  amountCentimes: number;
+  currency: string;
+  emittedAt: string | null;
+}
+
 export interface Rental {
   id: string;
   getaroundId: string;
@@ -35,6 +45,9 @@ export interface Rental {
   evaluationStatus: EvaluationStatus;
   evaluationRating: number | null;
   evaluationComment: string | null;
+  evaluationFlag: string | null;
+  evaluationFlagAmount: number | null;
+  evaluationFlagUnblockedAt: string | null;
 }
 
 export interface RentalDetail extends Rental {
@@ -98,4 +111,10 @@ export const rentalsApi = {
         `/getaround-sync/sync-rentals/${accountId}`,
       )
       .then((r) => r.data.result),
+
+  getInvoices: (id: string) =>
+    api.get<{ invoices: RentalInvoice[] }>(`/rentals/${id}/invoices`).then((r) => r.data.invoices),
+
+  unblockEvaluation: (id: string) =>
+    api.patch<{ rental: Rental }>(`/rentals/${id}/unblock-evaluation`).then((r) => r.data.rental),
 };

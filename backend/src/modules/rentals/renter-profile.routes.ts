@@ -12,7 +12,7 @@ router.get('/renter/:getaroundId/profile', async (req: Request, res: Response, n
     const { getaroundId } = req.params as { getaroundId: string };
     const db = getTenantClient(req.tenantDbUrl!);
 
-    const [rentals, blacklistEntry] = await Promise.all([
+    const [rentals, blacklistEntry, settings] = await Promise.all([
       db.rental.findMany({
         where: { driverGetaroundId: getaroundId },
         select: {
@@ -29,11 +29,15 @@ router.get('/renter/:getaroundId/profile', async (req: Request, res: Response, n
           damageCompensation: true,
           gasRefillFee: true,
           driverMessFee: true,
+          evaluationFlag: true,
+          evaluationFlagAmount: true,
+          evaluationFlagUnblockedAt: true,
           vehicle: { select: { licensePlate: true } },
         },
         orderBy: { startAt: 'asc' },
       }),
       db.renterBlacklist.findUnique({ where: { driverGetaroundId: getaroundId } }),
+      db.companySettings.findFirst({ select: { invoiceMalusConfig: true } }),
     ]);
 
     if (rentals.length === 0 && !blacklistEntry) {
@@ -64,6 +68,28 @@ router.get('/renter/:getaroundId/profile', async (req: Request, res: Response, n
     const completed = activeRentals.filter(r => r.status === 'completed');
     const isVip = completed.length >= 5 && nbIncidents === 0 && (avgRating === null || avgRating >= 4.5);
 
+    const DEFAULT_MALUS: Record<string, number> = {
+      blocked_cleaning: 10, blocked_damage: 20, blocked_claim: 20,
+      blocked_late: 5, blocked_infraction: 5, blocked_gas: 5,
+    };
+    const malusConfig: Record<string, number> =
+      settings?.invoiceMalusConfig && typeof settings.invoiceMalusConfig === 'object' && !Array.isArray(settings.invoiceMalusConfig)
+        ? settings.invoiceMalusConfig as Record<string, number>
+        : {};
+
+    const incidentsFinanciers = activeRentals
+      .filter(r => r.evaluationFlag && !r.evaluationFlagUnblockedAt)
+      .map(r => ({
+        rentalId: r.id,
+        startAt: r.startAt,
+        flag: r.evaluationFlag!,
+        amountEuros: r.evaluationFlagAmount != null ? Math.round(r.evaluationFlagAmount / 100 * 100) / 100 : null,
+      }));
+
+    const malusTotal = incidentsFinanciers.reduce((s, inc) => {
+      return s + (malusConfig[inc.flag] ?? DEFAULT_MALUS[inc.flag] ?? 5);
+    }, 0);
+
     const rentalHistory = [...rentals]
       .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
       .map(r => {
@@ -81,6 +107,9 @@ router.get('/renter/:getaroundId/profile', async (req: Request, res: Response, n
           damageCompensation: r.damageCompensation,
           gasRefillFee: r.gasRefillFee,
           driverMessFee: r.driverMessFee,
+          evaluationFlag: r.evaluationFlag,
+          evaluationFlagAmount: r.evaluationFlagAmount,
+          evaluationFlagUnblockedAt: r.evaluationFlagUnblockedAt,
         };
       });
 
@@ -101,6 +130,8 @@ router.get('/renter/:getaroundId/profile', async (req: Request, res: Response, n
       lastRentalAt: rentalHistory[0]?.startAt ?? null,
       vehicles: plates,
       rentals: rentalHistory,
+      incidentsFinanciers,
+      malusTotal,
     });
   } catch (err: unknown) { next(err); }
 });

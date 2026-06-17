@@ -434,6 +434,9 @@ interface CompanySettings {
   alertEmails: string[];
   replyToEmail: string | null;
   senderName: string | null;
+  invoiceSyncWindowDays: number;
+  invoiceActiveTypes: string[];
+  invoiceMalusConfig: Record<string, number>;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -1227,6 +1230,117 @@ function BillingSection(): React.JSX.Element {
   );
 }
 
+const FLAG_CONFIG = [
+  { key: 'blocked_cleaning',   label: 'Nettoyage' },
+  { key: 'blocked_damage',     label: 'Dommage' },
+  { key: 'blocked_claim',      label: 'Sinistre' },
+  { key: 'blocked_late',       label: 'Retard' },
+  { key: 'blocked_infraction', label: 'Infraction' },
+  { key: 'blocked_gas',        label: 'Carburant' },
+] as const;
+
+const DEFAULT_MALUS: Record<string, number> = {
+  blocked_cleaning: 10, blocked_damage: 20, blocked_claim: 20,
+  blocked_late: 5, blocked_infraction: 5, blocked_gas: 5,
+};
+
+function ExtraChargesSection(): React.JSX.Element {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<{ settings: CompanySettings }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
+  });
+
+  const [windowDays, setWindowDays] = React.useState(7);
+  const [activeTypes, setActiveTypes] = React.useState<string[]>(FLAG_CONFIG.map(f => f.key));
+  const [malus, setMalus] = React.useState<Record<string, number>>(DEFAULT_MALUS);
+  const [saved, setSaved] = React.useState(false);
+
+  React.useEffect(() => {
+    if (settings) {
+      setWindowDays(settings.invoiceSyncWindowDays ?? 7);
+      setActiveTypes(settings.invoiceActiveTypes ?? FLAG_CONFIG.map(f => f.key));
+      const cfg = settings.invoiceMalusConfig ?? {};
+      setMalus({ ...DEFAULT_MALUS, ...cfg });
+    }
+  }, [settings]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.put('/settings', {
+      invoiceSyncWindowDays: windowDays,
+      invoiceActiveTypes: activeTypes,
+      invoiceMalusConfig: malus,
+    }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  function toggleType(key: string): void {
+    setActiveTypes(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  }
+
+  return (
+    <section data-testid="extra-charges-section" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-900">Frais supplémentaires Getaround</h2>
+        <p className="mt-0.5 text-xs text-gray-400">Détection des frais facturés aux locataires et impact sur le scoring</p>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-gray-700">Fenêtre de synchronisation (jours)</label>
+        <p className="mb-2 text-[11px] text-gray-400">Durée de rétro-analyse des locations complétées lors du cron horaire</p>
+        <input type="number" min={1} max={90} value={windowDays}
+          onChange={e => setWindowDays(Math.max(1, parseInt(e.target.value, 10) || 7))}
+          data-testid="input-invoice-sync-window"
+          className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold text-gray-700">Types de frais actifs</p>
+        <p className="mb-3 text-[11px] text-gray-400">Les frais activés génèrent une alerte orange sur la location et un malus conducteur</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {FLAG_CONFIG.map(({ key, label }) => (
+            <label key={key} className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={activeTypes.includes(key)} onChange={() => toggleType(key)}
+                className="rounded accent-[#01696e]" />
+              <span className="text-sm text-gray-700">{label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold text-gray-700">Malus scoring par type (points)</p>
+        <p className="mb-3 text-[11px] text-gray-400">Nombre de points déduits du score conducteur pour chaque type de frais non débloqué</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {FLAG_CONFIG.map(({ key, label }) => (
+            <div key={key}>
+              <label className="mb-1 block text-[11px] text-gray-500">{label}</label>
+              <input type="number" min={0} max={100} value={malus[key] ?? DEFAULT_MALUS[key]}
+                onChange={e => setMalus(m => ({ ...m, [key]: parseInt(e.target.value, 10) || 0 }))}
+                data-testid={`input-malus-${key}`}
+                className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-[#01696e]" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 pt-1">
+        <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+          className="rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          style={{ backgroundColor: '#01696e' }}>
+          {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+        </button>
+        {saved && <p className="text-sm font-medium text-green-600">Sauvegardé ✓</p>}
+      </div>
+    </section>
+  );
+}
+
 export default function SettingsPage(): React.JSX.Element {
   const qc = useQueryClient();
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -1537,6 +1651,9 @@ export default function SettingsPage(): React.JSX.Element {
 
         {/* Abonnement */}
         <BillingSection />
+
+        {/* Frais supplémentaires */}
+        <ExtraChargesSection />
 
       </div>
     </div>

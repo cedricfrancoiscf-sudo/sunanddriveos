@@ -237,6 +237,12 @@ model Rental {
   carSeatRequests       CarSeatRequest[]
   accessoryReservations AccessoryReservation[]
   invoices              GetaroundInvoice[]
+  invoicesSyncedAt            DateTime?
+  evaluationFlag              String?   // blocked_cleaning | blocked_damage | blocked_claim | blocked_late | blocked_infraction | blocked_gas
+  evaluationFlagAmount        Int?      // Montant en centimes
+  evaluationFlagUnblockedAt   DateTime?
+  evaluationFlagUnblockedById String?
+  rentalInvoices              RentalInvoice[]
 
   @@map("rentals")
 }
@@ -609,6 +615,21 @@ model VehicleCost {
   @@map("vehicle_costs")
 }
 
+model RentalInvoice {
+  id                 String    @id @default(cuid())
+  rentalId           String
+  rental             Rental    @relation(fields: [rentalId], references: [id])
+  getaroundInvoiceId Int
+  chargeType         String
+  amountCentimes     Int
+  currency           String    @default("EUR")
+  emittedAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@unique([rentalId, getaroundInvoiceId, chargeType])
+  @@map("rental_invoices")
+}
+
 model GetaroundPayout {
   id          String   @id @default(cuid())
   getaroundId Int      @unique
@@ -635,8 +656,11 @@ model CompanySettings {
   alertEmails          String[] @default([])   // Destinataires des alertes email
   replyToEmail         String?                 // Email de réponse affiché aux locataires
   senderName           String?                 // Nom affiché dans le champ "De"
-  maintenancePolicies  Json     @default("{}")
-  notificationSettings Json     @default("{}")
+  maintenancePolicies    Json     @default("{}")
+  notificationSettings   Json     @default("{}")
+  invoiceSyncWindowDays  Int      @default(7)
+  invoiceActiveTypes     String[] @default(["blocked_cleaning","blocked_damage","blocked_claim","blocked_late","blocked_infraction","blocked_gas"])
+  invoiceMalusConfig     Json     @default("{}")
   getaroundWebhookPath String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

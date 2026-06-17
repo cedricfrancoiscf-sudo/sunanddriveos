@@ -101,6 +101,36 @@ router.patch('/:id/cancel', async (req: Request, res: Response, next: NextFuncti
   } catch (err: unknown) { next(err); }
 });
 
+// GET /api/v1/rentals/:id/invoices
+router.get('/:id/invoices', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const invoices = await db.rentalInvoice.findMany({
+      where: { rentalId: req.params.id as string },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json({ invoices });
+  } catch (err: unknown) { next(err); }
+});
+
+// PATCH /api/v1/rentals/:id/unblock-evaluation
+router.patch('/:id/unblock-evaluation', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const existing = await db.rental.findUnique({
+      where: { id: req.params.id as string },
+      select: { id: true, evaluationFlag: true },
+    });
+    if (!existing) { res.status(404).json({ error: 'Location introuvable' }); return; }
+    if (!existing.evaluationFlag) { res.status(400).json({ error: 'Aucun flag à débloquer' }); return; }
+    const rental = await db.rental.update({
+      where: { id: req.params.id as string },
+      data: { evaluationFlagUnblockedAt: new Date(), evaluationFlagUnblockedById: req.auth?.userId ?? null },
+    });
+    res.json({ rental });
+  } catch (err: unknown) { next(err); }
+});
+
 // PUT /api/v1/rentals/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {

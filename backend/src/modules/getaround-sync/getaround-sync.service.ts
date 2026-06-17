@@ -312,11 +312,115 @@ export async function syncRecentWindowForAccount(
     }
   } catch (e) { console.error(`[Cron][${tenantSlug}] Erreur pass annulation:`, e); }
 
+  // ── Pass sync invoices ─────────────────────────────────────────────────────
+  try {
+    await syncInvoicesForCompletedRentals(db, ga, accountId, tenantSlug);
+  } catch (e) { console.error(`[Invoices][${tenantSlug}] Erreur sync invoices:`, e); }
+
   console.log(`[Cron][${tenantSlug}] Fenêtre glissante terminée — +${result.created} créés, ${result.updated} mis à jour`);
   return result;
 }
 
 // ─── 2. Locations — fonctions privées ────────────────────────────────────────
+
+const CHARGE_FLAG_MAP: Record<string, string> = {
+  driver_mess_fee:       'blocked_cleaning',
+  damage_compensation:   'blocked_damage',
+  claims_owner_fee_cg:   'blocked_claim',
+  driver_late_return_fee: 'blocked_late',
+  driver_infraction_fee:  'blocked_infraction',
+  driver_gas_refill_fee:  'blocked_gas',
+};
+
+async function syncInvoicesForCompletedRentals(
+  db: PrismaClient,
+  ga: GetaroundClient,
+  accountId: string,
+  tenantSlug: string,
+): Promise<void> {
+  const settings = await db.companySettings.findFirst({
+    select: { invoiceSyncWindowDays: true, invoiceActiveTypes: true },
+  });
+  const windowDays = settings?.invoiceSyncWindowDays ?? 7;
+  const activeTypes = settings?.invoiceActiveTypes ?? Object.values(CHARGE_FLAG_MAP);
+
+  const since = new Date(Date.now() - windowDays * 86_400_000);
+
+  const rentals = await db.rental.findMany({
+    where: {
+      vehicle: { getaroundAccountId: accountId },
+      status: 'completed',
+      endAt: { gte: since },
+      getaroundId: { not: { startsWith: 'test_' } },
+      evaluationFlagUnblockedAt: null,
+    },
+    select: { id: true, getaroundId: true, evaluationFlag: true },
+    take: 100,
+  });
+
+  if (rentals.length === 0) return;
+  console.log(`[Invoices][${tenantSlug}] Sync ${rentals.length} location(s)`);
+
+  for (const rental of rentals) {
+    if (!rental.getaroundId) continue;
+    try {
+      const gaRentalId = parseInt(rental.getaroundId, 10);
+      const invoices = await ga.getRentalInvoices(gaRentalId);
+      await sleep(500);
+
+      let chargeCount = 0;
+      let flagType: string | null = null;
+      let flagAmount: number | null = null;
+
+      for (const inv of invoices) {
+        for (const charge of (inv.charges ?? [])) {
+          if ((charge.amount ?? 0) <= 0) continue;
+          chargeCount++;
+
+          await db.rentalInvoice.upsert({
+            where: {
+              rentalId_getaroundInvoiceId_chargeType: {
+                rentalId: rental.id,
+                getaroundInvoiceId: inv.id,
+                chargeType: charge.type,
+              },
+            },
+            update: { amountCentimes: charge.amount },
+            create: {
+              rentalId: rental.id,
+              getaroundInvoiceId: inv.id,
+              chargeType: charge.type,
+              amountCentimes: charge.amount,
+              currency: inv.currency ?? 'EUR',
+              ...(inv.emitted_at ? { emittedAt: new Date(inv.emitted_at) } : {}),
+            },
+          });
+
+          const mappedFlag = CHARGE_FLAG_MAP[charge.type];
+          if (mappedFlag && activeTypes.includes(mappedFlag) && !flagType) {
+            flagType = mappedFlag;
+            flagAmount = charge.amount;
+            console.log(`[Invoices] Rental #${rental.getaroundId} → charge ${charge.type} ${(charge.amount / 100).toFixed(2)}€`);
+          }
+        }
+      }
+
+      console.log(`[Invoices] Sync rental #${rental.getaroundId} → ${chargeCount} charge(s)`);
+
+      await db.rental.update({
+        where: { id: rental.id },
+        data: {
+          invoicesSyncedAt: new Date(),
+          ...(flagType && !rental.evaluationFlag
+            ? { evaluationFlag: flagType, evaluationFlagAmount: flagAmount ?? 0 }
+            : {}),
+        },
+      });
+    } catch (err: unknown) {
+      console.error(`[Invoices][${tenantSlug}] Erreur rental ${rental.getaroundId}:`, err);
+    }
+  }
+}
 
 export interface RentalSyncResult {
   accountId: string;

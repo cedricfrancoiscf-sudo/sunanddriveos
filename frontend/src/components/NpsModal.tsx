@@ -109,7 +109,7 @@ export default function NpsModal({ onClose }: { onClose: () => void }): React.JS
           <button
             type="button"
             disabled={score === null || submit.isPending}
-            onClick={() => score !== null && submit.mutate({ score, comment: comment.trim() || undefined })}
+            onClick={() => { if (score !== null) { const c = comment.trim(); submit.mutate({ score, ...(c ? { comment: c } : {}) }); } }}
             className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             style={{ backgroundColor: '#01696e' }}
           >

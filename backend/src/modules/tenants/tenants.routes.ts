@@ -422,6 +422,96 @@ router.get('/analytics', async (_req: Request, res: Response, next: NextFunction
   } catch (err: unknown) { next(err); }
 });
 
+// GET /api/v1/superadmin/companies/:id/analytics — analytics usage par tenant
+router.get('/companies/:id/analytics', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { id: req.params.id as string },
+      select: {
+        tenantEvents: { orderBy: { occurredAt: 'desc' }, take: 1000 },
+      },
+    });
+    if (!company) { res.status(404).json({ error: 'Société introuvable' }); return; }
+
+    const now = new Date();
+    const oneMonthAgo = new Date(now.getTime() - 30 * 86_400_000);
+    const events = company.tenantEvents;
+
+    // Usage par module
+    const moduleUsage: Record<string, number> = {};
+    for (const ev of events) moduleUsage[ev.module] = (moduleUsage[ev.module] ?? 0) + 1;
+
+    const loginsThisMonth = events.filter(e => e.action === 'login' && new Date(e.occurredAt) >= oneMonthAgo).length;
+    const lastLoginAt = events.find(e => e.action === 'login')?.occurredAt ?? null;
+
+    // Graphique connexions 30 jours
+    const dailyLogins: { date: string; count: number }[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 86_400_000);
+      const dayStr = d.toISOString().slice(0, 10);
+      const count = events.filter(e => e.action === 'login' && e.occurredAt.toISOString().slice(0, 10) === dayStr).length;
+      dailyLogins.push({ date: dayStr, count });
+    }
+
+    const ALL_MODULES = ['planning', 'rentals', 'vehicles', 'messages', 'intelligence', 'rentability', 'maintenance', 'accessories', 'settings'];
+    const neverUsedModules = ALL_MODULES.filter(m => !moduleUsage[m]);
+
+    // Score d'activation (0-5 : planning, rentals, messages, intelligence, settings)
+    const activationModules = ['planning', 'rentals', 'messages', 'intelligence', 'settings'];
+    const activationScore = activationModules.filter(m => moduleUsage[m]).length;
+
+    res.json({
+      moduleUsage: Object.entries(moduleUsage).map(([module, count]) => ({ module, count })).sort((a, b) => b.count - a.count),
+      neverUsedModules,
+      loginsThisMonth,
+      lastLoginAt: lastLoginAt?.toISOString() ?? null,
+      dailyLogins,
+      activationScore,
+      activationTotal: activationModules.length,
+    });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/superadmin/nps — vue d'ensemble NPS tous tenants
+router.get('/nps', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const responses = await master.npsResponse.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: { company: { select: { id: true, name: true, slug: true } } },
+    });
+
+    const avgScore = responses.length > 0
+      ? Math.round((responses.reduce((s, r) => s + r.score, 0) / responses.length) * 10) / 10
+      : null;
+
+    const promoters = responses.filter(r => r.score >= 9).length;
+    const passifs = responses.filter(r => r.score >= 7 && r.score <= 8).length;
+    const detracteurs = responses.filter(r => r.score <= 6).length;
+    const npsScore = responses.length > 0 ? Math.round(((promoters - detracteurs) / responses.length) * 100) : null;
+
+    res.json({
+      avgScore,
+      npsScore,
+      total: responses.length,
+      promoters,
+      passifs,
+      detracteurs,
+      responses: responses.map(r => ({
+        id: r.id,
+        companyId: r.companyId,
+        companyName: r.company.name,
+        companySlug: r.company.slug,
+        score: r.score,
+        comment: r.comment,
+        createdAt: r.createdAt,
+      })),
+    });
+  } catch (err: unknown) { next(err); }
+});
+
 // ─── Feedbacks tenants ────────────────────────────────────────────────────────
 
 // GET /api/v1/superadmin/feedbacks
@@ -797,11 +887,23 @@ router.delete('/test-data', async (req: Request, res: Response, next: NextFuncti
 
 // ─── Plans & Tarifs ───────────────────────────────────────────────────────────
 
-// GET /api/v1/superadmin/plans
+// GET /api/v1/superadmin/plans — retourne les 3 plans, auto-crée les manquants
 router.get('/plans', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const master = getMasterClient();
-    const plans = await master.planConfig.findMany({ orderBy: { name: 'asc' } });
+    let plans = await master.planConfig.findMany({ orderBy: { name: 'asc' } });
+
+    // Auto-créer les plans manquants avec des valeurs par défaut
+    const existing = new Set(plans.map(p => p.name));
+    const missing = (['starter', 'pro', 'enterprise'] as const).filter(n => !existing.has(n));
+    if (missing.length > 0) {
+      await master.planConfig.createMany({
+        data: missing.map(name => ({ name, priceMonthly: 0, priceYearly: 0, description: '', features: [] })),
+        skipDuplicates: true,
+      });
+      plans = await master.planConfig.findMany({ orderBy: { name: 'asc' } });
+    }
+
     res.json({ plans });
   } catch (err: unknown) { next(err); }
 });

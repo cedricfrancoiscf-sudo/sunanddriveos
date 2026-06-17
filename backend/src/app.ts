@@ -72,6 +72,7 @@ import tenantEventsRoutes from './modules/tenant-events/tenant-events.routes';
 import feedbackRoutes from './modules/feedback/feedback.routes';
 import scanRoutes from './modules/ai/scan.routes';
 import billingRoutes from './modules/billing/billing.routes';
+import npsRoutes from './modules/nps/nps.routes';
 import intelligenceRoutes from './modules/intelligence/intelligence.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
 import rentersRoutes from './modules/renters/renters.routes';
@@ -124,7 +125,7 @@ export function createApp(): Express {
   app.use('/ical', icalLimiter);
 
   // Trial enforcement — toutes les routes sauf auth, billing webhook, health, iCal
-  const EXEMPTED_PATHS = ['/auth/', '/billing/webhook', '/health', '/superadmin', '/billing/'];
+  const EXEMPTED_PATHS = ['/auth/', '/billing/webhook', '/health', '/superadmin', '/billing/', '/nps'];
   app.use('/api/v1', (req: Request, res: Response, next: NextFunction) => {
     if (EXEMPTED_PATHS.some(p => req.path.startsWith(p))) { next(); return; }
     void requireActiveSubscription(req, res, next);
@@ -173,6 +174,7 @@ export function createApp(): Express {
   app.use('/api/v1/blacklist', renterBlacklistRoutes);
   app.use('/api/v1/tenant-events', tenantEventsRoutes);
   app.use('/api/v1/billing', billingRoutes);
+  app.use('/api/v1/nps', npsRoutes);
   app.use('/api/v1/feedback', feedbackRoutes);
   app.use('/api/v1/scan', requirePlan('pro'), scanRoutes);
   app.use('/api/v1/sync', syncStatusRoutes);

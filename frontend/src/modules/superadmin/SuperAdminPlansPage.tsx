@@ -60,6 +60,7 @@ function PlansContent(): React.JSX.Element {
   };
 
   const [rows, setRows] = useState<Record<string, RowState>>({});
+  const [savedPlan, setSavedPlan] = useState<string | null>(null);
 
   function getRow(plan: PlanConfig): RowState {
     return (
@@ -83,8 +84,10 @@ function PlansContent(): React.JSX.Element {
           .map((f) => f.trim())
           .filter(Boolean),
       }),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       void qc.invalidateQueries({ queryKey: ['sa-plans'] });
+      setSavedPlan(vars.name);
+      setTimeout(() => setSavedPlan(null), 3000);
     },
   });
 
@@ -234,7 +237,10 @@ function PlansContent(): React.JSX.Element {
                     />
                   </div>
 
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-end gap-3">
+                    {savedPlan === planName && (
+                      <span className="text-xs font-medium text-emerald-400">✓ Plan sauvegardé</span>
+                    )}
                     <button
                       type="button"
                       onClick={() => savePlan.mutate({ name: planName, row })}
@@ -242,7 +248,7 @@ function PlansContent(): React.JSX.Element {
                       className="rounded-xl px-5 py-2 text-sm font-medium text-white disabled:opacity-60"
                       style={{ backgroundColor: '#01696e' }}
                     >
-                      {savePlan.isPending ? 'Sauvegarde...' : 'Sauvegarder'}
+                      {savePlan.isPending && savePlan.variables?.name === planName ? 'Sauvegarde...' : 'Sauvegarder'}
                     </button>
                   </div>
                 </div>

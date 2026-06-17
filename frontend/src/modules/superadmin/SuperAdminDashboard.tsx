@@ -139,6 +139,7 @@ const EMPTY_COMPANY_FORM = {
   slug: '',
   tenantDbUrl: '',
   plan: 'starter' as Plan,
+  mode: 'trial' as 'standard' | 'trial' | 'forced',
   trialDays: 14,
   primaryColor: '#01696e',
   siret: '',
@@ -250,6 +251,35 @@ function DashboardContent(): React.JSX.Element {
         .get(`/superadmin/companies/${selectedId}/notes`)
         .then((r) => r.data as { notes: TenantNote[] }),
     enabled: Boolean(selectedId) && activeSection === 'companies',
+  });
+
+  const { data: tenantAnalyticsData } = useQuery<{
+    moduleUsage: Array<{ module: string; count: number }>;
+    neverUsedModules: string[];
+    loginsThisMonth: number;
+    lastLoginAt: string | null;
+    dailyLogins: Array<{ date: string; count: number }>;
+    activationScore: number;
+    activationTotal: number;
+  }>({
+    queryKey: ['sa-tenant-analytics', selectedId],
+    queryFn: () => saApi.get(`/superadmin/companies/${selectedId}/analytics`).then(r => r.data as never),
+    enabled: Boolean(selectedId) && activeSection === 'companies',
+    staleTime: 5 * 60_000,
+  });
+
+  const { data: npsData } = useQuery<{
+    avgScore: number | null;
+    npsScore: number | null;
+    total: number;
+    promoters: number;
+    passifs: number;
+    detracteurs: number;
+    responses: Array<{ id: string; companyId: string; companyName: string; companySlug: string; score: number; comment: string | null; createdAt: string }>;
+  }>({
+    queryKey: ['sa-nps'],
+    queryFn: () => saApi.get('/superadmin/nps').then(r => r.data as never),
+    staleTime: 5 * 60_000,
   });
 
   const [feedbackFilter, setFeedbackFilter] = useState<string>('');
@@ -495,6 +525,33 @@ function DashboardContent(): React.JSX.Element {
                       </div>
                     ))}
                   </div>
+                  {/* NPS */}
+                  {npsData && npsData.total > 0 && (
+                    <div className="grid grid-cols-2 gap-px bg-gray-800">
+                      <div className="bg-gray-900 p-2.5 text-center">
+                        <p
+                          className="text-base font-bold"
+                          style={{
+                            color:
+                              (npsData.npsScore ?? 0) >= 50
+                                ? '#10b981'
+                                : (npsData.npsScore ?? 0) >= 0
+                                  ? '#f59e0b'
+                                  : '#ef4444',
+                          }}
+                        >
+                          {npsData.npsScore !== null ? Math.round(npsData.npsScore) : '—'}
+                        </p>
+                        <p className="text-[10px] text-gray-500 uppercase">NPS</p>
+                      </div>
+                      <div className="bg-gray-900 p-2.5 text-center">
+                        <p className="text-base font-bold text-gray-300">
+                          {npsData.avgScore !== null ? npsData.avgScore.toFixed(1) : '—'}
+                        </p>
+                        <p className="text-[10px] text-gray-500 uppercase">Moy. ({npsData.total})</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -969,6 +1026,50 @@ function DashboardContent(): React.JSX.Element {
                     </div>
                   </div>
 
+                  {/* Section Analytics usage par tenant */}
+                  {tenantAnalyticsData && (
+                    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
+                        Analytics usage
+                      </h3>
+                      <div className="grid grid-cols-3 gap-3 mb-4">
+                        <div className="rounded-xl bg-gray-800 p-3 text-center">
+                          <p className="text-xl font-bold text-white">
+                            {tenantAnalyticsData.activationScore}
+                            <span className="text-xs text-gray-500">/{tenantAnalyticsData.activationTotal}</span>
+                          </p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">Score activation</p>
+                        </div>
+                        <div className="rounded-xl bg-gray-800 p-3 text-center">
+                          <p className="text-xl font-bold text-white">{tenantAnalyticsData.loginsThisMonth}</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">Logins ce mois</p>
+                        </div>
+                        <div className="rounded-xl bg-gray-800 p-3 text-center">
+                          <p className="text-sm font-medium text-gray-300">
+                            {tenantAnalyticsData.lastLoginAt
+                              ? format(new Date(tenantAnalyticsData.lastLoginAt), 'dd/MM HH:mm', { locale: fr })
+                              : '—'}
+                          </p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">Dernière co.</p>
+                        </div>
+                      </div>
+                      {tenantAnalyticsData.moduleUsage.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {tenantAnalyticsData.moduleUsage.map((m) => (
+                            <span key={m.module} className="rounded-lg bg-gray-800 px-2.5 py-1 text-xs text-gray-300">
+                              {m.module} <span className="font-semibold" style={{ color: '#01696e' }}>{m.count}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {tenantAnalyticsData.neverUsedModules.length > 0 && (
+                        <p className="text-[10px] text-gray-600">
+                          Jamais utilisés : {tenantAnalyticsData.neverUsedModules.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Section Envoyer un email */}
                   <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
@@ -984,42 +1085,40 @@ function DashboardContent(): React.JSX.Element {
                         <div>
                           <label className="block text-xs text-gray-400 mb-1">Template</label>
                           <select
+                            data-testid="select-email-template"
                             value={emailForm.template}
                             onChange={(e) => {
                               const tpl = e.target.value;
+                              const tenantName = detail.managerName ?? detail.name;
                               const TEMPLATES: Record<string, { subject: string; body: string }> = {
-                                welcome: {
+                                bienvenue: {
                                   subject: 'Bienvenue sur SunanddriveOS',
-                                  body: `Bonjour,\n\nBienvenue sur SunanddriveOS ! Votre espace est maintenant disponible sur https://appli.sunanddrive.com\n\nCordialement,\nL'équipe Sun and Drive`,
+                                  body: `Bonjour ${tenantName},\n\nBienvenue sur SunanddriveOS ! Votre espace est maintenant disponible sur https://appli.sunanddrive.com\n\nCordialement,\nL'équipe Sun and Drive`,
                                 },
-                                trial_expiring: {
-                                  subject: 'Votre trial expire dans 3 jours',
-                                  body: `Bonjour,\n\nVotre période d'essai SunanddriveOS expire dans 3 jours. Contactez-nous pour activer votre abonnement.\n\nCordialement,\nL'équipe Sun and Drive`,
+                                trial_expire: {
+                                  subject: 'Votre période d\'essai expire bientôt',
+                                  body: `Bonjour ${tenantName},\n\nVotre période d'essai SunanddriveOS expire bientôt. Contactez-nous pour activer votre abonnement et continuer à utiliser la plateforme.\n\nCordialement,\nL'équipe Sun and Drive`,
                                 },
-                                suspended: {
-                                  subject: 'Votre accès a été suspendu',
-                                  body: `Bonjour,\n\nVotre accès SunanddriveOS a été suspendu. Contactez-nous pour régulariser votre situation : contact@sunanddrive.fr\n\nCordialement,\nL'équipe Sun and Drive`,
+                                suspendu: {
+                                  subject: 'Votre accès SunanddriveOS a été suspendu',
+                                  body: `Bonjour ${tenantName},\n\nVotre accès SunanddriveOS a été suspendu. Contactez-nous pour régulariser votre situation : contact@sunanddrive.fr\n\nCordialement,\nL'équipe Sun and Drive`,
                                 },
-                                reactivated: {
-                                  subject: 'Votre accès a été réactivé',
-                                  body: `Bonjour,\n\nVotre accès SunanddriveOS a été réactivé. Reconnectez-vous sur https://appli.sunanddrive.com\n\nCordialement,\nL'équipe Sun and Drive`,
+                                reactivé: {
+                                  subject: 'Votre accès SunanddriveOS a été réactivé',
+                                  body: `Bonjour ${tenantName},\n\nVotre accès SunanddriveOS a été réactivé. Reconnectez-vous sur https://appli.sunanddrive.com\n\nCordialement,\nL'équipe Sun and Drive`,
                                 },
                                 custom: { subject: '', body: '' },
                               };
                               const chosen = TEMPLATES[tpl] ?? { subject: '', body: '' };
-                              setEmailForm({
-                                template: tpl,
-                                subject: chosen.subject,
-                                body: chosen.body,
-                              });
+                              setEmailForm({ template: tpl, subject: chosen.subject, body: chosen.body });
                             }}
                             className="w-full rounded-xl border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-white"
                           >
                             <option value="">Choisir un template...</option>
-                            <option value="welcome">Bienvenue sur SunanddriveOS</option>
-                            <option value="trial_expiring">Votre trial expire dans 3 jours</option>
-                            <option value="suspended">Votre accès a été suspendu</option>
-                            <option value="reactivated">Votre accès a été réactivé</option>
+                            <option value="bienvenue">Bienvenue sur SunanddriveOS</option>
+                            <option value="trial_expire">Période d'essai expire bientôt</option>
+                            <option value="suspendu">Accès suspendu</option>
+                            <option value="reactivé">Accès réactivé</option>
                             <option value="custom">Personnalisé</option>
                           </select>
                         </div>
@@ -1385,8 +1484,13 @@ function DashboardContent(): React.JSX.Element {
                       }
                       className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40"
                     />
+                    {companyForm.name && (
+                      <p className="mt-1 text-xs text-gray-500 font-mono">
+                        Slug : <span className="text-[#01696e]">{companyForm.slug || '—'}</span>
+                      </p>
+                    )}
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="block text-xs text-gray-400 mb-1">Plan</label>
                       <select
@@ -1404,8 +1508,25 @@ function DashboardContent(): React.JSX.Element {
                       </select>
                     </div>
                     <div>
+                      <label className="block text-xs text-gray-400 mb-1">Mode</label>
+                      <select
+                        value={companyForm.mode}
+                        onChange={(e) =>
+                          setCompanyForm((f) => ({
+                            ...f,
+                            mode: e.target.value as 'standard' | 'trial' | 'forced',
+                          }))
+                        }
+                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40"
+                      >
+                        <option value="trial">Trial</option>
+                        <option value="standard">Standard</option>
+                        <option value="forced">Forcé</option>
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-xs text-gray-400 mb-1">
-                        Durée essai (jours)
+                        Durée essai (j)
                       </label>
                       <input
                         type="number"
@@ -1433,10 +1554,16 @@ function DashboardContent(): React.JSX.Element {
                       <label className="block text-xs text-gray-400 mb-1">SIRET</label>
                       <input
                         value={companyForm.siret}
-                        onChange={(e) => setCompanyForm((f) => ({ ...f, siret: e.target.value }))}
+                        onChange={(e) => setCompanyForm((f) => ({ ...f, siret: e.target.value.replace(/\D/g, '').slice(0, 14) }))}
                         placeholder="12345678901234"
-                        className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40"
+                        maxLength={14}
+                        pattern="[0-9]{14}"
+                        title="14 chiffres requis"
+                        className={`w-full rounded-xl border bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40 ${companyForm.siret && companyForm.siret.length !== 14 ? 'border-red-600' : 'border-gray-700'}`}
                       />
+                      {companyForm.siret && companyForm.siret.length !== 14 && (
+                        <p className="mt-0.5 text-[10px] text-red-400">{companyForm.siret.length}/14 chiffres</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs text-gray-400 mb-1">Nom du gérant</label>

@@ -9,6 +9,88 @@ const router: Router = Router();
 
 const getStripe = () => new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
 
+// GET /api/v1/billing/status — plan actuel, prix, historique paiements
+router.get('/status', requireAuth, resolveTenant, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const company = await master.company.findFirst({
+      where: { slug: req.auth!.tenantSlug },
+      select: { id: true, plan: true, subscriptionStatus: true, subscriptionMode: true, trialEndsAt: true, stripeCustomerId: true },
+    });
+    if (!company) { res.status(404).json({ error: 'Société introuvable' }); return; }
+
+    const [planConfig, payments, allPlans] = await Promise.all([
+      master.planConfig.findUnique({ where: { name: company.plan }, select: { priceMonthly: true, priceYearly: true, description: true, features: true } }),
+      master.billingEvent.findMany({
+        where: { companyId: company.id, type: 'invoice.payment_succeeded' },
+        orderBy: { processedAt: 'desc' },
+        take: 20,
+        select: { id: true, processedAt: true, data: true },
+      }),
+      master.planConfig.findMany({ orderBy: { name: 'asc' }, select: { name: true, priceMonthly: true, priceYearly: true, description: true, features: true } }),
+    ]);
+
+    res.json({
+      plan: company.plan,
+      status: company.subscriptionStatus,
+      mode: company.subscriptionMode,
+      trialEndsAt: company.trialEndsAt,
+      hasStripe: Boolean(company.stripeCustomerId),
+      priceMonthly: planConfig?.priceMonthly ?? 0,
+      priceYearly: planConfig?.priceYearly ?? 0,
+      planDescription: planConfig?.description ?? '',
+      planFeatures: (planConfig?.features as string[]) ?? [],
+      allPlans: allPlans.map(p => ({ name: p.name, priceMonthly: p.priceMonthly, priceYearly: p.priceYearly, description: p.description, features: p.features as string[] })),
+      payments: payments.map(p => {
+        const d = p.data as { amount_paid?: number; invoice_pdf?: string };
+        return { id: p.id, amountCents: d.amount_paid ?? 0, processedAt: p.processedAt, invoicePdfUrl: d.invoice_pdf ?? null };
+      }),
+    });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/billing/create-checkout-session — Stripe Checkout avec prix dynamique depuis PlanConfig
+router.post('/create-checkout-session', requireAuth, resolveTenant, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      planId: z.enum(['starter', 'pro', 'enterprise']),
+      billingCycle: z.enum(['monthly', 'yearly']).default('monthly'),
+    }).safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Paramètres invalides' }); return; }
+
+    const master = getMasterClient();
+    const [company, planConfig] = await Promise.all([
+      master.company.findFirst({ where: { slug: req.auth!.tenantSlug }, select: { id: true, stripeCustomerId: true } }),
+      master.planConfig.findUnique({ where: { name: body.data.planId }, select: { priceMonthly: true, priceYearly: true } }),
+    ]);
+    if (!company) { res.status(404).json({ error: 'Société introuvable' }); return; }
+
+    const price = body.data.billingCycle === 'yearly' ? (planConfig?.priceYearly ?? 0) : (planConfig?.priceMonthly ?? 0);
+    if (price <= 0) { res.status(400).json({ error: 'Prix non configuré pour ce plan — contactez le support' }); return; }
+
+    const stripe = getStripe();
+    const planLabel = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' }[body.data.planId];
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      line_items: [{
+        price_data: {
+          currency: 'eur',
+          product_data: { name: `SunanddriveOS ${planLabel}` },
+          recurring: { interval: body.data.billingCycle === 'yearly' ? 'year' : 'month' },
+          unit_amount: Math.round(price * 100),
+        },
+        quantity: 1,
+      }],
+      ...(company.stripeCustomerId ? { customer: company.stripeCustomerId } : {}),
+      success_url: `${process.env.FRONTEND_URL ?? ''}/billing?success=1`,
+      cancel_url: `${process.env.FRONTEND_URL ?? ''}/billing`,
+      metadata: { companyId: company.id, plan: body.data.planId },
+    });
+
+    res.json({ url: session.url });
+  } catch (err: unknown) { next(err); }
+});
+
 const PLAN_PRICE_IDS: Record<string, string> = {
   pro:        process.env.STRIPE_PRICE_PRO        ?? '',
   enterprise: process.env.STRIPE_PRICE_ENTERPRISE ?? '',
@@ -92,6 +174,9 @@ router.post('/webhook', async (req: Request, res: Response, next: NextFunction) 
             where: { id: companyId },
             data: {
               plan,
+              subscriptionMode: 'standard',
+              subscriptionStatus: 'active',
+              subscriptionStartedAt: new Date(),
               ...(customerId ? { stripeCustomerId: customerId } : {}),
               ...(subId      ? { stripeSubscriptionId: subId }    : {}),
               trialEndsAt: null,
@@ -115,7 +200,7 @@ router.post('/webhook', async (req: Request, res: Response, next: NextFunction) 
         if (company) {
           await master.company.update({
             where: { id: company.id },
-            data: { plan: 'starter', stripeSubscriptionId: null },
+            data: { plan: 'starter', stripeSubscriptionId: null, subscriptionStatus: 'suspendu' },
           });
           await master.billingEvent.create({
             data: {
@@ -136,13 +221,23 @@ router.post('/webhook', async (req: Request, res: Response, next: NextFunction) 
           const company = await master.company.findFirst({ where: { stripeCustomerId: customerId } });
           if (company) {
             await master.billingEvent.create({
-              data: {
-                companyId: company.id,
-                type: 'invoice.payment_succeeded',
-                stripeEventId: event.id,
-                data: invoice as never,
-              },
+              data: { companyId: company.id, type: 'invoice.payment_succeeded', stripeEventId: event.id, data: invoice as never },
             });
+          }
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = typeof invoice.customer === 'string' ? invoice.customer : null;
+        if (customerId) {
+          const company = await master.company.findFirst({ where: { stripeCustomerId: customerId } });
+          if (company) {
+            await master.billingEvent.create({
+              data: { companyId: company.id, type: 'invoice.payment_failed', stripeEventId: event.id, data: invoice as never },
+            });
+            console.log(`[Billing][Webhook] Paiement echoue — company ${company.id}`);
           }
         }
         break;

@@ -54,6 +54,8 @@ model Company {
   tenantEvents         TenantEvent[]
   tenantFeedbacks      TenantFeedback[]
   tenantNotes          TenantNote[]
+  npsResponses         NpsResponse[]
+  lastNpsAt            DateTime?
 
   @@map("companies")
 }
@@ -121,6 +123,29 @@ model TenantNote {
   createdAt DateTime @default(now())
 
   @@map("tenant_notes")
+}
+
+// Réponses NPS (Net Promoter Score)
+model NpsResponse {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  score       Int
+  comment     String?
+  respondedBy String?
+  createdAt   DateTime @default(now())
+
+  @@index([companyId, createdAt])
+  @@map("nps_responses")
+}
+
+// Configuration système superadmin (clé/valeur)
+model SuperAdminConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("superadmin_configs")
 }
 
 // Événements de facturation Stripe

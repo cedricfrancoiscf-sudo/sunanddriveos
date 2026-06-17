@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
+import NpsModal, { useNpsModal } from '../NpsModal';
 
 export default function AppLayout(): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { show: showNps, dismiss: dismissNps } = useNpsModal();
   const [collapsed, setCollapsed] = useState(
     localStorage.getItem('sidebar_collapsed') === 'true',
   );
@@ -76,6 +78,9 @@ export default function AppLayout(): React.JSX.Element {
           <Outlet />
         </main>
       </div>
+
+      {/* Modal NPS — affiché tous les N jours */}
+      {showNps && <NpsModal onClose={dismissNps} />}
     </div>
   );
 }

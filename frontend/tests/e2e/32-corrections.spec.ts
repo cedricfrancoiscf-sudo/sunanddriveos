@@ -58,12 +58,14 @@ const CK_AUTH = 'tests/e2e/.auth/carkeeper.json'
 test.describe('32-A — BLOC 4 : data-testids clés', () => {
   test.afterAll(() => saveReport())
 
+  // BLOC 7 — Modal +Inviter Paramètres
   test('btn-inviter ouvre modal-inviter', async ({ browser }) => {
     const ctx = await browser.newContext({ storageState: ADMIN_AUTH })
     const page = await ctx.newPage()
     try {
       await page.goto('/settings')
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
       const btn = page.locator('[data-testid="btn-inviter"]')
       await btn.waitFor({ state: 'visible', timeout: 10000 })
       await btn.click()
@@ -79,19 +81,22 @@ test.describe('32-A — BLOC 4 : data-testids clés', () => {
     }
   })
 
+  // BLOC 3 — btn-modifier véhicule
   test('btn-modifier présent sur page véhicule', async ({ browser }) => {
     const ctx = await browser.newContext({ storageState: ADMIN_AUTH })
     const page = await ctx.newPage()
     try {
       await page.goto('/vehicles')
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
       const firstLink = page.locator('a[href*="/vehicles/"]').first()
       if (!(await firstLink.isVisible({ timeout: 5000 }))) {
         rWarn('btn-modifier véhicule', 'Aucun véhicule dans la liste')
         return
       }
       await firstLink.click()
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
       const btn = page.locator('[data-testid="btn-modifier"]')
       await btn.waitFor({ state: 'visible', timeout: 8000 })
       rPass('btn-modifier présent sur page véhicule')
@@ -103,16 +108,20 @@ test.describe('32-A — BLOC 4 : data-testids clés', () => {
     }
   })
 
+  // BLOC 6 — aria-labels prev/next-month rapport CEO
   test('aria-labels prev-month / next-month présents sur rapport', async ({ browser }) => {
     const ctx = await browser.newContext({ storageState: ADMIN_AUTH })
     const page = await ctx.newPage()
     try {
       await page.goto('/intelligence/report')
-      await page.waitForLoadState('networkidle')
-      // Passer en mode mensuel
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
+      // Passer en mode mensuel pour s'assurer que les boutons sont visibles
       const monthlyBtn = page.locator('button').filter({ hasText: /mensuel/i }).first()
-      if (await monthlyBtn.isVisible({ timeout: 5000 })) await monthlyBtn.click()
-      await page.waitForTimeout(500)
+      if (await monthlyBtn.isVisible({ timeout: 5000 })) {
+        await monthlyBtn.click()
+        await page.waitForTimeout(500)
+      }
       const prev = page.locator('[aria-label="prev-month"]')
       const next = page.locator('[aria-label="next-month"]')
       await prev.waitFor({ state: 'visible', timeout: 8000 })
@@ -126,15 +135,27 @@ test.describe('32-A — BLOC 4 : data-testids clés', () => {
     }
   })
 
-  test('input-cost-label présent sur rentabilité', async ({ browser }) => {
+  // BLOC 4 — input-cost-label dans modal coût (ouvrir le modal d'abord)
+  test('input-cost-label présent dans modal coût rentabilité', async ({ browser }) => {
     const ctx = await browser.newContext({ storageState: ADMIN_AUTH })
     const page = await ctx.newPage()
     try {
       await page.goto('/rentability')
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
+      // Chercher le bouton "+ Coût" du premier véhicule (title="Ajouter un coût")
+      const addCostBtn = page.locator('button[title="Ajouter un coût"]').first()
+      const hasBtn = await addCostBtn.isVisible({ timeout: 8000 }).catch(() => false)
+      if (!hasBtn) {
+        rWarn('input-cost-label', 'Aucun bouton "+ Coût" visible (aucun véhicule ?)')
+        return
+      }
+      await addCostBtn.click()
+      // Modal ouvert — chercher le champ libellé
       const inp = page.locator('[data-testid="input-cost-label"]').first()
-      await inp.waitFor({ state: 'visible', timeout: 10000 })
-      rPass('input-cost-label présent sur rentabilité')
+      await inp.waitFor({ state: 'visible', timeout: 5000 })
+      rPass('input-cost-label présent dans le modal coût')
+      expect(await inp.isVisible()).toBe(true)
     } catch (e) {
       rFail('input-cost-label présent sur rentabilité', String(e))
       throw e
@@ -153,7 +174,8 @@ test.describe('32-B — BLOC 5 : filtre statut locations', () => {
     const page = await ctx.newPage()
     try {
       await page.goto('/rentals')
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
       const sel = page.locator('[data-testid="select-status-filter"]')
       await sel.waitFor({ state: 'visible', timeout: 8000 })
       const opts = await sel.locator('option').allTextContents()
@@ -176,7 +198,8 @@ test.describe('32-B — BLOC 5 : filtre statut locations', () => {
     const page = await ctx.newPage()
     try {
       await page.goto('/rentals')
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
       const sel = page.locator('[data-testid="select-status-filter"]')
       await sel.waitFor({ state: 'visible', timeout: 8000 })
       // Compter nombre initial de locations
@@ -217,7 +240,8 @@ test.describe('32-C — BLOC 3 : Planning carkeeper', () => {
     const page = await ctx.newPage()
     try {
       await page.goto('/planning')
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
       // Pas d'erreur 500
       const errEl = page.locator('text=/erreur|error|500/i').first()
       const hasErr = await errEl.isVisible({ timeout: 3000 }).catch(() => false)
@@ -334,7 +358,8 @@ test.describe('32-F — BLOC 6/7 : Mobile planning & messages', () => {
     const page = await ctx.newPage()
     try {
       await page.goto('/planning')
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
       // Chercher la colonne véhicule (header ou première cellule)
       const vehicleCol = page.locator('.w-\\[90px\\]').first()
       const exists = await vehicleCol.isVisible({ timeout: 8000 }).catch(() => false)
@@ -359,7 +384,8 @@ test.describe('32-F — BLOC 6/7 : Mobile planning & messages', () => {
     const page = await ctx.newPage()
     try {
       await page.goto('/messages')
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1500)
       // Vérifier que les badges "Sans réponse" ne débordent pas hors du bouton conversation
       const badge = page.locator('span:text("Sans réponse")').first()
       const hasBadge = await badge.isVisible({ timeout: 5000 }).catch(() => false)

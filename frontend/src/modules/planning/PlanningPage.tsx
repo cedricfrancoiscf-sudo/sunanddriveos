@@ -198,7 +198,7 @@ export default function PlanningPage(): React.JSX.Element {
 
   const { data, isLoading } = useQuery({
     queryKey: ['planning', periodStart.toISOString(), viewMode],
-    staleTime: 30_000,
+    staleTime: 10_000,
     queryFn: () =>
       api.get<{ rentals: PlanningRental[]; blockings: PlanningBlocking[]; vehicles: Vehicle[]; unavailabilities: PlanningUnavailability[] }>(
         '/planning',

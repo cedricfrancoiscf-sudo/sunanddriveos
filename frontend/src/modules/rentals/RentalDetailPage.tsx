@@ -171,7 +171,9 @@ export default function RentalDetailPage(): React.JSX.Element {
   const cancelMutation = useMutation({
     mutationFn: (reason: string) => rentalsApi.cancel(id!, reason),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['rental', id] });
+      void qc.refetchQueries({ queryKey: ['rental', id] });
+      void qc.invalidateQueries({ queryKey: ['rentals'] });
+      void qc.invalidateQueries({ queryKey: ['planning'] });
       setShowCancelModal(false);
     },
   });

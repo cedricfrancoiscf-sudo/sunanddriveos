@@ -45,7 +45,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const blockingVehicleFilter = isCarkeeper ? { vehicleId: { in: assignedIds } } : {};
     const unavailabilityVehicleFilter = isCarkeeper ? { vehicleId: { in: assignedIds } } : {};
 
-    const [rentals, blockings, vehicles, unavailabilities] = await Promise.all([
+    const [rentals, blockings, vehicles, unavailabilities, cancelledCount] = await Promise.all([
       db.rental.findMany({
         where: { startAt: { lte: to }, endAt: { gte: from }, status: { not: 'cancelled' }, ...rentalVehicleFilter },
         select: {
@@ -67,8 +67,12 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
         where: { startsAt: { lte: to }, endsAt: { gte: from }, ...unavailabilityVehicleFilter },
         select: { id: true, vehicleId: true, startsAt: true, endsAt: true },
       }),
+      db.rental.count({
+        where: { startAt: { lte: to }, endAt: { gte: from }, status: 'cancelled', ...rentalVehicleFilter },
+      }),
     ]);
 
+    console.log(`[Planning] ${rentals.length} locations chargées, ${cancelledCount} exclues (cancelled)`);
     res.json({ rentals, blockings, vehicles, unavailabilities, period: { from, to } });
   } catch (err: unknown) { next(err); }
 });

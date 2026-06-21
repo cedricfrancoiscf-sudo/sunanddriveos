@@ -888,6 +888,147 @@ router.get('/mileage-anomalies', async (req: Request, res: Response, next: NextF
   } catch (err) { next(err); }
 });
 
+// GET /api/v1/intelligence/correlation — note Getaround vs taux d'occupation par véhicule/mois
+router.get('/correlation', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const since = new Date();
+    since.setMonth(since.getMonth() - 12);
+
+    const [ratings, vehicles] = await Promise.all([
+      db.vehicleRating.findMany({
+        where: { period: { gte: since.toISOString().slice(0, 7) } },
+        select: { vehicleId: true, period: true, rating: true },
+      }),
+      db.vehicle.findMany({ where: { isActive: true }, select: { id: true, licensePlate: true, make: true, model: true } }),
+    ]);
+
+    const vehicleMap = new Map(vehicles.map(v => [v.id, v]));
+
+    const points: Array<{ vehiclePlate: string; vehicleLabel: string; month: string; rating: number; occupancyRate: number }> = [];
+
+    for (const r of ratings) {
+      const [yr, mo] = r.period.split('-').map(Number) as [number, number];
+      const from = new Date(yr, mo - 1, 1);
+      const to = new Date(yr, mo, 0, 23, 59, 59);
+      const daysInMonth = to.getDate();
+
+      const rentals = await db.rental.findMany({
+        where: { vehicleId: r.vehicleId, startAt: { gte: from, lte: to }, status: { in: ['active', 'completed'] } },
+        select: { startAt: true, endAt: true },
+      });
+
+      const occupiedDays = new Set<string>();
+      for (const rental of rentals) {
+        const s = new Date(rental.startAt);
+        const e = rental.endAt ? new Date(rental.endAt) : to;
+        for (let d = new Date(s); d <= e && d <= to; d.setDate(d.getDate() + 1)) {
+          occupiedDays.add(d.toISOString().slice(0, 10));
+        }
+      }
+
+      const occupancyRate = Math.round((occupiedDays.size / daysInMonth) * 100);
+      const v = vehicleMap.get(r.vehicleId);
+      if (v) {
+        points.push({
+          vehiclePlate: v.licensePlate,
+          vehicleLabel: `${v.make} ${v.model} · ${v.licensePlate}`,
+          month: r.period,
+          rating: r.rating,
+          occupancyRate,
+        });
+      }
+    }
+
+    res.json({ points });
+  } catch (err) { next(err); }
+});
+
+// GET /api/v1/intelligence/benchmark — données anonymisées flotte (Enterprise, benchmarkConsent)
+router.get('/benchmark', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { getMasterClient } = await import('../../prisma/client');
+    const master = getMasterClient();
+
+    const tenantDbUrl = req.tenantDbUrl!;
+
+    // Toutes les entreprises ayant donné leur consentement
+    const companies = await master.company.findMany({
+      where: { isActive: true, benchmarkConsent: true },
+      select: { tenantDbUrl: true },
+    });
+
+    if (companies.length === 0) {
+      res.json({ hasData: false, message: 'Aucun tenant ne participe encore au benchmark' });
+      return;
+    }
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const daysInMonth = monthEnd.getDate();
+
+    const allStats: Array<{ occupancyRate: number; caPerVehicle: number; healthScore: number }> = [];
+    let ownStats: { occupancyRate: number; caPerVehicle: number; healthScore: number } | null = null;
+
+    for (const company of companies) {
+      const db = getTenantClient(company.tenantDbUrl);
+      const [vehicles, rentals] = await Promise.all([
+        db.vehicle.findMany({ where: { isActive: true }, select: { id: true, healthScore: true } }),
+        db.rental.findMany({
+          where: { startAt: { gte: monthStart, lte: monthEnd }, status: { in: ['active', 'completed'] } },
+          select: { vehicleId: true, ownerPayout: true, grossRevenue: true, startAt: true, endAt: true },
+        }),
+      ]);
+
+      const vCount = vehicles.length;
+      if (vCount === 0) continue;
+
+      const occupiedDaysByVehicle = new Map<string, Set<string>>();
+      let totalCA = 0;
+      for (const r of rentals) {
+        if (!occupiedDaysByVehicle.has(r.vehicleId)) occupiedDaysByVehicle.set(r.vehicleId, new Set());
+        const s = new Date(r.startAt);
+        const e = r.endAt ? new Date(r.endAt) : monthEnd;
+        for (let d = new Date(s); d <= e && d <= monthEnd; d.setDate(d.getDate() + 1)) {
+          occupiedDaysByVehicle.get(r.vehicleId)!.add(d.toISOString().slice(0, 10));
+        }
+        totalCA += (r.ownerPayout ?? 0) > 0 ? (r.ownerPayout ?? 0) : (r.grossRevenue ?? 0);
+      }
+
+      const totalOccupied = [...occupiedDaysByVehicle.values()].reduce((s, d) => s + d.size, 0);
+      const occupancyRate = Math.round((totalOccupied / (vCount * daysInMonth)) * 100);
+      const caPerVehicle = Math.round(totalCA / vCount);
+      const healthScore = Math.round(vehicles.reduce((s, v) => s + v.healthScore, 0) / vCount);
+
+      const stat = { occupancyRate, caPerVehicle, healthScore };
+      allStats.push(stat);
+      if (company.tenantDbUrl === tenantDbUrl) ownStats = stat;
+    }
+
+    if (allStats.length === 0) { res.json({ hasData: false }); return; }
+
+    const sorted = [...allStats].sort((a, b) => a.occupancyRate - b.occupancyRate);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted[mid]!;
+    const top = sorted[Math.floor(sorted.length * 0.8)] ?? sorted[sorted.length - 1]!;
+    const avg = {
+      occupancyRate: Math.round(allStats.reduce((s, a) => s + a.occupancyRate, 0) / allStats.length),
+      caPerVehicle: Math.round(allStats.reduce((s, a) => s + a.caPerVehicle, 0) / allStats.length),
+      healthScore: Math.round(allStats.reduce((s, a) => s + a.healthScore, 0) / allStats.length),
+    };
+
+    res.json({
+      hasData: true,
+      participantCount: allStats.length,
+      own: ownStats,
+      median,
+      avg,
+      top80th: top,
+    });
+  } catch (err) { next(err); }
+});
+
 // GET /api/v1/intelligence/environment — bilan carbone flotte
 router.get('/environment', async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -145,6 +145,77 @@ router.get('/flagged', async (req: Request, res: Response, next: NextFunction) =
   } catch (err: unknown) { next(err); }
 });
 
+// GET /api/v1/rentals/:id/risk-score — score risque locataire (0=faible, 100=élevé)
+router.get('/:id/risk-score', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const [rental, settings] = await Promise.all([
+      db.rental.findUnique({
+        where: { id: req.params.id as string },
+        select: { driverGetaroundId: true, driverName: true },
+      }),
+      db.companySettings.findFirst({
+        select: { riskWeightScore: true, riskWeightFlags: true, riskWeightCancelled: true, riskWeightDelay: true, riskScoreAlertThreshold: true },
+      }),
+    ]);
+
+    if (!rental) { res.status(404).json({ error: 'Location introuvable' }); return; }
+
+    const wScore = settings?.riskWeightScore ?? 40;
+    const wFlags = settings?.riskWeightFlags ?? 30;
+    const wCancelled = settings?.riskWeightCancelled ?? 20;
+    const wDelay = settings?.riskWeightDelay ?? 10;
+    const alertThreshold = settings?.riskScoreAlertThreshold ?? 60;
+
+    const prevRentals = rental.driverGetaroundId
+      ? await db.rental.findMany({
+          where: { driverGetaroundId: rental.driverGetaroundId },
+          select: { evaluationRating: true, damageCompensation: true, lateReturnFee: true, driverMessFee: true, gasRefillFee: true, evaluationFlag: true, status: true },
+        })
+      : [];
+
+    // Calcul driver score (même logique que scoring.routes)
+    let driverScore = 100;
+    if (prevRentals.length > 0) {
+      const rated = prevRentals.filter(r => r.evaluationRating !== null);
+      if (rated.length > 0) {
+        const avg = rated.reduce((s, r) => s + (r.evaluationRating ?? 0), 0) / rated.length;
+        driverScore += (avg - 4.0) * 10;
+      }
+      driverScore -= prevRentals.filter(r => (r.damageCompensation ?? 0) > 0).length * 12;
+      driverScore -= prevRentals.filter(r => (r.lateReturnFee ?? 0) > 0).length * 5;
+      driverScore -= prevRentals.filter(r => (r.driverMessFee ?? 0) > 0).length * 8;
+      driverScore -= prevRentals.filter(r => (r.gasRefillFee ?? 0) > 0).length * 3;
+      driverScore = Math.min(100, Math.max(0, Math.round(driverScore)));
+    }
+
+    const flagCount = prevRentals.filter(r => r.evaluationFlag != null).length;
+    const cancelledCount = prevRentals.filter(r => r.status === 'cancelled').length;
+
+    const driverRisk = 100 - driverScore; // 0=bon conducteur, 100=mauvais
+    const flagRisk = Math.min(flagCount * 25, 100);
+    const cancelledRisk = Math.min(cancelledCount * 20, 100);
+    const delayRisk = 50; // valeur neutre (données non disponibles)
+
+    const riskScore = Math.round(
+      (driverRisk * wScore + flagRisk * wFlags + cancelledRisk * wCancelled + delayRisk * wDelay) / 100
+    );
+
+    const level = riskScore >= 75 ? 'high' : riskScore >= 50 ? 'medium' : 'low';
+
+    res.json({
+      riskScore: Math.min(100, riskScore),
+      level,
+      isAlert: riskScore >= alertThreshold,
+      driverScore,
+      flagCount,
+      cancelledCount,
+      totalRentals: prevRentals.length,
+      weights: { wScore, wFlags, wCancelled, wDelay },
+    });
+  } catch (err) { next(err); }
+});
+
 // PUT /api/v1/rentals/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {

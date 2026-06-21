@@ -48,6 +48,7 @@ model Company {
   commercialNote       String?
   onboardingCompleted  Boolean        @default(false)
   onboardingStep       Int            @default(1)
+  benchmarkConsent     Boolean        @default(false) // Participation benchmark anonyme
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
   billingEvents        BillingEvent[]

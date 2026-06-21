@@ -154,6 +154,16 @@ export default function RentalDetailPage(): React.JSX.Element {
     staleTime: 5 * 60_000,
   });
 
+  const { data: riskData } = useQuery<{
+    riskScore: number; level: 'low' | 'medium' | 'high'; isAlert: boolean;
+    driverScore: number; flagCount: number; cancelledCount: number; totalRentals: number;
+  }>({
+    queryKey: ['rental-risk-score', id],
+    queryFn: () => api.get(`/rentals/${id}/risk-score`).then(r => r.data),
+    enabled: Boolean(id),
+    staleTime: 5 * 60_000,
+  });
+
   const blacklistMutation = useMutation({
     mutationFn: (reason: string) => api.post('/blacklist/renter', {
       driverGetaroundId: rental!.driverGetaroundId,
@@ -256,6 +266,19 @@ export default function RentalDetailPage(): React.JSX.Element {
         )}
         {profile?.isVip && (
           <span className="rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-semibold text-yellow-700">⭐ VIP</span>
+        )}
+        {riskData && (
+          <span
+            data-testid="risk-score-badge"
+            title={`Score risque : ${riskData.riskScore}/100 (score conducteur: ${riskData.driverScore}, flags: ${riskData.flagCount}, annulations: ${riskData.cancelledCount})`}
+            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+              riskData.level === 'high' ? 'bg-red-100 text-red-700' :
+              riskData.level === 'medium' ? 'bg-orange-100 text-orange-700' :
+              'bg-green-100 text-green-700'
+            }`}
+          >
+            {riskData.level === 'high' ? '🔴' : riskData.level === 'medium' ? '🟠' : '🟢'} Risque {riskData.riskScore}/100
+          </span>
         )}
       </div>
 

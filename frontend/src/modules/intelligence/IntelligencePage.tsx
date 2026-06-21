@@ -4,8 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ComposedChart, Line, ReferenceLine, Cell,
+  ScatterChart, Scatter, ZAxis,
 } from 'recharts';
 import { api } from '../../utils/api';
+import { useAuth } from '../../hooks/useAuth';
 
 interface MileageAnomaly {
   rentalId: string;
@@ -620,6 +622,188 @@ export default function IntelligencePage(): React.JSX.Element {
 
       {/* ── Environnement ────────────────────────────────────────────────────── */}
       <EnvironmentSection />
+
+      {/* ── Corrélations ─────────────────────────────────────────────────────── */}
+      <CorrelationSection />
+
+      {/* ── Benchmark ────────────────────────────────────────────────────────── */}
+      <BenchmarkSection />
+    </div>
+  );
+}
+
+// ── Corrélation note / taux d'occupation ─────────────────────────────────────
+
+interface CorrelationPoint {
+  vehiclePlate: string;
+  vehicleLabel: string;
+  month: string;
+  rating: number;
+  occupancyRate: number;
+}
+interface CorrelationData { points: CorrelationPoint[] }
+
+function CorrelationSection(): React.JSX.Element {
+  const { data, isLoading } = useQuery<CorrelationData>({
+    queryKey: ['intelligence-correlation'],
+    queryFn: () => api.get<CorrelationData>('/intelligence/correlation').then(r => r.data),
+    staleTime: 30 * 60_000,
+  });
+
+  const points = data?.points ?? [];
+
+  // Tendance linéaire (si ≥ 5 points)
+  let trendLine: Array<{ rating: number; occupancyRate: number }> = [];
+  if (points.length >= 5) {
+    const n = points.length;
+    const sumX = points.reduce((s, p) => s + p.rating, 0);
+    const sumY = points.reduce((s, p) => s + p.occupancyRate, 0);
+    const sumXY = points.reduce((s, p) => s + p.rating * p.occupancyRate, 0);
+    const sumX2 = points.reduce((s, p) => s + p.rating * p.rating, 0);
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+    const minR = Math.min(...points.map(p => p.rating));
+    const maxR = Math.max(...points.map(p => p.rating));
+    trendLine = [
+      { rating: minR, occupancyRate: Math.round(slope * minR + intercept) },
+      { rating: maxR, occupancyRate: Math.round(slope * maxR + intercept) },
+    ];
+  }
+
+  return (
+    <div data-testid="correlation-section" className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="border-b border-gray-100 px-5 py-3">
+        <h2 className="text-sm font-semibold text-gray-900">Corrélations — Note vs Taux d&apos;occupation</h2>
+        <p className="text-xs text-gray-400">Chaque point = un véhicule sur un mois. La droite de tendance apparaît à partir de 5 points.</p>
+      </div>
+      {isLoading ? (
+        <div className="flex justify-center py-10"><div className="h-6 w-6 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} /></div>
+      ) : points.length === 0 ? (
+        <p className="py-8 text-center text-sm text-gray-400">Aucune donnée disponible (ratings + locations requis)</p>
+      ) : (
+        <div className="p-5">
+          <ResponsiveContainer width="100%" height={260}>
+            <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" dataKey="rating" name="Note" domain={[3, 5.5]} tick={{ fontSize: 11 }} label={{ value: 'Note Getaround', position: 'insideBottom', offset: -5, fontSize: 11 }} />
+              <YAxis type="number" dataKey="occupancyRate" name="Occupation" unit="%" tick={{ fontSize: 11 }} domain={[0, 100]} label={{ value: 'Taux occupation', angle: -90, position: 'insideLeft', fontSize: 11 }} />
+              <ZAxis range={[40, 40]} />
+              <Tooltip cursor={{ strokeDasharray: '3 3' }}
+                content={({ payload }) => {
+                  if (!payload?.length) return null;
+                  const p = payload[0]?.payload as CorrelationPoint;
+                  return (
+                    <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs shadow">
+                      <p className="font-semibold text-gray-800">{p.vehicleLabel}</p>
+                      <p className="text-gray-500">{p.month}</p>
+                      <p>Note : <span className="font-bold text-amber-600">{p.rating.toFixed(1)} ★</span></p>
+                      <p>Occupation : <span className="font-bold text-[#01696e]">{p.occupancyRate}%</span></p>
+                    </div>
+                  );
+                }}
+              />
+              <Scatter data={points} fill="#01696e" fillOpacity={0.7} />
+              {trendLine.length === 2 && (
+                <Scatter data={trendLine} fill="#ef4444" line={{ stroke: '#ef4444', strokeWidth: 2 }} shape={() => null} legendType="none" />
+              )}
+            </ScatterChart>
+          </ResponsiveContainer>
+          <p className="mt-1 text-center text-xs text-gray-400">{points.length} point{points.length > 1 ? 's' : ''} · 12 derniers mois</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Benchmark anonymisé ───────────────────────────────────────────────────────
+
+interface BenchmarkData {
+  hasData: boolean;
+  message?: string;
+  participantCount?: number;
+  own?: { occupancyRate: number; caPerVehicle: number; healthScore: number } | null;
+  median?: { occupancyRate: number; caPerVehicle: number; healthScore: number };
+  avg?: { occupancyRate: number; caPerVehicle: number; healthScore: number };
+  top80th?: { occupancyRate: number; caPerVehicle: number; healthScore: number };
+}
+
+function BenchmarkSection(): React.JSX.Element {
+  const { user } = useAuth();
+  const isPlanEnterprise = (user as unknown as { plan?: string })?.plan === 'enterprise';
+
+  const { data, isLoading } = useQuery<BenchmarkData>({
+    queryKey: ['intelligence-benchmark'],
+    queryFn: () => api.get<BenchmarkData>('/intelligence/benchmark').then(r => r.data),
+    staleTime: 60 * 60_000,
+    enabled: isPlanEnterprise,
+    retry: false,
+  });
+
+  if (!isPlanEnterprise) {
+    return (
+      <div data-testid="benchmark-section" className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-gray-100 px-5 py-3">
+          <h2 className="text-sm font-semibold text-gray-900">Benchmark anonymisé</h2>
+        </div>
+        <div className="p-6 text-center">
+          <p className="text-sm text-gray-500">Disponible sur le plan <span className="font-semibold text-purple-700">Enterprise</span></p>
+          <p className="mt-1 text-xs text-gray-400">Comparez votre flotte aux autres gestionnaires Getaround (données anonymisées).</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div data-testid="benchmark-section" className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="border-b border-gray-100 px-5 py-3">
+        <h2 className="text-sm font-semibold text-gray-900">Benchmark anonymisé — Flotte Enterprise</h2>
+        <p className="text-xs text-gray-400">Données agrégées des flottes participantes (benchmarkConsent activé dans Paramètres).</p>
+      </div>
+      {isLoading ? (
+        <div className="flex justify-center py-10"><div className="h-6 w-6 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} /></div>
+      ) : !data?.hasData ? (
+        <p className="py-8 text-center text-sm text-gray-400">{data?.message ?? 'Aucune donnée benchmark disponible'}</p>
+      ) : (
+        <div className="p-5">
+          <p className="mb-3 text-xs text-gray-500">{data.participantCount} flotte{(data.participantCount ?? 0) > 1 ? 's' : ''} participante{(data.participantCount ?? 0) > 1 ? 's' : ''} — mois en cours</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-xs text-gray-400">
+                  <th className="pb-2 text-left font-medium">Indicateur</th>
+                  <th className="pb-2 text-right font-medium text-[#01696e]">Votre flotte</th>
+                  <th className="pb-2 text-right font-medium text-gray-600">Médiane</th>
+                  <th className="pb-2 text-right font-medium text-gray-600">Moyenne</th>
+                  <th className="pb-2 text-right font-medium text-purple-700">Top 80e</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                <tr>
+                  <td className="py-2 text-gray-700">Taux d&apos;occupation</td>
+                  <td className="py-2 text-right font-semibold text-[#01696e]">{data.own?.occupancyRate ?? '—'}%</td>
+                  <td className="py-2 text-right text-gray-600">{data.median?.occupancyRate}%</td>
+                  <td className="py-2 text-right text-gray-600">{data.avg?.occupancyRate}%</td>
+                  <td className="py-2 text-right text-purple-700">{data.top80th?.occupancyRate}%</td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">CA / véhicule</td>
+                  <td className="py-2 text-right font-semibold text-[#01696e]">{data.own?.caPerVehicle != null ? fmtEuro(data.own.caPerVehicle) : '—'}</td>
+                  <td className="py-2 text-right text-gray-600">{data.median?.caPerVehicle != null ? fmtEuro(data.median.caPerVehicle) : '—'}</td>
+                  <td className="py-2 text-right text-gray-600">{data.avg?.caPerVehicle != null ? fmtEuro(data.avg.caPerVehicle) : '—'}</td>
+                  <td className="py-2 text-right text-purple-700">{data.top80th?.caPerVehicle != null ? fmtEuro(data.top80th.caPerVehicle) : '—'}</td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Health score</td>
+                  <td className="py-2 text-right font-semibold text-[#01696e]">{data.own?.healthScore ?? '—'}</td>
+                  <td className="py-2 text-right text-gray-600">{data.median?.healthScore}</td>
+                  <td className="py-2 text-right text-gray-600">{data.avg?.healthScore}</td>
+                  <td className="py-2 text-right text-purple-700">{data.top80th?.healthScore}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

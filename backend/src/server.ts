@@ -485,6 +485,9 @@ async function runMorningRebalayage(): Promise<void> {
 
         // ─── Valuation mensuelle Autobiz (si clé configurée et pas déjà faite ce mois) ───
         await updateVehicleValuationsIfNeeded(db, company.slug);
+
+        // ─── Alertes intelligence : baisse note + sous-utilisation ────────────
+        await runIntelligenceAlerts(db, company.slug);
       } catch (e) { console.error(`[Rebalayage] Erreur tenant ${company.slug}:`, e); }
     }
   } catch (e) { console.error('[Rebalayage] Erreur générale:', e); }
@@ -544,6 +547,128 @@ async function updateVehicleValuationsIfNeeded(db: ReturnType<typeof getTenantCl
     }
     console.log(`[Valuations] ${slug} : estimations mises à jour`);
   } catch (e) { console.error(`[Valuations] Erreur ${slug}:`, e); }
+}
+
+async function runIntelligenceAlerts(db: ReturnType<typeof getTenantClient>, slug: string): Promise<void> {
+  try {
+    const settings = await db.companySettings.findFirst({
+      select: {
+        ratingDropThreshold: true,
+        underutilizationThreshold: true,
+        underutilizationWeeks: true,
+      },
+    });
+    const ratingDropThreshold = settings?.ratingDropThreshold ?? 0.0;
+    const underutilizationThreshold = settings?.underutilizationThreshold ?? 0.30;
+    const underutilizationWeeks = settings?.underutilizationWeeks ?? 4;
+
+    // ── BLOC 1 : Alerte baisse note ───────────────────────────────────────────
+    const prevPeriod = new Date();
+    prevPeriod.setMonth(prevPeriod.getMonth() - 1);
+    const prevMonthStr = prevPeriod.toISOString().slice(0, 7);
+    const curPeriod = new Date();
+    curPeriod.setMonth(curPeriod.getMonth() - 0);
+    const curMonthStr = curPeriod.toISOString().slice(0, 7);
+
+    const [curRatings, prevRatings, vehicles] = await Promise.all([
+      db.vehicleRating.findMany({ where: { period: curMonthStr }, select: { vehicleId: true, rating: true } }),
+      db.vehicleRating.findMany({ where: { period: prevMonthStr }, select: { vehicleId: true, rating: true } }),
+      db.vehicle.findMany({ where: { isActive: true }, select: { id: true, make: true, model: true, licensePlate: true } }),
+    ]);
+
+    const vehicleMap = new Map(vehicles.map(v => [v.id, v]));
+    const prevMap = new Map(prevRatings.map(r => [r.vehicleId, r.rating]));
+    const adminUsers = await db.user.findMany({
+      where: { isActive: true, OR: [{ role: { in: ['admin', 'exploitation'] as never[] } }, { roles: { hasSome: ['admin', 'exploitation'] } }] },
+      select: { id: true },
+    });
+
+    for (const cur of curRatings) {
+      const prev = prevMap.get(cur.vehicleId);
+      if (prev == null) continue;
+      const drop = prev - cur.rating;
+      if (drop <= ratingDropThreshold) continue;
+
+      const v = vehicleMap.get(cur.vehicleId);
+      const label = v ? `${v.make} ${v.model} (${v.licensePlate})` : cur.vehicleId;
+
+      for (const admin of adminUsers) {
+        await db.notification.create({
+          data: {
+            userId: admin.id,
+            type: 'rating_drop',
+            title: `⚠️ Baisse de note détectée — ${label}`,
+            body: `Note passée de ${prev.toFixed(1)} → ${cur.rating.toFixed(1)} (${drop.toFixed(1)} pt). Vérifiez les avis locataires.`,
+            relatedEntityType: 'vehicle',
+            relatedEntityId: cur.vehicleId,
+            targetUrl: `/intelligence/ratings`,
+          },
+        });
+      }
+
+      const chatId = await getTelegramChatId(db as never);
+      if (chatId) {
+        await sendTelegramMessage(chatId,
+          `⚠️ Baisse de note Getaround — ${slug}\n${label} : ${prev.toFixed(1)} → ${cur.rating.toFixed(1)} (-${drop.toFixed(1)} pt)\n💡 Suggestions : vérifier l'état du véhicule, relire les derniers avis, améliorer la propreté et la ponctualité de remise.`);
+      }
+    }
+
+    // ── BLOC 2 : Alerte sous-utilisation ─────────────────────────────────────
+    const weeksAgo = new Date();
+    weeksAgo.setDate(weeksAgo.getDate() - underutilizationWeeks * 7);
+
+    const activeVehicles = await db.vehicle.findMany({
+      where: { isActive: true },
+      select: { id: true, make: true, model: true, licensePlate: true },
+    });
+
+    const periodDays = underutilizationWeeks * 7;
+
+    for (const vehicle of activeVehicles) {
+      const rentals = await db.rental.findMany({
+        where: { vehicleId: vehicle.id, startAt: { gte: weeksAgo }, status: { in: ['active', 'completed'] } },
+        select: { startAt: true, endAt: true },
+      });
+
+      const occupiedDays = new Set<string>();
+      const now2 = new Date();
+      for (const r of rentals) {
+        const s = new Date(r.startAt);
+        const e = r.endAt ? new Date(r.endAt) : now2;
+        for (let d = new Date(s); d <= e && d <= now2; d.setDate(d.getDate() + 1)) {
+          occupiedDays.add(d.toISOString().slice(0, 10));
+        }
+      }
+
+      const occupancyRate = occupiedDays.size / periodDays;
+      if (occupancyRate >= underutilizationThreshold) continue;
+
+      const label2 = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
+      const pct = Math.round(occupancyRate * 100);
+
+      for (const admin of adminUsers) {
+        await db.notification.create({
+          data: {
+            userId: admin.id,
+            type: 'underutilization',
+            title: `📉 Sous-utilisation véhicule — ${label2}`,
+            body: `Taux d'occupation : ${pct}% sur les ${underutilizationWeeks} dernières semaines (seuil : ${Math.round(underutilizationThreshold * 100)}%).`,
+            relatedEntityType: 'vehicle',
+            relatedEntityId: vehicle.id,
+            targetUrl: `/vehicles/${vehicle.id}`,
+          },
+        });
+      }
+
+      const chatId2 = await getTelegramChatId(db as never);
+      if (chatId2) {
+        await sendTelegramMessage(chatId2,
+          `📉 Sous-utilisation — ${slug}\n${label2} : ${pct}% d'occupation sur ${underutilizationWeeks} sem.\n💡 Actions : revoir le prix, améliorer les photos, vérifier la disponibilité, proposer des promotions.`);
+      }
+    }
+
+    console.log(`[Intelligence] ${slug} : alertes notes + sous-utilisation traitées`);
+  } catch (e) { console.error(`[Intelligence] Erreur alertes ${slug}:`, e); }
 }
 
 cron.schedule('0 7 * * *', () => void runMorningRebalayage());

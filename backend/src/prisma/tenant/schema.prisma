@@ -666,6 +666,15 @@ model CompanySettings {
   invoiceSyncWindowDays    Int      @default(7)
   invoiceActiveTypes       String[] @default(["blocked_cleaning","blocked_damage","blocked_claim","blocked_late","blocked_infraction","blocked_gas"])
   invoiceMalusConfig       Json     @default("{}")
+  // Intelligence
+  ratingDropThreshold      Float    @default(0.0)  // toute baisse par défaut (>0.3 etc.)
+  underutilizationThreshold Float   @default(0.30) // 30% occupation
+  underutilizationWeeks    Int      @default(4)     // analyser N dernières semaines
+  riskScoreAlertThreshold  Int      @default(60)   // alerte si score risque > seuil
+  riskWeightScore          Int      @default(40)   // pondération score locataire
+  riskWeightFlags          Int      @default(30)   // pondération evaluationFlag
+  riskWeightCancelled      Int      @default(20)   // pondération annulations
+  riskWeightDelay          Int      @default(10)   // pondération délai réponse
   // Véhicule
   autobizApiKey            String?
   depreciationThreshold    Float    @default(0.10) // €/km seuil recommandation revente

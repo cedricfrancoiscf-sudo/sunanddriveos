@@ -452,6 +452,15 @@ interface CompanySettings {
   co2FactorHybride: number;
   co2FactorElectrique: number;
   co2EquivalentArbre: number;
+  // Intelligence
+  ratingDropThreshold: number;
+  underutilizationThreshold: number;
+  underutilizationWeeks: number;
+  riskScoreAlertThreshold: number;
+  riskWeightScore: number;
+  riskWeightFlags: number;
+  riskWeightCancelled: number;
+  riskWeightDelay: number;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -1355,6 +1364,136 @@ function VehicleSettingsSection(): React.JSX.Element {
   );
 }
 
+function IntelligenceSettingsSection(): React.JSX.Element {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<{ settings: CompanySettings }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
+  });
+
+  const [form, setForm] = React.useState({
+    ratingDropThreshold: 0.0,
+    underutilizationThreshold: 0.30,
+    underutilizationWeeks: 4,
+    riskScoreAlertThreshold: 60,
+    riskWeightScore: 40,
+    riskWeightFlags: 30,
+    riskWeightCancelled: 20,
+    riskWeightDelay: 10,
+  });
+  const [saved, setSaved] = React.useState(false);
+
+  React.useEffect(() => {
+    if (settings) {
+      setForm({
+        ratingDropThreshold: settings.ratingDropThreshold ?? 0.0,
+        underutilizationThreshold: settings.underutilizationThreshold ?? 0.30,
+        underutilizationWeeks: settings.underutilizationWeeks ?? 4,
+        riskScoreAlertThreshold: settings.riskScoreAlertThreshold ?? 60,
+        riskWeightScore: settings.riskWeightScore ?? 40,
+        riskWeightFlags: settings.riskWeightFlags ?? 30,
+        riskWeightCancelled: settings.riskWeightCancelled ?? 20,
+        riskWeightDelay: settings.riskWeightDelay ?? 10,
+      });
+    }
+  }, [settings]);
+
+  const saveMutation = useMutation({
+    mutationFn: (data: typeof form) => api.put('/settings', data),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  const totalWeight = form.riskWeightScore + form.riskWeightFlags + form.riskWeightCancelled + form.riskWeightDelay;
+
+  return (
+    <div data-testid="intelligence-settings-section" className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="border-b border-gray-100 px-5 py-3">
+        <h2 className="text-sm font-semibold text-gray-900">Intelligence — Alertes & Risque</h2>
+        <p className="text-xs text-gray-400">Tous les seuils sont configurables. Aucune valeur codée en dur.</p>
+      </div>
+      <div className="p-5 space-y-5">
+        {/* Alerte baisse note */}
+        <div>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Alerte baisse note Getaround</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-gray-600">Seuil de baisse déclenchant l&apos;alerte (ex: 0.3)</span>
+              <input data-testid="input-intelligence-ratingDropThreshold" type="number" step="0.1" min="0" max="5"
+                value={form.ratingDropThreshold}
+                onChange={e => setForm(f => ({ ...f, ratingDropThreshold: parseFloat(e.target.value) || 0 }))}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#01696e] focus:outline-none" />
+              <span className="text-[10px] text-gray-400">0 = toute baisse, 0.3 = baisse d&apos;au moins 0.3 pt</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Alerte sous-utilisation */}
+        <div className="border-t border-gray-50 pt-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Alerte sous-utilisation véhicule</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-gray-600">Taux d&apos;occupation minimum (%)</span>
+              <input data-testid="input-intelligence-underutilizationThreshold" type="number" step="5" min="0" max="100"
+                value={Math.round(form.underutilizationThreshold * 100)}
+                onChange={e => setForm(f => ({ ...f, underutilizationThreshold: (parseFloat(e.target.value) || 0) / 100 }))}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#01696e] focus:outline-none" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-gray-600">Fenêtre d&apos;analyse (semaines)</span>
+              <input data-testid="input-intelligence-underutilizationWeeks" type="number" step="1" min="1" max="52"
+                value={form.underutilizationWeeks}
+                onChange={e => setForm(f => ({ ...f, underutilizationWeeks: parseInt(e.target.value) || 4 }))}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#01696e] focus:outline-none" />
+            </label>
+          </div>
+        </div>
+
+        {/* Score risque */}
+        <div className="border-t border-gray-50 pt-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Score risque locataire</h3>
+          <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-gray-600">Seuil d&apos;alerte score risque (0-100)</span>
+              <input data-testid="input-intelligence-riskScoreAlertThreshold" type="number" step="5" min="0" max="100"
+                value={form.riskScoreAlertThreshold}
+                onChange={e => setForm(f => ({ ...f, riskScoreAlertThreshold: parseInt(e.target.value) || 60 }))}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#01696e] focus:outline-none" />
+            </label>
+          </div>
+          <p className="mb-2 text-xs font-medium text-gray-600">Pondérations (total actuel : <span className={totalWeight !== 100 ? 'text-red-600 font-bold' : 'text-green-600 font-bold'}>{totalWeight}</span> — doit être 100)</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {([ ['Score conducteur', 'riskWeightScore'], ['Flags', 'riskWeightFlags'], ['Annulations', 'riskWeightCancelled'], ['Délai réponse', 'riskWeightDelay'] ] as [string, keyof typeof form][]).map(([label, key]) => (
+              <label key={key} className="flex flex-col gap-1">
+                <span className="text-xs text-gray-600">{label}</span>
+                <input data-testid={`input-intelligence-${key}`} type="number" step="5" min="0" max="100"
+                  value={form[key]}
+                  onChange={e => setForm(f => ({ ...f, [key]: parseInt(e.target.value) || 0 }))}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#01696e] focus:outline-none" />
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-gray-100 pt-4">
+          {saved && <span className="text-xs font-medium text-green-600">Sauvegardé ✓</span>}
+          {!saved && <span />}
+          <button type="button" disabled={saveMutation.isPending}
+            onClick={() => saveMutation.mutate(form)}
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
+            style={{ backgroundColor: '#01696e' }}>
+            {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ComptabiliteSection(): React.JSX.Element {
   const qc = useQueryClient();
   const { data: settings } = useQuery({
@@ -1894,6 +2033,9 @@ export default function SettingsPage(): React.JSX.Element {
 
         {/* Véhicule */}
         <VehicleSettingsSection />
+
+        {/* Intelligence */}
+        <IntelligenceSettingsSection />
 
         {/* Comptabilité */}
         <ComptabiliteSection />

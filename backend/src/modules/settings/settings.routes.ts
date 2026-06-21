@@ -68,6 +68,15 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       compteParkingCharge: z.string().min(1).max(10).optional(),
       formatExportPreference: z.enum(['fec', 'csv']).optional(),
       objectifSeuilAlerte: z.number().int().min(1).max(100).optional(),
+      // Intelligence
+      ratingDropThreshold: z.number().min(0).max(5).optional(),
+      underutilizationThreshold: z.number().min(0).max(1).optional(),
+      underutilizationWeeks: z.number().int().min(1).max(52).optional(),
+      riskScoreAlertThreshold: z.number().int().min(0).max(100).optional(),
+      riskWeightScore: z.number().int().min(0).max(100).optional(),
+      riskWeightFlags: z.number().int().min(0).max(100).optional(),
+      riskWeightCancelled: z.number().int().min(0).max(100).optional(),
+      riskWeightDelay: z.number().int().min(0).max(100).optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
 

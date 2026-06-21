@@ -71,6 +71,8 @@ export default function VehicleFormPage(): React.JSX.Element {
         pickupInstructions: vehicle.pickupInstructions ?? '',
         returnInstructions: vehicle.returnInstructions ?? '',
         carekeeperUserId: vehicle.carekeeperUserId ?? '',
+        critAir: (vehicle as { critAir?: string | null }).critAir ?? null,
+        purchasePrice: (vehicle as { purchasePrice?: number | null }).purchasePrice ?? null,
       });
       setHealthScore(vehicle.healthScore);
     }

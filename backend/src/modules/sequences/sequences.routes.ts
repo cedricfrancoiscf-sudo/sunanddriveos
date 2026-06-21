@@ -72,6 +72,22 @@ router.delete('/:id', requireRole('admin'), async (req: Request, res: Response, 
   } catch (err: unknown) { next(err); }
 });
 
+// GET /api/v1/sequences/:id/logs — historique des exécutions
+router.get('/:id/logs', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const logs = await db.sequenceExecution.findMany({
+      where: { sequenceId: req.params.id as string },
+      include: {
+        rental: { select: { driverName: true, getaroundId: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    res.json({ logs });
+  } catch (err: unknown) { next(err); }
+});
+
 // POST /api/v1/sequences/execute-pending — appelé par le cron interne
 router.post('/execute-pending', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -36,6 +36,7 @@ interface PlanningBlocking {
   type: string;
   startAt: string;
   endAt: string;
+  getaroundUnavailabilityId: string | null;
 }
 interface PlanningUnavailability {
   id: string;
@@ -137,6 +138,9 @@ function BlockingBar({ blocking, onDelete, periodStart, totalDays }: {
       title={tooltip}
     >
       <span className="flex-1 truncate pl-1 text-[10px] text-white font-medium">{label}</span>
+      {blocking.getaroundUnavailabilityId && (
+        <span className="shrink-0 px-0.5 text-white/80" title="Synchronisé avec Getaround">🔗</span>
+      )}
       <button
         type="button"
         onClick={() => { if (window.confirm('Supprimer ce blocage ?')) onDelete(blocking.id); }}
@@ -194,7 +198,7 @@ export default function PlanningPage(): React.JSX.Element {
 
   const [zoneFilter, setZoneFilter] = useState<string>(() => localStorage.getItem('planning_zone_filter') ?? '');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ vehicleId: '', type: 'maintenance', reason: '', startAt: '', endAt: '' });
+  const [form, setForm] = useState({ vehicleId: '', type: 'maintenance', reason: '', startAt: '', endAt: '', syncToGetaround: true });
 
   const { data, isLoading } = useQuery({
     queryKey: ['planning', periodStart.toISOString(), viewMode],
@@ -218,7 +222,7 @@ export default function PlanningPage(): React.JSX.Element {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['planning'] });
       setShowForm(false);
-      setForm({ vehicleId: '', type: 'maintenance', reason: '', startAt: '', endAt: '' });
+      setForm({ vehicleId: '', type: 'maintenance', reason: '', startAt: '', endAt: '', syncToGetaround: true });
     },
   });
 
@@ -235,6 +239,7 @@ export default function PlanningPage(): React.JSX.Element {
       reason: form.reason || undefined,
       startAt: new Date(form.startAt).toISOString(),
       endAt: new Date(form.endAt).toISOString(),
+      syncToGetaround: form.syncToGetaround,
     });
   }
 
@@ -378,6 +383,22 @@ export default function PlanningPage(): React.JSX.Element {
               <input required type="datetime-local" value={form.endAt} onChange={e => setForm(f => ({ ...f, endAt: e.target.value }))}
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
             </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <button
+                data-testid="toggle-sync-getaround"
+                type="button"
+                onClick={() => setForm(f => ({ ...f, syncToGetaround: !f.syncToGetaround }))}
+                className="relative shrink-0"
+                title="Bloquer sur Getaround"
+              >
+                <div className={`h-5 w-9 rounded-full transition-colors ${form.syncToGetaround ? 'bg-[#01696e]' : 'bg-gray-300'}`}>
+                  <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.syncToGetaround ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </div>
+              </button>
+              <span className="text-xs text-gray-600">Bloquer sur Getaround</span>
+            </label>
           </div>
           <div className="flex gap-2">
             <button type="submit" disabled={createBlocking.isPending}

@@ -213,6 +213,8 @@ async function runRecentWindowSyncForAllTenants(): Promise<void> {
         await syncUnavailabilitiesForTenant(db, company.slug);
       } catch (e) { console.error(`[RecentSync] Unavailabilities ${company.slug}:`, e); }
     }
+    // Exécution séquences après sync (toutes tenants)
+    void runSequenceScheduler().catch(e => console.error('[RecentSync] Erreur séquences post-sync:', e));
   } catch (err: unknown) {
     console.error('[RecentSync] Erreur générale :', err);
   } finally {

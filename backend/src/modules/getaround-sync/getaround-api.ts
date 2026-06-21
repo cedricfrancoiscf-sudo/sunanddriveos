@@ -338,18 +338,37 @@ export function createGetaroundClient(apiKey: string) {
       return res.data;
     },
 
-    async createUnavailability(carId: number, startsAt: Date, endsAt: Date, reason: string): Promise<void> {
-      await withRetry(() => client.post(`/cars/${carId}/unavailabilities.json`, {
-        starts_at: toGetaroundDate(startsAt),
-        ends_at: toGetaroundDate(endsAt),
-        reason,
-      }));
+    // Crée une indisponibilité sur Getaround, découpe automatiquement en tranches de 30 jours.
+    // Retourne l'ID Getaround de la première tranche (ou null si échec).
+    async createUnavailability(carId: number, startsAt: Date, endsAt: Date, reason: string): Promise<number | null> {
+      const windows = splitInto30DayWindows(startsAt, endsAt);
+      let firstId: number | null = null;
+      for (const w of windows) {
+        try {
+          const res = await withRetry(() => client.post<{ id?: number }>(`/cars/${carId}/unavailabilities.json`, {
+            starts_at: toGetaroundDate(w.start),
+            ends_at: toGetaroundDate(w.end),
+            reason,
+          }));
+          if (firstId === null && res.data?.id) firstId = res.data.id;
+        } catch (err: unknown) {
+          console.error(`[GA] createUnavailability fenêtre ${toGetaroundDate(w.start)}→${toGetaroundDate(w.end)}:`, err);
+        }
+      }
+      return firstId;
     },
 
     async deleteUnavailability(carId: number, startsAt: Date, endsAt: Date): Promise<void> {
-      await withRetry(() => client.delete(`/cars/${carId}/unavailabilities.json`, {
-        data: { starts_at: toGetaroundDate(startsAt), ends_at: toGetaroundDate(endsAt) },
-      }));
+      const windows = splitInto30DayWindows(startsAt, endsAt);
+      for (const w of windows) {
+        try {
+          await withRetry(() => client.delete(`/cars/${carId}/unavailabilities.json`, {
+            data: { starts_at: toGetaroundDate(w.start), ends_at: toGetaroundDate(w.end) },
+          }));
+        } catch (err: unknown) {
+          console.error(`[GA] deleteUnavailability fenêtre ${toGetaroundDate(w.start)}→${toGetaroundDate(w.end)}:`, err);
+        }
+      }
     },
 
     async getUnavailabilities(carId: number, startDate: Date, endDate: Date): Promise<Array<{ id: number; starts_at: string; ends_at: string }>> {

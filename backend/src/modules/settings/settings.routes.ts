@@ -68,6 +68,8 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       compteParkingCharge: z.string().min(1).max(10).optional(),
       formatExportPreference: z.enum(['fec', 'csv']).optional(),
       objectifSeuilAlerte: z.number().int().min(1).max(100).optional(),
+      // Séquences
+      minMessageInterval: z.number().int().min(0).max(1440).optional(),
       // Intelligence
       ratingDropThreshold: z.number().min(0).max(5).optional(),
       underutilizationThreshold: z.number().min(0).max(1).optional(),

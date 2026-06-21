@@ -15,6 +15,7 @@ const blockingSchema = z.object({
   endAt: z.string().datetime(),
   reason: z.string().optional(),
   type: z.enum(['maintenance', 'incident', 'administrative', 'other']),
+  syncToGetaround: z.boolean().optional().default(true),
 });
 
 // GET /api/v1/planning — retourne locations + blocages pour une période
@@ -58,7 +59,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       }),
       db.blocking.findMany({
         where: { startAt: { lte: to }, endAt: { gte: from }, ...blockingVehicleFilter },
-        select: { id: true, vehicleId: true, reason: true, type: true, startAt: true, endAt: true },
+        select: { id: true, vehicleId: true, reason: true, type: true, startAt: true, endAt: true, getaroundUnavailabilityId: true },
       }),
       db.vehicle.findMany({
         where: vehicleFilter,
@@ -87,25 +88,30 @@ router.post('/blockings', async (req: Request, res: Response, next: NextFunction
     const db = getTenantClient(req.tenantDbUrl!);
     const startAt = new Date(body.data.startAt);
     const endAt = new Date(body.data.endAt);
-    const blocking = await db.blocking.create({
-      data: { ...body.data, startAt, endAt, createdById: req.auth!.userId! },
-    });
+    const { syncToGetaround, ...blockingData } = body.data;
 
-    // Sync indisponibilité vers Getaround (fire-and-forget)
-    void (async () => {
+    let getaroundUnavailabilityId: string | null = null;
+
+    if (syncToGetaround !== false) {
       try {
         const vehicle = await db.vehicle.findUnique({
-          where: { id: body.data.vehicleId },
+          where: { id: blockingData.vehicleId },
           select: { getaroundId: true, getaroundAccount: { select: { apiKeyHash: true } } },
         });
-        if (!vehicle?.getaroundId || !vehicle.getaroundAccount) return;
-        const apiKey = decrypt(vehicle.getaroundAccount.apiKeyHash);
-        await createGetaroundClient(apiKey).createUnavailability(
-          parseInt(vehicle.getaroundId, 10), startAt, endAt, body.data.reason ?? body.data.type,
-        );
-        console.log(`[Planning] Indisponibilité créée sur Getaround: véhicule ${vehicle.getaroundId}`);
+        if (vehicle?.getaroundId && vehicle.getaroundAccount) {
+          const apiKey = decrypt(vehicle.getaroundAccount.apiKeyHash);
+          const gaId = await createGetaroundClient(apiKey).createUnavailability(
+            parseInt(vehicle.getaroundId, 10), startAt, endAt, blockingData.reason ?? blockingData.type,
+          );
+          if (gaId) getaroundUnavailabilityId = String(gaId);
+          console.log(`[Planning] Indisponibilité créée sur Getaround: véhicule ${vehicle.getaroundId} id=${gaId}`);
+        }
       } catch (err: unknown) { console.error('[Planning] Erreur createUnavailability:', err); }
-    })();
+    }
+
+    const blocking = await db.blocking.create({
+      data: { ...blockingData, startAt, endAt, createdById: req.auth!.userId!, getaroundUnavailabilityId },
+    });
 
     res.status(201).json({ blocking });
   } catch (err: unknown) { next(err); }
@@ -135,6 +141,16 @@ router.delete('/blockings/:id', async (req: Request, res: Response, next: NextFu
     }
 
     res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/planning/unavailabilities-sync — déclenche manuellement la synchronisation
+router.post('/unavailabilities-sync', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { syncUnavailabilitiesForTenant } = await import('../getaround-sync/getaround-sync.service');
+    const db = getTenantClient(req.tenantDbUrl!);
+    await syncUnavailabilitiesForTenant(db, 'manual');
+    res.json({ success: true, message: 'Synchronisation des indisponibilités déclenchée' });
   } catch (err: unknown) { next(err); }
 });
 

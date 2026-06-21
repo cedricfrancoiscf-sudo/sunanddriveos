@@ -43,11 +43,14 @@ export const DELAY_LABELS: Record<TriggerEvent, string> = {
 export const BEFORE_TRIGGERS: TriggerEvent[] = ['rental.before_checkin', 'rental.before_checkout'];
 
 export const TEMPLATE_VARS = [
-  { key: '{{driver_name}}', label: 'Prénom du locataire' },
-  { key: '{{vehicle}}', label: 'Véhicule (marque + modèle)' },
-  { key: '{{license_plate}}', label: 'Immatriculation' },
-  { key: '{{start_date}}', label: 'Date de début' },
-  { key: '{{end_date}}', label: 'Date de fin' },
+  { key: '{driver_name}', label: 'Prénom du locataire' },
+  { key: '{vehicle}', label: 'Véhicule (marque + modèle)' },
+  { key: '{licensePlate}', label: 'Immatriculation' },
+  { key: '{startAt}', label: 'Date et heure de début' },
+  { key: '{endAt}', label: 'Date et heure de fin' },
+  { key: '{deliveryPoint}', label: 'Point de livraison' },
+  { key: '{pickupInstructions}', label: 'Instructions de départ' },
+  { key: '{returnInstructions}', label: 'Instructions de retour' },
 ];
 
 export const sequencesApi = {
@@ -65,4 +68,7 @@ export const sequencesApi = {
 
   delete: (id: string) =>
     api.delete(`/sequences/${id}`),
+
+  getLogs: (id: string) =>
+    api.get<{ logs: Array<{ id: string; sequenceId: string; rentalId: string; scheduledAt: string; executedAt: string | null; status: string; rental: { driverName: string; getaroundId: string | null } }> }>(`/sequences/${id}/logs`).then(r => r.data.logs),
 };

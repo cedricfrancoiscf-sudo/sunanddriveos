@@ -666,6 +666,8 @@ model CompanySettings {
   invoiceSyncWindowDays    Int      @default(7)
   invoiceActiveTypes       String[] @default(["blocked_cleaning","blocked_damage","blocked_claim","blocked_late","blocked_infraction","blocked_gas"])
   invoiceMalusConfig       Json     @default("{}")
+  // Séquences
+  minMessageInterval       Int      @default(60)    // minutes min entre deux messages au même locataire
   // Intelligence
   ratingDropThreshold      Float    @default(0.0)  // toute baisse par défaut (>0.3 etc.)
   underutilizationThreshold Float   @default(0.30) // 30% occupation

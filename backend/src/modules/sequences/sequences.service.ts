@@ -38,12 +38,14 @@ export async function toggleSequence(db: PrismaClient, id: string) {
   return db.messageSequence.update({ where: { id }, data: { isActive: !seq.isActive } });
 }
 
-// Interpolation des variables du template
+// Interpolation des variables du template — supporte {{var}} ET {var}
 export function renderTemplate(
   template: string,
   vars: Record<string, string>,
 ): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
+  return template
+    .replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`)
+    .replace(/\{(\w+)\}/g, (match, key: string) => vars[key] ?? match);
 }
 
 // Planifie les séquences pour une location donnée
@@ -54,7 +56,7 @@ export async function scheduleSequencesForRental(
 ) {
   const rental = await db.rental.findUnique({
     where: { id: rentalId },
-    include: { vehicle: { select: { id: true, make: true, model: true } } },
+    include: { vehicle: { select: { id: true, make: true, model: true, licensePlate: true, deliveryPointName: true, pickupInstructions: true, returnInstructions: true } } },
   });
   if (!rental) return;
 
@@ -104,6 +106,14 @@ export async function scheduleSequencesForRental(
       }
 
       console.log(`[Sequence] scheduledAt calculé : ${scheduledAt.toISOString()} pour rental ${rentalId} (séquence "${seq.name}", délai ${seq.delayMinutes} min)`);
+      // Éviter les doublons : si une exécution existe déjà pour ce couple (sequenceId, rentalId) en pending, skip
+      const existing = await db.sequenceExecution.findFirst({
+        where: { rentalId, sequenceId: seq.id, status: 'pending' },
+      });
+      if (existing) {
+        console.log(`[Sequence] Skip doublon — séquence "${seq.name}" déjà planifiée pour rental ${rentalId}`);
+        continue;
+      }
       await db.sequenceExecution.create({
         data: { rentalId, sequenceId: seq.id, scheduledAt, status: 'pending' },
       });
@@ -125,7 +135,7 @@ export async function executePendingSequences(
       sequence: true,
       rental: {
         include: {
-          vehicle: { select: { make: true, model: true, licensePlate: true } },
+          vehicle: { select: { make: true, model: true, licensePlate: true, deliveryPointName: true, pickupInstructions: true, returnInstructions: true, getaroundAccountId: true } },
         },
       },
     },
@@ -167,12 +177,19 @@ export async function executePendingSequences(
         continue;
       }
 
+      const fmtDT = (d: Date) => d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       const vars: Record<string, string> = {
-        driver_name: exec.rental.driverName,
+        driver_name: exec.rental.driverName.split(' ')[0] ?? exec.rental.driverName,
         vehicle: `${exec.rental.vehicle.make} ${exec.rental.vehicle.model}`,
         license_plate: exec.rental.vehicle.licensePlate,
+        licensePlate: exec.rental.vehicle.licensePlate,
         start_date: new Date(exec.rental.startAt).toLocaleDateString('fr-FR'),
         end_date: new Date(exec.rental.endAt).toLocaleDateString('fr-FR'),
+        startAt: fmtDT(new Date(exec.rental.startAt)),
+        endAt: fmtDT(new Date(exec.rental.endAt)),
+        deliveryPoint: exec.rental.vehicle.deliveryPointName ?? '',
+        pickupInstructions: exec.rental.vehicle.pickupInstructions ?? '',
+        returnInstructions: exec.rental.vehicle.returnInstructions ?? '',
       };
 
       const content = renderTemplate(exec.sequence.content, vars);

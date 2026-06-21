@@ -888,6 +888,63 @@ router.get('/mileage-anomalies', async (req: Request, res: Response, next: NextF
   } catch (err) { next(err); }
 });
 
+// GET /api/v1/intelligence/environment — bilan carbone flotte
+router.get('/environment', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    const [settings, vehicles, rentals] = await Promise.all([
+      db.companySettings.findFirst(),
+      db.vehicle.findMany({ where: { isActive: true }, select: { id: true, make: true, model: true, licensePlate: true, fuelType: true } }),
+      db.rental.findMany({
+        where: { startAt: { gte: monthStart, lte: monthEnd }, status: { in: ['active', 'completed'] } },
+        select: { vehicleId: true, kmDriven: true },
+      }),
+    ]);
+
+    const co2ByFuel: Record<string, number> = {
+      essence:    settings?.co2FactorEssence    ?? 120,
+      diesel:     settings?.co2FactorEssence    ?? 120, // diesel ≈ essence par défaut
+      hybride:    settings?.co2FactorHybride    ?? 60,
+      electrique: settings?.co2FactorElectrique ?? 10,
+      gpl:        settings?.co2FactorEssence    ?? 120,
+    };
+    const co2PerArbre = settings?.co2EquivalentArbre ?? 10;
+
+    const fuelMap = new Map(vehicles.map(v => [v.id, v.fuelType ?? 'essence']));
+    const labelMap = new Map(vehicles.map(v => [v.id, `${v.make} ${v.model} · ${v.licensePlate}`]));
+
+    const byVehicle = new Map<string, number>();
+    for (const r of rentals) {
+      if (!r.kmDriven || r.kmDriven === 0) continue;
+      const fuel = fuelMap.get(r.vehicleId) ?? 'essence';
+      const facteur = co2ByFuel[fuel] ?? 120;
+      const co2g = r.kmDriven * facteur;
+      byVehicle.set(r.vehicleId, (byVehicle.get(r.vehicleId) ?? 0) + co2g);
+    }
+
+    const totalCo2Kg = [...byVehicle.values()].reduce((s, g) => s + g / 1000, 0);
+    const equivalentArbres = totalCo2Kg / co2PerArbre;
+
+    const vehicleData = [...byVehicle.entries()].map(([vehicleId, co2g]) => ({
+      vehicleId,
+      label: labelMap.get(vehicleId) ?? vehicleId,
+      co2Kg: Math.round(co2g / 100) / 10,
+    })).sort((a, b) => b.co2Kg - a.co2Kg);
+
+    res.json({
+      monthStart: monthStart.toISOString(),
+      totalCo2Kg: Math.round(totalCo2Kg * 10) / 10,
+      equivalentArbres: Math.round(equivalentArbres * 10) / 10,
+      byVehicle: vehicleData,
+      facteurs: { essence: co2ByFuel.essence, hybride: co2ByFuel.hybride, electrique: co2ByFuel.electrique, co2PerArbre },
+    });
+  } catch (err) { next(err); }
+});
+
 // Rapport CEO — monté ici pour éviter le double plan-gating depuis app.ts
 router.use('/report', reportRouter);
 

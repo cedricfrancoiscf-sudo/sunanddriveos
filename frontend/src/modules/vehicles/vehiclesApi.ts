@@ -11,6 +11,8 @@ export interface Vehicle {
   color: string | null;
   photoUrl: string | null;
   fuelType: string | null;
+  critAir: string | null;
+  purchasePrice: number | null;
   parkingZone: string | null;
   deliveryPointName: string | null;
   deliveryPostalCode: string | null;

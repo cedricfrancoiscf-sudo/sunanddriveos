@@ -445,6 +445,13 @@ interface CompanySettings {
   compteParkingCharge: string;
   formatExportPreference: string;
   objectifSeuilAlerte: number;
+  autobizApiKey: string | null;
+  depreciationThreshold: number;
+  warrantyAlertDays: number;
+  co2FactorEssence: number;
+  co2FactorHybride: number;
+  co2FactorElectrique: number;
+  co2EquivalentArbre: number;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -1238,6 +1245,116 @@ function BillingSection(): React.JSX.Element {
   );
 }
 
+function VehicleSettingsSection(): React.JSX.Element {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<{ settings: CompanySettings }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
+  });
+
+  const [form, setForm] = React.useState({
+    autobizApiKey: '',
+    depreciationThreshold: 0.10,
+    warrantyAlertDays: 30,
+    co2FactorEssence: 120,
+    co2FactorHybride: 60,
+    co2FactorElectrique: 10,
+    co2EquivalentArbre: 10,
+  });
+  const [showApiKey, setShowApiKey] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+
+  React.useEffect(() => {
+    if (settings) {
+      setForm({
+        autobizApiKey: settings.autobizApiKey ?? '',
+        depreciationThreshold: settings.depreciationThreshold ?? 0.10,
+        warrantyAlertDays: settings.warrantyAlertDays ?? 30,
+        co2FactorEssence: settings.co2FactorEssence ?? 120,
+        co2FactorHybride: settings.co2FactorHybride ?? 60,
+        co2FactorElectrique: settings.co2FactorElectrique ?? 10,
+        co2EquivalentArbre: settings.co2EquivalentArbre ?? 10,
+      });
+    }
+  }, [settings]);
+
+  const saveMut = useMutation({
+    mutationFn: () => api.put('/settings', {
+      ...form,
+      autobizApiKey: form.autobizApiKey || null,
+    }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  function numField(key: keyof typeof form, label: string, unit = '', step = 'any') {
+    return (
+      <div key={key}>
+        <label className="mb-1 block text-xs font-medium text-gray-600">{label}{unit ? ` (${unit})` : ''}</label>
+        <input type="number" step={step} value={form[key] as number}
+          onChange={e => setForm(f => ({ ...f, [key]: parseFloat(e.target.value) || 0 }))}
+          data-testid={`input-vehicle-${key}`}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+      </div>
+    );
+  }
+
+  return (
+    <section data-testid="vehicle-settings-section" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-900">Véhicule</h2>
+        <p className="mt-0.5 text-xs text-gray-400">Intégrations, dépréciation, garanties et bilan carbone</p>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-600">Clé API Autobiz</label>
+        <div className="flex gap-2">
+          <input
+            type={showApiKey ? 'text' : 'password'}
+            value={form.autobizApiKey}
+            onChange={e => setForm(f => ({ ...f, autobizApiKey: e.target.value }))}
+            placeholder="Clé API Autobiz (optionnel)"
+            data-testid="input-vehicle-autobizApiKey"
+            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+          <button type="button" onClick={() => setShowApiKey(v => !v)}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50">
+            {showApiKey ? 'Masquer' : 'Afficher'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {numField('depreciationThreshold', 'Seuil dépréciation revente', '€/km', '0.01')}
+        {numField('warrantyAlertDays', 'Alerte garantie avant expiration', 'jours', '1')}
+      </div>
+
+      <div>
+        <p className="mb-3 text-xs font-semibold text-gray-700">Facteurs CO₂ (gCO₂/km)</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {numField('co2FactorEssence', 'Essence / Diesel / GPL')}
+          {numField('co2FactorHybride', 'Hybride')}
+          {numField('co2FactorElectrique', 'Électrique')}
+        </div>
+      </div>
+
+      {numField('co2EquivalentArbre', 'Équivalent arbre', 'kg CO₂/arbre/an')}
+
+      <div className="flex items-center gap-3 pt-1">
+        <button type="button" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+          className="rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          style={{ backgroundColor: '#01696e' }}>
+          {saveMut.isPending ? 'Enregistrement...' : 'Enregistrer'}
+        </button>
+        {saved && <p className="text-sm font-medium text-green-600">Sauvegardé ✓</p>}
+      </div>
+    </section>
+  );
+}
+
 function ComptabiliteSection(): React.JSX.Element {
   const qc = useQueryClient();
   const { data: settings } = useQuery({
@@ -1774,6 +1891,9 @@ export default function SettingsPage(): React.JSX.Element {
 
         {/* Frais supplémentaires */}
         <ExtraChargesSection />
+
+        {/* Véhicule */}
+        <VehicleSettingsSection />
 
         {/* Comptabilité */}
         <ComptabiliteSection />

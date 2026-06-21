@@ -66,6 +66,8 @@ const updateSchema = createSchema.partial().extend({
   isActive: z.boolean().optional(),
   healthScore: z.number().int().min(0).max(100).optional(),
   carekeeperUserId: z.string().nullable().optional(),
+  critAir: z.enum(['0', '1', '2', '3', '4', '5', 'NC']).nullable().optional(),
+  purchasePrice: z.number().min(0).nullable().optional(),
 });
 
 // GET /api/v1/vehicles
@@ -337,6 +339,83 @@ router.get('/:id/monthly-km', async (req: Request, res: Response, next: NextFunc
     });
     const kmTotal = rentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
     res.json({ month, kmTotal });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Valuations Autobiz ───────────────────────────────────────────────────────
+
+// GET /api/v1/vehicles/:id/valuations
+router.get('/:id/valuations', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const valuations = await db.vehicleValuation.findMany({
+      where: { vehicleId: req.params.id as string },
+      orderBy: { evaluatedAt: 'desc' },
+      take: 13,
+    });
+    res.json({ valuations });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/vehicles/:id/valuations — estimation manuelle
+router.post('/:id/valuations', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { estimatedValue, source } = req.body as { estimatedValue?: number; source?: string };
+    if (typeof estimatedValue !== 'number' || estimatedValue < 0) {
+      res.status(400).json({ error: 'estimatedValue (€) requis' }); return;
+    }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const valuation = await db.vehicleValuation.create({
+      data: {
+        vehicleId: req.params.id as string,
+        estimatedValue,
+        source: source ?? 'manual',
+        evaluatedAt: new Date(),
+      },
+    });
+    res.json({ valuation });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Garanties constructeur ───────────────────────────────────────────────────
+
+// GET /api/v1/vehicles/:id/warranty
+router.get('/:id/warranty', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const warranty = await db.vehicleWarranty.findUnique({ where: { vehicleId: req.params.id as string } });
+    res.json({ warranty: warranty ?? null });
+  } catch (err: unknown) { next(err); }
+});
+
+// PUT /api/v1/vehicles/:id/warranty
+router.put('/:id/warranty', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = req.body as {
+      warrantyStartDate?: string | null;
+      warrantyMonths?: number | null;
+      warrantyExtension?: boolean;
+      warrantyExtensionEnd?: string | null;
+      warrantyTires?: boolean;
+      warrantyTiresEnd?: string | null;
+      notes?: string | null;
+    };
+    const db = getTenantClient(req.tenantDbUrl!);
+    const data = {
+      warrantyStartDate: body.warrantyStartDate ? new Date(body.warrantyStartDate) : null,
+      warrantyMonths: body.warrantyMonths ?? null,
+      warrantyExtension: body.warrantyExtension ?? false,
+      warrantyExtensionEnd: body.warrantyExtensionEnd ? new Date(body.warrantyExtensionEnd) : null,
+      warrantyTires: body.warrantyTires ?? false,
+      warrantyTiresEnd: body.warrantyTiresEnd ? new Date(body.warrantyTiresEnd) : null,
+      notes: body.notes ?? null,
+    };
+    const warranty = await db.vehicleWarranty.upsert({
+      where: { vehicleId: req.params.id as string },
+      update: data,
+      create: { vehicleId: req.params.id as string, ...data },
+    });
+    res.json({ warranty });
   } catch (err: unknown) { next(err); }
 });
 

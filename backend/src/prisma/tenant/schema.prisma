@@ -140,6 +140,8 @@ model Vehicle {
   deliveryPostalCode String?           // Code postal du point de livraison
   pickupInstructions String?           // Instructions de départ : adresse, code, boîte à clé...
   returnInstructions String?           // Instructions de retour : où garer, clés, carburant...
+  critAir            String?           // "0"|"1"|"2"|"3"|"4"|"5"|"NC"
+  purchasePrice      Float?            // Prix d'achat TTC
   currentMileage     Int               @default(0)
   healthScore        Int               @default(100)
   isActive           Boolean           @default(true)
@@ -165,6 +167,8 @@ model Vehicle {
   ratings               VehicleRating[]
   costs                 VehicleCost[]
   objectives            VehicleObjective[]
+  valuations            VehicleValuation[]
+  warranty              VehicleWarranty?
 
   @@map("vehicles")
 }
@@ -662,6 +666,14 @@ model CompanySettings {
   invoiceSyncWindowDays    Int      @default(7)
   invoiceActiveTypes       String[] @default(["blocked_cleaning","blocked_damage","blocked_claim","blocked_late","blocked_infraction","blocked_gas"])
   invoiceMalusConfig       Json     @default("{}")
+  // Véhicule
+  autobizApiKey            String?
+  depreciationThreshold    Float    @default(0.10) // €/km seuil recommandation revente
+  warrantyAlertDays        Int      @default(30)   // jours avant expiration garantie
+  co2FactorEssence         Float    @default(120)  // gCO2/km
+  co2FactorHybride         Float    @default(60)
+  co2FactorElectrique      Float    @default(10)
+  co2EquivalentArbre       Float    @default(10)   // kg CO2 absorbé par arbre/an
   // Comptabilité
   journalCode              String   @default("VT")
   compteLocationsProduit   String   @default("706100")
@@ -677,6 +689,35 @@ model CompanySettings {
 
   @@map("company_settings")
 }
+model VehicleValuation {
+  id             String   @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  estimatedValue Float
+  source         String   @default("autobiz")
+  evaluatedAt    DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@map("vehicle_valuations")
+}
+
+model VehicleWarranty {
+  id                   String    @id @default(cuid())
+  vehicleId            String    @unique
+  vehicle              Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  warrantyStartDate    DateTime?
+  warrantyMonths       Int?
+  warrantyExtension    Boolean   @default(false)
+  warrantyExtensionEnd DateTime?
+  warrantyTires        Boolean   @default(false)
+  warrantyTiresEnd     DateTime?
+  notes                String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@map("vehicle_warranties")
+}
+
 model VehicleObjective {
   id        String   @id @default(cuid())
   vehicleId String

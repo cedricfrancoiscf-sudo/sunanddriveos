@@ -76,6 +76,7 @@ import npsRoutes from './modules/nps/nps.routes';
 import intelligenceRoutes from './modules/intelligence/intelligence.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
 import rentersRoutes from './modules/renters/renters.routes';
+import publicRoutes from './modules/public/public.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -181,8 +182,9 @@ export function createApp(): Express {
   app.use('/api/v1/intelligence', intelligenceRoutes);
   app.use('/api/v1/dashboard', dashboardRoutes);
   app.use('/api/v1/renters', rentersRoutes);
-  // Route publique iCal — pas de JWT, compatible abonnement calendriers
+  // Routes publiques — pas de JWT requis
   app.use('/ical', icalRoutes);
+  app.use('/public', publicRoutes);
 
   // Route santé — vérifie que l'API répond
   app.get('/api/v1/health', (_req: Request, res: Response) => {

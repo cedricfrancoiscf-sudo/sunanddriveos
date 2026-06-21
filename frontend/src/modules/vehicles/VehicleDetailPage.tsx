@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { QRCodeCanvas } from 'qrcode.react';
 import { vehiclesApi, vehicleCarkeepersApi, vehiclePhotosApi, vehicleRatingsApi, type VehiclePhoto, type VehicleRating } from './vehiclesApi';
 import { blockingsApi, BLOCKING_TYPE_LABELS, BLOCKING_TYPE_COLORS } from './blockingsApi';
 import { useAuth } from '../../hooks/useAuth';
@@ -17,6 +18,34 @@ interface VehicleCost {
   type: string;
   createdAt: string;
 }
+
+interface VehicleValuation {
+  id: string;
+  estimatedValue: number;
+  source: string;
+  evaluatedAt: string;
+}
+
+interface VehicleWarranty {
+  id: string;
+  warrantyStartDate: string | null;
+  warrantyMonths: number | null;
+  warrantyExtension: boolean;
+  warrantyExtensionEnd: string | null;
+  warrantyTires: boolean;
+  warrantyTiresEnd: string | null;
+  notes: string | null;
+}
+
+const CRITAIR_LABELS: Record<string, { label: string; color: string }> = {
+  '0': { label: 'Crit\'Air 0 — Électrique/hydrogène', color: 'bg-violet-100 text-violet-700' },
+  '1': { label: 'Crit\'Air 1 — Essence récente / hybride', color: 'bg-purple-100 text-purple-700' },
+  '2': { label: 'Crit\'Air 2 — Essence 2011+ / diesel 2011+', color: 'bg-yellow-100 text-yellow-700' },
+  '3': { label: 'Crit\'Air 3 — Essence 2006–2010', color: 'bg-orange-100 text-orange-700' },
+  '4': { label: 'Crit\'Air 4 — Diesel 2001–2006', color: 'bg-pink-100 text-pink-700' },
+  '5': { label: 'Crit\'Air 5 — Diesel avant 2001', color: 'bg-red-100 text-red-700' },
+  'NC': { label: 'Non classé', color: 'bg-gray-100 text-gray-600' },
+};
 
 const RATING_KEYWORDS = ['Propreté', 'Ponctualité', 'Communication', 'État du véhicule'] as const;
 
@@ -66,6 +95,258 @@ const emptyForm: BlockingFormData = {
   type: 'maintenance',
 };
 
+function ValeurReventeSection({ vehicleId, purchasePrice, currentMileage, settings }: {
+  vehicleId: string; purchasePrice: number | null; currentMileage: number;
+  settings: { autobizApiKey?: string | null; depreciationThreshold?: number };
+}): React.JSX.Element {
+  const qc = useQueryClient();
+  const { data } = useQuery<{ valuations: VehicleValuation[] }>({
+    queryKey: ['valuations', vehicleId],
+    queryFn: () => api.get<{ valuations: VehicleValuation[] }>(`/vehicles/${vehicleId}/valuations`).then(r => r.data),
+    staleTime: 60 * 60_000,
+  });
+  const [manual, setManual] = useState('');
+  const addMut = useMutation({
+    mutationFn: () => api.post(`/vehicles/${vehicleId}/valuations`, { estimatedValue: parseFloat(manual), source: 'manual' }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['valuations', vehicleId] }); setManual(''); },
+  });
+
+  const valuations = data?.valuations ?? [];
+  const latest = valuations[0];
+  const threshold = settings.depreciationThreshold ?? 0.10;
+
+  const depreciationPerKm = purchasePrice && latest && currentMileage > 0
+    ? (purchasePrice - latest.estimatedValue) / currentMileage : null;
+  const shouldSell = depreciationPerKm !== null && depreciationPerKm > threshold;
+
+  const hasAutobiz = Boolean(settings.autobizApiKey);
+
+  const chartData = [...valuations].reverse().map(v => ({
+    date: new Date(v.evaluatedAt).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
+    valeur: Math.round(v.estimatedValue),
+  }));
+
+  return (
+    <div data-testid="valeur-revente-section" className="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">Valeur & Revente</h2>
+
+      {!hasAutobiz && valuations.length === 0 ? (
+        <p className="text-sm text-gray-400 italic">
+          Connectez Autobiz dans Paramètres pour estimer la valeur de revente, ou saisissez une valeur manuelle.
+        </p>
+      ) : latest ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div>
+              <p className="text-xs text-gray-500">Valeur estimée</p>
+              <p className="text-xl font-bold text-gray-900">{latest.estimatedValue.toLocaleString('fr-FR')} €</p>
+              <p className="text-[11px] text-gray-400">{new Date(latest.evaluatedAt).toLocaleDateString('fr-FR')} · {latest.source}</p>
+            </div>
+            {shouldSell && (
+              <span className="ml-auto inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                Moment optimal pour revendre
+              </span>
+            )}
+          </div>
+          {depreciationPerKm !== null && (
+            <p className="text-xs text-gray-500">
+              Dépréciation : <span className="font-semibold text-gray-700">{depreciationPerKm.toFixed(3)} €/km</span>
+              {' '}(seuil : {threshold} €/km)
+            </p>
+          )}
+          {chartData.length > 1 && (
+            <ResponsiveContainer width="100%" height={90}>
+              <LineChart data={chartData}>
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${Math.round(v / 1000)}k`} width={30} />
+                <Tooltip formatter={(v: number) => [`${v.toLocaleString('fr-FR')} €`, 'Valeur']} />
+                <Line type="monotone" dataKey="valeur" stroke="#01696e" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex gap-2">
+        <input type="number" min="0" step="100" value={manual}
+          onChange={e => setManual(e.target.value)}
+          placeholder="Estimation manuelle (€)"
+          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+        <button type="button" disabled={!manual || addMut.isPending}
+          onClick={() => addMut.mutate()}
+          className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          style={{ backgroundColor: '#01696e' }}>
+          Ajouter
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GarantiesSection({ vehicleId, warrantyAlertDays }: { vehicleId: string; warrantyAlertDays: number }): React.JSX.Element {
+  const qc = useQueryClient();
+  const { data } = useQuery<{ warranty: VehicleWarranty | null }>({
+    queryKey: ['warranty', vehicleId],
+    queryFn: () => api.get<{ warranty: VehicleWarranty | null }>(`/vehicles/${vehicleId}/warranty`).then(r => r.data),
+    staleTime: 60 * 60_000,
+  });
+  const w = data?.warranty;
+  const [form, setForm] = useState({
+    warrantyStartDate: '', warrantyMonths: '', warrantyExtension: false, warrantyExtensionEnd: '',
+    warrantyTires: false, warrantyTiresEnd: '', notes: '',
+  });
+  const [editing, setEditing] = useState(false);
+
+  React.useEffect(() => {
+    if (w) {
+      setForm({
+        warrantyStartDate: w.warrantyStartDate ? w.warrantyStartDate.slice(0, 10) : '',
+        warrantyMonths: w.warrantyMonths ? String(w.warrantyMonths) : '',
+        warrantyExtension: w.warrantyExtension,
+        warrantyExtensionEnd: w.warrantyExtensionEnd ? w.warrantyExtensionEnd.slice(0, 10) : '',
+        warrantyTires: w.warrantyTires,
+        warrantyTiresEnd: w.warrantyTiresEnd ? w.warrantyTiresEnd.slice(0, 10) : '',
+        notes: w.notes ?? '',
+      });
+    }
+  }, [w]);
+
+  const saveMut = useMutation({
+    mutationFn: () => api.put(`/vehicles/${vehicleId}/warranty`, {
+      ...form,
+      warrantyMonths: form.warrantyMonths ? parseInt(form.warrantyMonths) : null,
+    }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['warranty', vehicleId] }); setEditing(false); },
+  });
+
+  const expiryDate = form.warrantyStartDate && form.warrantyMonths
+    ? new Date(new Date(form.warrantyStartDate).setMonth(new Date(form.warrantyStartDate).getMonth() + parseInt(form.warrantyMonths)))
+    : null;
+  const daysLeft = expiryDate ? Math.ceil((expiryDate.getTime() - Date.now()) / 86_400_000) : null;
+  const isAlert = daysLeft !== null && daysLeft <= warrantyAlertDays && daysLeft >= 0;
+  const isExpired = daysLeft !== null && daysLeft < 0;
+
+  return (
+    <div data-testid="garanties-section" className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Garanties</h2>
+        <button type="button" onClick={() => setEditing(e => !e)}
+          className="text-xs text-[#01696e] hover:underline">{editing ? 'Annuler' : 'Modifier'}</button>
+      </div>
+
+      {!editing ? (
+        <div className="space-y-2 text-sm">
+          {w ? (
+            <>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Garantie constructeur</span>
+                <span className="font-medium text-gray-900">
+                  {expiryDate ? expiryDate.toLocaleDateString('fr-FR') : '—'}
+                  {isAlert && !isExpired && <span className="ml-2 text-amber-600 text-xs">J−{daysLeft}</span>}
+                  {isExpired && <span className="ml-2 text-red-600 text-xs">Expirée</span>}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Extension</span>
+                <span className="font-medium">{w.warrantyExtension ? (w.warrantyExtensionEnd ? new Date(w.warrantyExtensionEnd).toLocaleDateString('fr-FR') : 'Oui') : 'Non'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Garantie pneus</span>
+                <span className="font-medium">{w.warrantyTires ? (w.warrantyTiresEnd ? new Date(w.warrantyTiresEnd).toLocaleDateString('fr-FR') : 'Oui') : 'Non'}</span>
+              </div>
+              {w.notes && <p className="text-xs text-gray-400 pt-1">{w.notes}</p>}
+            </>
+          ) : (
+            <p className="text-sm text-gray-400">Aucune garantie enregistrée</p>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Début garantie</label>
+              <input type="date" value={form.warrantyStartDate} onChange={e => setForm(f => ({ ...f, warrantyStartDate: e.target.value }))}
+                data-testid="input-warranty-start"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Durée (mois)</label>
+              <input type="number" min="1" value={form.warrantyMonths} onChange={e => setForm(f => ({ ...f, warrantyMonths: e.target.value }))}
+                data-testid="input-warranty-months"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+            </div>
+          </div>
+          {expiryDate && (
+            <p className="text-xs text-[#01696e]">Expiration calculée : {expiryDate.toLocaleDateString('fr-FR')}</p>
+          )}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input type="checkbox" checked={form.warrantyExtension} onChange={e => setForm(f => ({ ...f, warrantyExtension: e.target.checked }))} className="accent-[#01696e]" />
+              Extension garantie
+            </label>
+            {form.warrantyExtension && (
+              <input type="date" value={form.warrantyExtensionEnd} onChange={e => setForm(f => ({ ...f, warrantyExtensionEnd: e.target.value }))}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-[#01696e]" />
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input type="checkbox" checked={form.warrantyTires} onChange={e => setForm(f => ({ ...f, warrantyTires: e.target.checked }))} className="accent-[#01696e]" />
+              Garantie pneus
+            </label>
+            {form.warrantyTires && (
+              <input type="date" value={form.warrantyTiresEnd} onChange={e => setForm(f => ({ ...f, warrantyTiresEnd: e.target.value }))}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-[#01696e]" />
+            )}
+          </div>
+          <textarea rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+            placeholder="Notes libres…"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] resize-none" />
+          <button type="button" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+            className="w-full rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-60"
+            style={{ backgroundColor: '#01696e' }}>
+            {saveMut.isPending ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QRCodeModal({ vehicleId, licensePlate, onClose }: { vehicleId: string; licensePlate: string; onClose: () => void }): React.JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const url = `${window.location.origin}/public/vehicles/${licensePlate.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
+  const download = useCallback(() => {
+    const canvas = document.getElementById('qr-canvas') as HTMLCanvasElement | null;
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.download = `qr-${vehicleId}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }, [vehicleId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="rounded-2xl bg-white p-6 shadow-2xl space-y-4 w-72" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900">QR Code véhicule</h3>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+        </div>
+        <div className="flex justify-center">
+          <QRCodeCanvas id="qr-canvas" ref={canvasRef} value={url} size={200} level="H" />
+        </div>
+        <p className="text-[11px] text-gray-400 text-center break-all">{url}</p>
+        <button type="button" onClick={download}
+          className="w-full rounded-xl py-2 text-sm font-semibold text-white"
+          style={{ backgroundColor: '#01696e' }}>
+          Télécharger PNG
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CoutKmSection({ vehicleId, totalMonthlyCosts }: { vehicleId: string; totalMonthlyCosts: number }): React.JSX.Element {
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -109,6 +390,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
   const isAdmin = user?.role === 'admin' || user?.isSuperAdmin;
 
   const [activeTab, setActiveTab] = useState<'overview' | 'costs'>('overview');
+  const [showQR, setShowQR] = useState(false);
 
   const [costLabel, setCostLabel] = useState('');
   const [costAmount, setCostAmount] = useState('');
@@ -141,6 +423,23 @@ export default function VehicleDetailPage(): React.JSX.Element {
   });
 
   const totalMonthlyCosts = costs.reduce((s, c) => s + c.amount, 0);
+
+  const { data: settingsData } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<{ settings: { autobizApiKey?: string | null; depreciationThreshold?: number; warrantyAlertDays?: number } }>('/settings').then(r => r.data.settings),
+    staleTime: 10 * 60_000,
+    enabled: Boolean(isAdmin),
+  });
+  const vehicleSettings = {
+    autobizApiKey: settingsData?.autobizApiKey,
+    depreciationThreshold: settingsData?.depreciationThreshold ?? 0.10,
+    warrantyAlertDays: settingsData?.warrantyAlertDays ?? 30,
+  };
+
+  const saveCritAir = useMutation({
+    mutationFn: (critAir: string | null) => api.patch(`/vehicles/${id}`, { critAir }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['vehicle', id] }),
+  });
 
   const [blockingModal, setBlockingModal] = useState(false);
   const [blockingForm, setBlockingForm] = useState<BlockingFormData>(emptyForm);
@@ -919,6 +1218,59 @@ export default function VehicleDetailPage(): React.JSX.Element {
 
           {/* Coût réel au km */}
           <CoutKmSection vehicleId={id!} totalMonthlyCosts={totalMonthlyCosts} />
+
+          {/* Crit'Air */}
+          <div data-testid="critair-section" className="rounded-xl border border-gray-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">Crit'Air</h2>
+            <div className="flex items-center gap-3">
+              <select
+                data-testid="select-critair"
+                value={vehicle.critAir ?? ''}
+                onChange={e => saveCritAir.mutate(e.target.value || null)}
+                className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+              >
+                <option value="">Non renseigné</option>
+                {Object.entries(CRITAIR_LABELS).map(([v, { label }]) => (
+                  <option key={v} value={v}>{label}</option>
+                ))}
+              </select>
+              {vehicle.critAir && (
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${CRITAIR_LABELS[vehicle.critAir]?.color ?? 'bg-gray-100 text-gray-600'}`}>
+                  {vehicle.critAir}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Valeur & Revente */}
+          <ValeurReventeSection
+            vehicleId={id!}
+            purchasePrice={vehicle.purchasePrice ?? null}
+            currentMileage={vehicle.currentMileage ?? 0}
+            settings={vehicleSettings}
+          />
+
+          {/* Garanties */}
+          <GarantiesSection vehicleId={id!} warrantyAlertDays={vehicleSettings.warrantyAlertDays} />
+
+          {/* QR Code */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-400">QR Code véhicule</h2>
+            <button
+              type="button"
+              data-testid="btn-qr-code"
+              onClick={() => setShowQR(true)}
+              className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:border-[#01696e] hover:text-[#01696e] transition"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 3.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+              </svg>
+              Afficher le QR Code
+            </button>
+            {showQR && (
+              <QRCodeModal vehicleId={id!} licensePlate={vehicle.licensePlate} onClose={() => setShowQR(false)} />
+            )}
+          </div>
 
           {/* Carkeepers assignés — admin only */}
           {isAdmin && (

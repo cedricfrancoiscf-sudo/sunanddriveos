@@ -617,6 +617,68 @@ export default function IntelligencePage(): React.JSX.Element {
           </form>
         </div>
       </div>
+
+      {/* ── Environnement ────────────────────────────────────────────────────── */}
+      <EnvironmentSection />
+    </div>
+  );
+}
+
+interface EnvData {
+  monthStart: string;
+  totalCo2Kg: number;
+  equivalentArbres: number;
+  byVehicle: Array<{ vehicleId: string; label: string; co2Kg: number }>;
+  facteurs: { essence: number; hybride: number; electrique: number; co2PerArbre: number };
+}
+
+function EnvironmentSection(): React.JSX.Element {
+  const { data, isLoading } = useQuery<EnvData>({
+    queryKey: ['intelligence-environment'],
+    queryFn: () => api.get<EnvData>('/intelligence/environment').then(r => r.data),
+    staleTime: 10 * 60_000,
+  });
+
+  return (
+    <div data-testid="environment-section" className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="border-b border-gray-100 px-5 py-3">
+        <h2 className="text-sm font-semibold text-gray-900">Environnement — Bilan carbone</h2>
+        <p className="text-xs text-gray-400">CO₂ émis ce mois via les km Getaround. Facteurs modifiables dans Paramètres → Véhicule.</p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-10"><div className="h-6 w-6 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} /></div>
+      ) : !data || data.byVehicle.length === 0 ? (
+        <p className="py-8 text-center text-sm text-gray-400">Aucune donnée km disponible ce mois</p>
+      ) : (
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-green-50 p-3">
+              <p className="text-xs text-gray-500">CO₂ total ce mois</p>
+              <p className="text-xl font-bold text-green-700">{data.totalCo2Kg} kg</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-3">
+              <p className="text-xs text-gray-500">Équivalent arbres / an</p>
+              <p className="text-xl font-bold text-emerald-700">{data.equivalentArbres} 🌳</p>
+            </div>
+            <div className="rounded-xl bg-gray-50 p-3 sm:col-span-1 col-span-2">
+              <p className="text-xs text-gray-500">Facteurs utilisés</p>
+              <p className="text-xs text-gray-600">Essence : {data.facteurs.essence} g/km · Hybride : {data.facteurs.hybride} g/km · Électrique : {data.facteurs.electrique} g/km</p>
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-medium text-gray-600">CO₂ par véhicule (kg)</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={data.byVehicle} margin={{ top: 5, right: 10, left: 0, bottom: 30 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 9 }} angle={-30} textAnchor="end" interval={0} />
+                <YAxis tick={{ fontSize: 10 }} unit=" kg" />
+                <Tooltip formatter={(v: number) => [`${v} kg CO₂`, '']} />
+                <Bar dataKey="co2Kg" fill="#01696e" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

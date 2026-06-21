@@ -82,6 +82,7 @@ const TrialExpiredPage = React.lazy(() => import('./modules/billing/TrialExpired
 const RentersPage = React.lazy(() => import('./modules/renters/RentersPage'));
 const RenterDetailPage = React.lazy(() => import('./modules/renters/RenterDetailPage'));
 const RentabilityPage = React.lazy(() => import('./modules/rentability/RentabilityPage'));
+const VehiclePublicPage = React.lazy(() => import('./modules/vehicles/VehiclePublicPage'));
 const RatingPage = React.lazy(() => import('./modules/intelligence/RatingPage'));
 
 function LoadingFallback(): React.JSX.Element {
@@ -131,6 +132,7 @@ export default function App(): React.JSX.Element {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/upgrade" element={<TrialExpiredPage />} />
+            <Route path="/public/vehicles/:licensePlate" element={<VehiclePublicPage />} />
 
             {/* TV dashboard — protégé mais sans sidebar */}
             <Route path="/tv" element={<ProtectedRoute><TvDashboardPage /></ProtectedRoute>} />

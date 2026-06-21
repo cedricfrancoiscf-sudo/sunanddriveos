@@ -704,7 +704,7 @@ function CorrelationSection(): React.JSX.Element {
               />
               <Scatter data={points} fill="#01696e" fillOpacity={0.7} />
               {trendLine.length === 2 && (
-                <Scatter data={trendLine} fill="#ef4444" line={{ stroke: '#ef4444', strokeWidth: 2 }} shape={() => null} legendType="none" />
+                <Scatter data={trendLine} fill="#ef4444" line={{ stroke: '#ef4444', strokeWidth: 2 }} shape={(() => null) as never} legendType="none" />
               )}
             </ScatterChart>
           </ResponsiveContainer>

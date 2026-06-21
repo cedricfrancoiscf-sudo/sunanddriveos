@@ -431,7 +431,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
     enabled: Boolean(isAdmin),
   });
   const vehicleSettings = {
-    autobizApiKey: settingsData?.autobizApiKey,
+    ...(settingsData?.autobizApiKey !== undefined ? { autobizApiKey: settingsData.autobizApiKey } : {}),
     depreciationThreshold: settingsData?.depreciationThreshold ?? 0.10,
     warrantyAlertDays: settingsData?.warrantyAlertDays ?? 30,
   };

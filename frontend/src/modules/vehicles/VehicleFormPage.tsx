@@ -29,6 +29,8 @@ const EMPTY_FORM = {
   pickupInstructions: '',
   returnInstructions: '',
   carekeeperUserId: '',
+  critAir: null as string | null,
+  purchasePrice: null as number | null,
 };
 
 export default function VehicleFormPage(): React.JSX.Element {

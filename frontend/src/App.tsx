@@ -167,6 +167,7 @@ export default function App(): React.JSX.Element {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/accessories" element={<AccessoriesPage />} />
               <Route path="/export" element={<ExportPage />} />
+              <Route path="/exports" element={<Navigate to="/export" replace />} />
               <Route path="/scoring" element={<Navigate to="/renters?tab=scoring" replace />} />
               <Route path="/third-party-owners" element={<ThirdPartyOwnersPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />

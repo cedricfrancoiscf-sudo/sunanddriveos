@@ -283,6 +283,9 @@ function SimulateurTab(): React.JSX.Element {
 
   const breakEvenMonth = chartData.findIndex(d => d.solde >= 0);
 
+  const roi3ans = price > 0 ? ((margeNette * 36 - apportVal) / (apportVal || 1)) * 100 : 0;
+  const roi5ans = price > 0 ? ((margeNette * 60 - apportVal) / (apportVal || 1)) * 100 : 0;
+
   return (
     <div className="space-y-5" data-testid="simulateur-tab">
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
@@ -329,9 +332,23 @@ function SimulateurTab(): React.JSX.Element {
               </p>
             </div>
             <div className="rounded-xl bg-blue-50 p-3">
-              <p className="text-xs text-gray-500">Point mort</p>
-              <p className="text-lg font-bold text-blue-700">
+              <p className="text-xs text-gray-500">Délai rentabilisation</p>
+              <p className="text-lg font-bold text-blue-700" data-testid="sim-delai-rentabilisation">
                 {breakEvenMonth >= 0 ? `M+${breakEvenMonth + 1}` : 'Non atteint'}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-purple-50 p-3">
+              <p className="text-xs text-gray-500">ROI sur 3 ans</p>
+              <p className={`text-lg font-bold ${roi3ans >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                {roi3ans >= 0 ? '+' : ''}{roi3ans.toFixed(1)} %
+              </p>
+            </div>
+            <div className="rounded-xl bg-purple-50 p-3">
+              <p className="text-xs text-gray-500">ROI sur 5 ans</p>
+              <p className={`text-lg font-bold ${roi5ans >= 0 ? 'text-purple-700' : 'text-red-600'}`}>
+                {roi5ans >= 0 ? '+' : ''}{roi5ans.toFixed(1)} %
               </p>
             </div>
           </div>

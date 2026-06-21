@@ -53,6 +53,14 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       senderName: z.string().min(2).max(50).nullable().optional(),
       maintenancePolicies: z.record(z.unknown()).optional(),
       notificationSettings: z.record(z.unknown()).optional(),
+      journalCode: z.string().min(1).max(10).optional(),
+      compteLocationsProduit: z.string().min(1).max(10).optional(),
+      compteCompensationsProduit: z.string().min(1).max(10).optional(),
+      compteEntretienCharge: z.string().min(1).max(10).optional(),
+      compteAssuranceCharge: z.string().min(1).max(10).optional(),
+      compteParkingCharge: z.string().min(1).max(10).optional(),
+      formatExportPreference: z.enum(['fec', 'csv']).optional(),
+      objectifSeuilAlerte: z.number().int().min(1).max(100).optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
 

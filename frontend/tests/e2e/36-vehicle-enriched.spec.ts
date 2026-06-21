@@ -2,6 +2,10 @@ import { test, expect } from '@playwright/test';
 
 test.use({ storageState: 'tests/e2e/.auth/user.json' });
 
+test.beforeEach(async ({ page }) => {
+  await page.keyboard.press('Escape').catch(() => {});
+});
+
 const BASE = 'https://appli.sunanddrive.com';
 
 async function getFirstVehicleId(page: import('@playwright/test').Page): Promise<string | null> {
@@ -20,6 +24,7 @@ test('36-01 Fiche véhicule — section Valeur & Revente visible', async ({ page
 
   await page.goto(`${BASE}/vehicles/${vid}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await expect(page.getByTestId('valeur-revente-section')).toBeVisible();
 });
@@ -30,6 +35,7 @@ test('36-02 Fiche véhicule — section Garanties visible avec champs', async ({
 
   await page.goto(`${BASE}/vehicles/${vid}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await expect(page.getByTestId('garanties-section')).toBeVisible();
   await page.getByTestId('garanties-section').getByRole('button', { name: /Modifier/i }).click();
@@ -43,6 +49,7 @@ test('36-03 Fiche véhicule — sélecteur Crit\'Air visible', async ({ page }) 
 
   await page.goto(`${BASE}/vehicles/${vid}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await expect(page.getByTestId('critair-section')).toBeVisible();
   await expect(page.getByTestId('select-critair')).toBeVisible();
@@ -54,6 +61,7 @@ test('36-04 Fiche véhicule — bouton QR Code présent', async ({ page }) => {
 
   await page.goto(`${BASE}/vehicles/${vid}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await expect(page.getByTestId('btn-qr-code')).toBeVisible();
 });
@@ -64,6 +72,7 @@ test('36-05 Fiche véhicule — QR Code modal s\'ouvre et affiche le canvas', as
 
   await page.goto(`${BASE}/vehicles/${vid}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await page.getByTestId('btn-qr-code').click();
   await expect(page.locator('#qr-canvas')).toBeVisible();
@@ -73,6 +82,7 @@ test('36-05 Fiche véhicule — QR Code modal s\'ouvre et affiche le canvas', as
 test('36-06 Intelligence — section Environnement visible', async ({ page }) => {
   await page.goto(`${BASE}/intelligence`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await expect(page.getByTestId('environment-section')).toBeVisible();
   await expect(page.locator('text=Bilan carbone')).toBeVisible();
@@ -97,6 +107,7 @@ test('36-08 Page publique véhicule — affiche le contenu sans redirection logi
 test('36-09 Paramètres — section Véhicule visible avec champ Autobiz', async ({ page }) => {
   await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await expect(page.getByTestId('vehicle-settings-section')).toBeVisible();
   await expect(page.getByTestId('input-vehicle-autobizApiKey')).toBeVisible();
@@ -107,6 +118,7 @@ test('36-09 Paramètres — section Véhicule visible avec champ Autobiz', async
 test('36-10 Paramètres — sauvegarde section Véhicule', async ({ page }) => {
   await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
+  await page.keyboard.press('Escape').catch(() => {});
 
   const field = page.getByTestId('input-vehicle-warrantyAlertDays');
   await field.fill('45');

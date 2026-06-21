@@ -2,11 +2,16 @@ import { test, expect } from '@playwright/test';
 
 test.use({ storageState: 'tests/e2e/.auth/user.json' });
 
+test.beforeEach(async ({ page }) => {
+  await page.keyboard.press('Escape').catch(() => {});
+});
+
 const BASE = 'https://appli.sunanddrive.com';
 
 test('35-01 Export page — FEC tab visible et téléchargeable', async ({ page }) => {
   await page.goto(`${BASE}/exports`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await expect(page.getByTestId('tab-export-fec')).toBeVisible();
   await page.getByTestId('tab-export-fec').click();
@@ -17,6 +22,7 @@ test('35-01 Export page — FEC tab visible et téléchargeable', async ({ page 
 test('35-02 Export page — onglet CSV et téléchargement', async ({ page }) => {
   await page.goto(`${BASE}/exports`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await page.getByTestId('tab-export-csv').click();
   await expect(page.getByTestId('btn-export-csv')).toBeVisible();
@@ -27,6 +33,7 @@ test('35-02 Export page — onglet CSV et téléchargement', async ({ page }) =>
 test('35-03 Export page — onglet Autres exports visible', async ({ page }) => {
   await page.goto(`${BASE}/exports`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await page.getByTestId('tab-export-other').click();
   await expect(page.locator('text=Locations détaillées')).toBeVisible();
@@ -36,6 +43,7 @@ test('35-03 Export page — onglet Autres exports visible', async ({ page }) => 
 test('35-04 Rentabilité — onglets Sinistres et Simulateur visibles', async ({ page }) => {
   await page.goto(`${BASE}/rentability`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await expect(page.getByTestId('rentability-tabs')).toBeVisible();
   await page.getByTestId('tab-sinistres').click();
@@ -48,6 +56,7 @@ test('35-04 Rentabilité — onglets Sinistres et Simulateur visibles', async ({
 test('35-05 Simulateur ROI — calcul mensualité et marge', async ({ page }) => {
   await page.goto(`${BASE}/rentability`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await page.getByTestId('tab-simulateur').click();
   await page.getByTestId('input-sim-vehiclePrice').fill('20000');
@@ -65,6 +74,7 @@ test('35-05 Simulateur ROI — calcul mensualité et marge', async ({ page }) =>
 test('35-06 Objectifs CA — onglet visible et champ input', async ({ page }) => {
   await page.goto(`${BASE}/rentability`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await page.getByTestId('tab-objectifs').click();
   await expect(page.getByTestId('objectifs-tab')).toBeVisible();
@@ -73,6 +83,7 @@ test('35-06 Objectifs CA — onglet visible et champ input', async ({ page }) =>
 test('35-07 Paramètres — section Comptabilité visible', async ({ page }) => {
   await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
+  await page.keyboard.press('Escape').catch(() => {});
 
   await expect(page.getByTestId('comptabilite-section')).toBeVisible();
   await expect(page.getByTestId('input-compta-journalCode')).toBeVisible();

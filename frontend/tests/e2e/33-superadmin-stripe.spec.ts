@@ -12,7 +12,10 @@ async function loginSuperAdmin(page: import('@playwright/test').Page) {
   await page.fill('input[type="email"]', SA_EMAIL);
   await page.fill('input[type="password"]', SA_PASSWORD);
   await page.click('button[type="submit"]');
-  await page.waitForURL(`${SA_URL}`, { timeout: 10_000 });
+  // SPA — pas de navigation complète, on attend l'apparition de l'interface superadmin
+  await page.waitForTimeout(2000);
+  await page.locator('text=Sociétés').waitFor({ timeout: 8_000 }).catch(() => {});
+  await page.keyboard.press('Escape').catch(() => {});
 }
 
 // ─── 1. Page /billing charge avec plan actuel visible ─────────────────────────

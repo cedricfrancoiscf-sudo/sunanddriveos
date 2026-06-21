@@ -2,16 +2,22 @@ import { test, expect } from '@playwright/test';
 
 test.use({ storageState: 'tests/e2e/.auth/user.json' });
 
+test.beforeEach(async ({ page }) => {
+  await page.keyboard.press('Escape').catch(() => {});
+});
+
 const BASE = 'https://appli.sunanddrive.com';
 
 test.describe('Séquences automatiques', () => {
   test('page séquences accessible', async ({ page }) => {
     await page.goto(`${BASE}/sequences`, { waitUntil: 'networkidle' });
+    await page.keyboard.press('Escape').catch(() => {});
     await expect(page.locator('h1')).toContainText('Séquences');
   });
 
   test('champ intervalle minimum visible et modifiable', async ({ page }) => {
     await page.goto(`${BASE}/sequences`, { waitUntil: 'networkidle' });
+    await page.keyboard.press('Escape').catch(() => {});
     const input = page.getByTestId('input-min-message-interval');
     await expect(input).toBeVisible();
     await input.fill('90');

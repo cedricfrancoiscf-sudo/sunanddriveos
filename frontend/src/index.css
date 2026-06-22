@@ -57,3 +57,82 @@
     @apply bg-white rounded-xl shadow-sm border border-gray-100 p-4;
   }
 }
+
+/* ─── Impression globale ──────────────────────────────────────────────────── */
+@media print {
+  /* Masquer la sidebar et les headers de navigation */
+  aside,
+  .print-hide,
+  .no-print {
+    display: none !important;
+  }
+
+  /* AppLayout : débloquer l'overflow pour le multi-page */
+  .flex.h-screen {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Zone principale */
+  main {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* Masquer les headers de navigation (mobile + desktop dans AppLayout) */
+  body > #root header,
+  #root > div > div > header {
+    display: none !important;
+  }
+
+  /* Préserver TOUTES les couleurs d'arrière-plan et de texte */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Graphiques SVG et canvas (Recharts) */
+  svg {
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  canvas {
+    display: block !important;
+  }
+
+  .recharts-wrapper,
+  .recharts-responsive-container {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Éléments visibles uniquement à l'impression */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Sauts de page entre sections */
+  .section-break {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+
+  /* Éviter les coupures dans les tableaux et cartes */
+  table,
+  .card,
+  .rounded-2xl {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Liens sans soulignage bleu en impression */
+  a {
+    text-decoration: none !important;
+    color: inherit !important;
+  }
+}

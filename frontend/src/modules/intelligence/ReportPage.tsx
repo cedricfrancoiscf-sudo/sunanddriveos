@@ -369,11 +369,43 @@ export default function ReportPage(): React.JSX.Element {
   return (
     <div className="min-h-screen bg-gray-50">
       <style>{`
+        @page {
+          size: A4 portrait;
+          margin: 1.5cm 1.5cm 2cm 1.5cm;
+        }
+
         @media print {
-          .no-print { display: none !important; }
-          .page-break { page-break-before: always; }
-          body { font-family: ${theme.fontFamily}, sans-serif; }
-          @page { margin: 2cm; size: A4; }
+          /* Police */
+          body { font-family: ${theme.fontFamily}, sans-serif !important; }
+
+          /* Sections avec saut de page obligatoire */
+          .page-break {
+            break-before: page !important;
+            page-break-before: always !important;
+          }
+
+          /* Premier élément : pas de saut avant lui */
+          .page-break:first-of-type {
+            break-before: auto !important;
+            page-break-before: auto !important;
+          }
+
+          /* Fond coloré du résumé exécutif : forcer la couleur */
+          #resume, #resume * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* ResponsiveContainer Recharts : fixer la largeur en impression */
+          .recharts-responsive-container {
+            width: 100% !important;
+            height: 220px !important;
+          }
+
+          /* Pas de shadow en impression (économie encre) */
+          .shadow-sm, .shadow, .shadow-lg, .shadow-xl {
+            box-shadow: none !important;
+          }
         }
       `}</style>
 
@@ -452,6 +484,37 @@ export default function ReportPage(): React.JSX.Element {
         </div>
       </header>
 
+      {/* En-tête d'impression — visible uniquement en @media print */}
+      <div className="print-only hidden border-b-2 pb-6 mb-2" style={{ borderColor: theme.primaryColor }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {theme.logoUrl ? (
+              <img src={theme.logoUrl} alt="logo" className="h-14 w-auto object-contain" style={{ border: '2px solid white' }} />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-xl" style={{ backgroundColor: theme.primaryColor }}>
+                <span className="text-2xl font-bold text-white">S</span>
+              </div>
+            )}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: theme.primaryColor }}>
+                SunanddriveOS
+              </p>
+              <h1 className="text-xl font-bold text-gray-900">
+                {mode === 'monthly' ? 'Bilan mensuel' : 'Rapport CEO'} — {theme.companyName ?? 'Sun and Drive'}
+              </h1>
+            </div>
+          </div>
+          <div className="text-right text-xs text-gray-500">
+            {generatedAt && (
+              <>
+                <p>Généré le {format(new Date(generatedAt), 'dd/MM/yyyy à HH:mm', { locale: fr })}</p>
+                <p className="font-semibold">{fmtMonth(selectedMonth)}</p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="mx-auto max-w-5xl px-4 py-8 space-y-8">
 
         {/* État : absent */}
@@ -525,7 +588,7 @@ export default function ReportPage(): React.JSX.Element {
             </section>
 
             {/* PERFORMANCE */}
-            <section id="performance" className="space-y-4">
+            <section id="performance" className="space-y-4 page-break">
               <h2 className="text-lg font-bold text-gray-900">Performance</h2>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[

@@ -52,7 +52,7 @@ export default function AppLayout(): React.JSX.Element {
       {/* Contenu principal */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Barre mobile */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 lg:hidden">
+        <header className="print-hide flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 lg:hidden">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -77,7 +77,7 @@ export default function AppLayout(): React.JSX.Element {
         </header>
 
         {/* Barre desktop */}
-        <header className="hidden h-14 shrink-0 items-center justify-end border-b border-gray-200 bg-white px-6 lg:flex">
+        <header className="print-hide hidden h-14 shrink-0 items-center justify-end border-b border-gray-200 bg-white px-6 lg:flex">
           <NotificationBell />
         </header>
 

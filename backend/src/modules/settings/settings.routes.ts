@@ -106,7 +106,10 @@ router.post('/logo', requireRole('admin'), (req: Request, res: Response, next: N
       const filename = `${randomUUID()}.${ext}`;
       const destPath = path.join(LOGO_DIR, filename);
       fs.renameSync(req.file.path, destPath);
-      const baseUrl = (process.env.BACKEND_URL ?? 'http://localhost:4000/api/v1').replace('/api/v1', '');
+      // Priorité : BACKEND_URL > host de la requête (évite les URLs localhost en prod)
+      const baseUrl = process.env.BACKEND_URL
+        ? process.env.BACKEND_URL.replace(/\/api\/v1\/?$/, '')
+        : `${req.protocol}://${req.get('host')}`;
       const logoUrl = `${baseUrl}/uploads/logos/${filename}`;
 
       const db = getTenantClient(req.tenantDbUrl!);

@@ -3,6 +3,15 @@ import { getMasterClient, getTenantClient } from '../../prisma/client';
 
 const router: Router = Router();
 
+function normalizeLogoUrl(url: string | null | undefined, req: Request): string | null {
+  if (!url) return null;
+  if (!url.includes('localhost') && !url.includes('127.0.0.1')) return url;
+  const publicBase = process.env.BACKEND_URL
+    ? process.env.BACKEND_URL.replace(/\/api\/v1\/?$/, '')
+    : `${req.protocol}://${req.get('host')}`;
+  return url.replace(/https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/, publicBase);
+}
+
 // GET /public/vehicles/:licensePlate — accessible sans auth
 router.get('/vehicles/:licensePlate', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -59,7 +68,7 @@ router.get('/brand', async (req: Request, res: Response, next: NextFunction) => 
       select: { logoUrl: true, primaryColor: true },
     });
     res.json({
-      logoUrl: settings?.logoUrl ?? null,
+      logoUrl: normalizeLogoUrl(settings?.logoUrl, req),
       companyName: company.name ?? null,
       primaryColor: settings?.primaryColor ?? '#01696e',
     });

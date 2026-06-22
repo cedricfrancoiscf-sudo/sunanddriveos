@@ -9,6 +9,16 @@ import { sendEmail } from '../../utils/mailer';
 
 const router: Router = Router();
 
+// Réécrit les URLs localhost stockées en base vers le domaine public
+function normalizeLogoUrl(url: string | null | undefined, req: Request): string | null {
+  if (!url) return null;
+  if (!url.includes('localhost') && !url.includes('127.0.0.1')) return url;
+  const publicBase = process.env.BACKEND_URL
+    ? process.env.BACKEND_URL.replace(/\/api\/v1\/?$/, '')
+    : `${req.protocol}://${req.get('host')}`;
+  return url.replace(/https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/, publicBase);
+}
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -92,7 +102,7 @@ router.get(
       }
 
       res.json({
-        user: { ...user, logoUrl: settings?.logoUrl ?? null },
+        user: { ...user, logoUrl: normalizeLogoUrl(settings?.logoUrl, req) },
         tenantSlug: req.auth!.tenantSlug,
       });
     } catch (err: unknown) {

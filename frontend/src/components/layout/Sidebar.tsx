@@ -149,12 +149,21 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
             src={user.logoUrl}
             alt="Logo"
             className={`shrink-0 object-contain ${collapsed ? 'h-8 w-8' : 'h-10 max-w-[130px]'}`}
+            onError={e => {
+              // Si l'image ne charge pas, on bascule sur le fallback "S"
+              const target = e.currentTarget;
+              target.style.display = 'none';
+              const fallback = target.nextElementSibling as HTMLElement | null;
+              if (fallback) fallback.style.display = 'flex';
+            }}
           />
-        ) : (
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: PRIMARY }}>
-            <span className="text-sm font-bold text-white">S</span>
-          </div>
-        )}
+        ) : null}
+        <div
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+          style={{ backgroundColor: PRIMARY, display: user?.logoUrl ? 'none' : 'flex' }}
+        >
+          <span className="text-sm font-bold text-white">S</span>
+        </div>
         {!collapsed && !user?.logoUrl && <span className="font-semibold text-gray-900 truncate flex-1">SunanddriveOS</span>}
         {onToggleCollapse && (
           <button type="button" onClick={onToggleCollapse} title={collapsed ? 'Agrandir la sidebar' : 'Réduire la sidebar'}

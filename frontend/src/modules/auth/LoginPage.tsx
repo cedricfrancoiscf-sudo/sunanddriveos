@@ -62,15 +62,20 @@ export default function LoginPage(): React.JSX.Element {
               src={brand.logoUrl}
               alt={brand.companyName ?? 'Logo'}
               className="mx-auto mb-4 h-16 max-w-[180px] object-contain"
+              onError={e => {
+                const target = e.currentTarget;
+                target.style.display = 'none';
+                const fallback = target.nextElementSibling as HTMLElement | null;
+                if (fallback) fallback.style.display = 'flex';
+              }}
             />
-          ) : (
-            <div
-              className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl shadow-md"
-              style={{ backgroundColor: brand?.primaryColor ?? '#01696e' }}
-            >
-              <span className="text-2xl font-bold text-white">S</span>
-            </div>
-          )}
+          ) : null}
+          <div
+            className="mx-auto mb-4 items-center justify-center rounded-2xl shadow-md h-16 w-16"
+            style={{ backgroundColor: brand?.primaryColor ?? '#01696e', display: brand?.logoUrl ? 'none' : 'flex' }}
+          >
+            <span className="text-2xl font-bold text-white">S</span>
+          </div>
           <h1 className="text-2xl font-bold text-gray-900">{brand?.companyName ?? 'SunanddriveOS'}</h1>
           <p className="mt-1 text-sm text-gray-500">Sun and Drive — La liberté à quatre roues</p>
         </div>

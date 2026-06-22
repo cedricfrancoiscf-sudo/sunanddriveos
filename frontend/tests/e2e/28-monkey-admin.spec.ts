@@ -1443,4 +1443,39 @@ test.describe('Monkey test admin — exhaustif', () => {
       }
     } catch (e) { rFail('Paramètres — Notifications et webhook', String(e)) }
   })
+
+  test('Documentation — page charge et 4 onglets présents', async ({ page }) => {
+    try {
+      await page.goto('/documentation')
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1000)
+
+      const tabs = page.locator('[data-testid="doc-tabs"]')
+      await expect(tabs).toBeVisible({ timeout: 8000 })
+
+      for (const id of ['brochure', 'quickstart', 'manual', 'technical']) {
+        const tab = page.locator(`[data-testid="doc-tab-${id}"]`)
+        await expect(tab).toBeVisible({ timeout: 5000 })
+      }
+      rPass('Documentation — 4 onglets présents (brochure, quickstart, manual, technical)')
+
+      // Vérifier que chaque onglet charge du contenu
+      const tabLabels: Array<{ id: string; keyword: string }> = [
+        { id: 'brochure', keyword: 'Getaround' },
+        { id: 'quickstart', keyword: 'Prise en main' },
+        { id: 'manual', keyword: 'Manuel' },
+        { id: 'technical', keyword: 'Architecture' },
+      ]
+      for (const { id, keyword } of tabLabels) {
+        await page.locator(`[data-testid="doc-tab-${id}"]`).click()
+        await page.waitForTimeout(300)
+        const body = await page.locator('main, .flex-1').last().textContent() ?? ''
+        if (body.includes(keyword)) {
+          rPass(`Documentation — onglet ${id} contient du contenu (${keyword})`)
+        } else {
+          rWarn(`Documentation — onglet ${id}`, `Mot-clé "${keyword}" non trouvé dans le contenu`)
+        }
+      }
+    } catch (e) { rFail('Documentation — page et onglets', String(e)) }
+  })
 })

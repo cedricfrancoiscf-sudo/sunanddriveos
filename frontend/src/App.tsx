@@ -84,6 +84,8 @@ const RenterDetailPage = React.lazy(() => import('./modules/renters/RenterDetail
 const RentabilityPage = React.lazy(() => import('./modules/rentability/RentabilityPage'));
 const VehiclePublicPage = React.lazy(() => import('./modules/vehicles/VehiclePublicPage'));
 const RatingPage = React.lazy(() => import('./modules/intelligence/RatingPage'));
+const ForecastPage = React.lazy(() => import('./modules/intelligence/ForecastPage'));
+const DocumentationPage = React.lazy(() => import('./modules/documentation/DocumentationPage'));
 
 function LoadingFallback(): React.JSX.Element {
   return (
@@ -178,9 +180,11 @@ export default function App(): React.JSX.Element {
               <Route path="/intelligence" element={<CarkeeperBlockedRoute><IntelligencePage /></CarkeeperBlockedRoute>} />
               <Route path="/intelligence/report" element={<CarkeeperBlockedRoute><ReportPage /></CarkeeperBlockedRoute>} />
               <Route path="/intelligence/ratings" element={<CarkeeperBlockedRoute><RatingPage /></CarkeeperBlockedRoute>} />
+              <Route path="/intelligence/forecast" element={<CarkeeperBlockedRoute><ForecastPage /></CarkeeperBlockedRoute>} />
               <Route path="/renters" element={<RentersPage />} />
               <Route path="/renters/:id" element={<RenterDetailPage />} />
               <Route path="/rentability" element={<CarkeeperBlockedRoute><RentabilityPage /></CarkeeperBlockedRoute>} />
+              <Route path="/documentation" element={<DocumentationPage />} />
               {/* Alias routes */}
               <Route path="/technical-controls" element={<Navigate to="/technical-control" replace />} />
               <Route path="/fleet" element={<Navigate to="/vehicles" replace />} />

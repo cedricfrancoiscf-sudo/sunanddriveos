@@ -99,6 +99,15 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     console.log('[Vehicle] Après validation Zod:', JSON.stringify(body.data));
     const db = getTenantClient(req.tenantDbUrl!);
     const vehicle = await createVehicle(db, body.data);
+
+    // Créer automatiquement les tâches récurrentes CT + révision pour ce véhicule
+    void (async () => {
+      try {
+        const { initMaintenanceTasks } = await import('../maintenance/maintenance.service');
+        await initMaintenanceTasks(db, [{ id: vehicle.id }]);
+      } catch (e) { console.error('[Vehicle] initMaintenanceTasks failed:', e); }
+    })();
+
     res.status(201).json({ vehicle });
   } catch (err: unknown) { next(err); }
 });

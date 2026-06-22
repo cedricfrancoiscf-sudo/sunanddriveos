@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { requireAuth, getCarekeeperVehicleIds, isOnlyCarkeeper } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
-import { listMaintenances, createMaintenance, updateMaintenance, deleteMaintenance } from './maintenance.service';
+import {
+  listMaintenances, createMaintenance, updateMaintenance, deleteMaintenance,
+  listTasks, updateTask, getTaskHistory, getTaskAlerts, initMaintenanceTasks,
+} from './maintenance.service';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -109,6 +112,71 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const db = getTenantClient(req.tenantDbUrl!);
     await deleteMaintenance(db, (req.params.id as string));
     res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Routes tâches récurrentes ────────────────────────────────────────────────
+
+// GET /api/v1/maintenance/tasks — liste toutes les tâches CT + révision
+router.get('/tasks', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const tasks = await listTasks(db);
+    res.json({ tasks });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/maintenance/tasks/alerts — alertes à prévoir
+router.get('/tasks/alerts', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const alerts = await getTaskAlerts(db);
+    res.json({ alerts });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/maintenance/tasks/history/:vehicleId — historique lié aux tâches
+router.get('/tasks/history/:vehicleId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const type = typeof req.query.type === 'string' ? req.query.type : undefined;
+    const history = await getTaskHistory(db, req.params.vehicleId as string, type);
+    res.json({ history });
+  } catch (err: unknown) { next(err); }
+});
+
+// PUT /api/v1/maintenance/tasks/:id — enregistrer un CT ou une révision
+const taskUpdateSchema = z.object({
+  performedAt: z.string().datetime(),
+  mileageAtService: z.number().int().min(0),
+  cost: z.number().min(0),
+  provider: z.string().optional(),
+  notes: z.string().optional(),
+  nextDueDate: z.string().datetime().optional(),
+  nextDueMileage: z.number().int().min(0).optional(),
+});
+
+router.put('/tasks/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = taskUpdateSchema.safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const task = await updateTask(db, req.params.id as string, {
+      ...body.data,
+      performedAt: new Date(body.data.performedAt),
+      nextDueDate: body.data.nextDueDate ? new Date(body.data.nextDueDate) : undefined,
+    });
+    res.json({ task });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/maintenance/tasks/init — initialise (ou resync) les tâches de tous les véhicules
+router.post('/tasks/init', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const vehicles = await db.vehicle.findMany({ select: { id: true } });
+    await initMaintenanceTasks(db, vehicles);
+    res.json({ success: true, vehicleCount: vehicles.length });
   } catch (err: unknown) { next(err); }
 });
 

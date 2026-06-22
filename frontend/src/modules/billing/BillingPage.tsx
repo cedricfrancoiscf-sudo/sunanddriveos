@@ -19,6 +19,8 @@ interface BillingStatus {
   mode: string;
   trialEndsAt: string | null;
   hasStripe: boolean;
+  stripeConfigured: boolean;
+  isDemo: boolean;
   priceMonthly: number;
   priceYearly: number;
   planDescription: string;
@@ -74,6 +76,21 @@ export default function BillingPage(): React.JSX.Element {
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       <h1 className="text-xl font-bold text-gray-900">Abonnement & Facturation</h1>
+
+      {/* Message si Stripe non configuré */}
+      {data && !data.stripeConfigured && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm font-semibold text-amber-800">Abonnement géré directement par Sun and Drive</p>
+          <p className="text-sm text-amber-700 mt-1">
+            Votre abonnement est géré directement par Sun and Drive. Contactez-nous pour toute question de facturation.
+          </p>
+          <a href="mailto:contact@sunanddrive.fr"
+            className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white"
+            style={{ backgroundColor: '#01696e' }}>
+            contact@sunanddrive.fr →
+          </a>
+        </div>
+      )}
 
       {/* Plan actuel */}
       <div className={`rounded-2xl border p-6 shadow-sm ${isSuspended ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>

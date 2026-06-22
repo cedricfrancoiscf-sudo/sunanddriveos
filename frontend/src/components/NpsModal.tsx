@@ -8,14 +8,19 @@ interface NpsSettings {
   lastNpsAt: string | null;
 }
 
+const NPS_SNOOZE_KEY = 'nps_snooze_until';
+const NPS_SNOOZE_DAYS = 7;
+
 function shouldShowNps(settings: NpsSettings): boolean {
+  const snoozedUntil = localStorage.getItem(NPS_SNOOZE_KEY);
+  if (snoozedUntil && Date.now() < parseInt(snoozedUntil, 10)) return false;
   if (!settings.lastNpsAt) return true;
   const lastMs = new Date(settings.lastNpsAt).getTime();
   const intervalMs = settings.intervalDays * 86_400_000;
   return Date.now() - lastMs >= intervalMs;
 }
 
-export function useNpsModal(): { show: boolean; dismiss: () => void } {
+export function useNpsModal(): { show: boolean; dismiss: () => void; snooze: () => void } {
   const [dismissed, setDismissed] = useState(false);
 
   const { data } = useQuery<NpsSettings>({
@@ -25,10 +30,14 @@ export function useNpsModal(): { show: boolean; dismiss: () => void } {
   });
 
   const show = !dismissed && !!data && shouldShowNps(data);
-  return { show, dismiss: () => setDismissed(true) };
+  const snooze = () => {
+    localStorage.setItem(NPS_SNOOZE_KEY, String(Date.now() + NPS_SNOOZE_DAYS * 86_400_000));
+    setDismissed(true);
+  };
+  return { show, dismiss: () => setDismissed(true), snooze };
 }
 
-export default function NpsModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+export default function NpsModal({ onClose, onSnooze }: { onClose: () => void; onSnooze?: () => void }): React.JSX.Element {
   const [score, setScore] = useState<number | null>(null);
   const [comment, setComment] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -102,9 +111,9 @@ export default function NpsModal({ onClose }: { onClose: () => void }): React.JS
         />
 
         <div className="flex gap-3 mt-4">
-          <button type="button" onClick={onClose}
+          <button type="button" onClick={() => { (onSnooze ?? onClose)(); }}
             className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
-            Plus tard
+            Plus tard — 7 jours
           </button>
           <button
             type="button"

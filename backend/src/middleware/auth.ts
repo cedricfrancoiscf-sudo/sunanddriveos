@@ -104,14 +104,24 @@ export async function requireActiveSubscription(req: Request, res: Response, nex
     const master = getMasterClient();
     const company = await master.company.findFirst({
       where: { slug: tenantSlug },
-      select: { plan: true, trialEndsAt: true, stripeSubscriptionId: true, isActive: true },
+      select: { plan: true, trialEndsAt: true, stripeSubscriptionId: true, isActive: true, subscriptionStatus: true, subscriptionMode: true },
     });
 
     if (!company || !company.isActive) {
-      res.status(403).json({ error: 'Compte inactif' }); return;
+      res.status(403).json({ error: 'TENANT_SUSPENDED' }); return;
     }
+    // Compte suspendu ou résilié → 403 TENANT_SUSPENDED (intercepté par api.ts → /blocked)
+    if (company.subscriptionStatus === 'suspendu' || company.subscriptionStatus === 'résilié') {
+      res.status(403).json({ error: 'TENANT_SUSPENDED' }); return;
+    }
+    // Tenant de confiance hardcodé (10 ans de trial dans init.ts)
     if (tenantSlug === 'sun-and-drive') { next(); return; }
+    // Mode forced ou standard actif → toujours OK
+    if (company.subscriptionMode === 'forced') { next(); return; }
+    if (company.subscriptionMode === 'standard' && company.subscriptionStatus === 'active') { next(); return; }
+    // Trial valide → OK
     if (company.trialEndsAt && company.trialEndsAt > new Date()) { next(); return; }
+    // Abonnement Stripe actif → OK
     if (company.stripeSubscriptionId) { next(); return; }
 
     res.status(402).json({

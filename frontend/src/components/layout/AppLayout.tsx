@@ -3,10 +3,18 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
 import NpsModal, { useNpsModal } from '../NpsModal';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../utils/api';
 
 export default function AppLayout(): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { show: showNps, dismiss: dismissNps } = useNpsModal();
+  const { show: showNps, dismiss: dismissNps, snooze: snoozeNps } = useNpsModal();
+  const { data: billingData } = useQuery({
+    queryKey: ['billing-status'],
+    queryFn: () => api.get<{ isDemo?: boolean }>('/billing/status').then(r => r.data),
+    staleTime: 5 * 60_000,
+  });
+  const isDemo = billingData?.isDemo ?? false;
   const [collapsed, setCollapsed] = useState(
     localStorage.getItem('sidebar_collapsed') === 'true',
   );
@@ -73,6 +81,13 @@ export default function AppLayout(): React.JSX.Element {
           <NotificationBell />
         </header>
 
+        {/* Bandeau MODE DÉMO — non fermable */}
+        {isDemo && (
+          <div className="shrink-0 bg-amber-400 px-4 py-2 text-center text-xs font-semibold text-amber-900">
+            ⚠️ MODE DÉMO — Ces données sont fictives et réinitialisées périodiquement
+          </div>
+        )}
+
         {/* Page content */}
         <main className="flex-1 overflow-y-auto">
           <Outlet />
@@ -80,7 +95,7 @@ export default function AppLayout(): React.JSX.Element {
       </div>
 
       {/* Modal NPS — affiché tous les N jours */}
-      {showNps && <NpsModal onClose={dismissNps} />}
+      {showNps && <NpsModal onClose={dismissNps} onSnooze={snoozeNps} />}
     </div>
   );
 }

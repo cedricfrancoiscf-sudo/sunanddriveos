@@ -49,6 +49,7 @@ model Company {
   onboardingCompleted  Boolean        @default(false)
   onboardingStep       Int            @default(1)
   benchmarkConsent     Boolean        @default(false) // Participation benchmark anonyme
+  isDemo               Boolean        @default(false) // Tenant démo avec données fictives
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
   billingEvents        BillingEvent[]

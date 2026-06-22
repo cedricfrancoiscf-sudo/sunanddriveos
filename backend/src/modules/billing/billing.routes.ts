@@ -7,7 +7,11 @@ import { getMasterClient } from '../../prisma/client';
 
 const router: Router = Router();
 
-const getStripe = () => new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
+const isStripeConfigured = () => Boolean(process.env.STRIPE_SECRET_KEY);
+const getStripe = () => {
+  if (!isStripeConfigured()) throw new Error('Stripe non configuré — STRIPE_SECRET_KEY manquante');
+  return new Stripe(process.env.STRIPE_SECRET_KEY!);
+};
 
 // GET /api/v1/billing/status — plan actuel, prix, historique paiements
 router.get('/status', requireAuth, resolveTenant, async (req: Request, res: Response, next: NextFunction) => {
@@ -15,7 +19,7 @@ router.get('/status', requireAuth, resolveTenant, async (req: Request, res: Resp
     const master = getMasterClient();
     const company = await master.company.findFirst({
       where: { slug: req.auth!.tenantSlug },
-      select: { id: true, plan: true, subscriptionStatus: true, subscriptionMode: true, trialEndsAt: true, stripeCustomerId: true },
+      select: { id: true, plan: true, subscriptionStatus: true, subscriptionMode: true, trialEndsAt: true, stripeCustomerId: true, isDemo: true },
     });
     if (!company) { res.status(404).json({ error: 'Société introuvable' }); return; }
 
@@ -36,6 +40,8 @@ router.get('/status', requireAuth, resolveTenant, async (req: Request, res: Resp
       mode: company.subscriptionMode,
       trialEndsAt: company.trialEndsAt,
       hasStripe: Boolean(company.stripeCustomerId),
+      stripeConfigured: isStripeConfigured(),
+      isDemo: company.isDemo,
       priceMonthly: planConfig?.priceMonthly ?? 0,
       priceYearly: planConfig?.priceYearly ?? 0,
       planDescription: planConfig?.description ?? '',
@@ -57,6 +63,7 @@ router.post('/create-checkout-session', requireAuth, resolveTenant, async (req: 
       billingCycle: z.enum(['monthly', 'yearly']).default('monthly'),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Paramètres invalides' }); return; }
+    if (!isStripeConfigured()) { res.status(200).json({ error: 'Stripe non configuré', configured: false }); return; }
 
     const master = getMasterClient();
     const [company, planConfig] = await Promise.all([
@@ -126,6 +133,7 @@ router.post('/checkout', requireAuth, resolveTenant, async (req: Request, res: R
 // POST /api/v1/billing/portal — ouvre le Customer Portal Stripe
 router.post('/portal', requireAuth, resolveTenant, async (req: Request, res: Response, next: NextFunction) => {
   try {
+    if (!isStripeConfigured()) { res.status(200).json({ error: 'Stripe non configuré', configured: false }); return; }
     const master = getMasterClient();
     const company = await master.company.findFirst({ where: { slug: req.auth!.tenantSlug } });
     if (!company?.stripeCustomerId) {

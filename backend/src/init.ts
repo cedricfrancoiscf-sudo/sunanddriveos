@@ -71,7 +71,22 @@ async function init(): Promise<void> {
     console.error('[Init] WARN SuperAdmin :', (err as Error).message);
   }
 
-  // 4. Seed société Sun and Drive
+  // 4. Seed plans tarifaires (idempotent)
+  try {
+    const planNames = ['starter', 'pro', 'enterprise'] as const;
+    for (const name of planNames) {
+      await master.planConfig.upsert({
+        where: { name },
+        create: { name, priceMonthly: 0, priceYearly: 0, description: '', features: [], isActive: true },
+        update: {},
+      });
+    }
+    console.log('[Init] Plans tarifaires OK (starter / pro / enterprise)');
+  } catch (err: unknown) {
+    console.error('[Init] WARN plans :', (err as Error).message);
+  }
+
+  // 5. Seed société Sun and Drive
   let companies: Array<{ slug: string; tenantDbUrl: string }> = [];
   try {
     const SLUG = 'sun-and-drive';
@@ -97,7 +112,7 @@ async function init(): Promise<void> {
       // Toujours forcer enterprise permanent, sans trial
       await master.company.update({
         where: { id: company.id },
-        data: { plan: 'enterprise', trialEndsAt: null, isActive: true },
+        data: { plan: 'enterprise', trialEndsAt: null, isActive: true, subscriptionMode: 'forced', subscriptionStatus: 'active' },
       });
       console.log('[Init] Société mise à jour : Sun and Drive → enterprise permanent (trialEndsAt: null)');
     }

@@ -1004,7 +1004,7 @@ function SlackSection(): React.JSX.Element {
   });
 
   if (!isEnterprise) return (
-    <div className="border-t border-gray-100 pt-4">
+    <div className="border-t border-gray-100 pt-4" data-testid="slack-section">
       <div className="flex items-start gap-3">
         <div>
           <p className="text-sm font-medium text-gray-900">Slack</p>

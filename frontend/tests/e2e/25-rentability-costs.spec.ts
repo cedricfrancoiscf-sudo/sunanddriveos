@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test'
+import { cleanupPlaywrightData } from './helpers/auth'
+
+test.afterAll(async () => { await cleanupPlaywrightData().catch(() => {}) })
 
 // Utilise Peugeot 208 (getaroundId 1472640) — identifiable par "208" ou "Peugeot"
 

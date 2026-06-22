@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test'
+import { cleanupPlaywrightData } from './helpers/auth'
+
+test.afterAll(async () => { await cleanupPlaywrightData().catch(() => {}) })
 
 // Cas 1 : bébé 8kg — message "siège auto adapté"
 

@@ -9,18 +9,23 @@ interface DocumentScannerProps {
   label?: string;
 }
 
+const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,application/pdf';
+
 export function DocumentScanner({ type, onResult, label = 'Scanner' }: DocumentScannerProps): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ isPdf: boolean; name: string } | null>(null);
 
   const handleFile = async (file: File): Promise<void> => {
     setScanning(true);
     setError(null);
+    const isPdf = file.type === 'application/pdf';
+    setPreview({ isPdf, name: file.name });
     try {
       const formData = new FormData();
       formData.append('image', file);
-      const res = await api.post<{ success: boolean; data: Record<string, unknown> }>(
+      const res = await api.post<{ success: boolean; data: Record<string, unknown>; isPdf?: boolean }>(
         `/scan/${type}`,
         formData,
         { headers: { 'Content-Type': 'multipart/form-data' } },
@@ -29,7 +34,7 @@ export function DocumentScanner({ type, onResult, label = 'Scanner' }: DocumentS
         onResult(res.data.data);
       }
     } catch {
-      setError('Erreur lors de la lecture — réessayez avec une image plus nette');
+      setError('Erreur lors de la lecture — réessayez avec une image plus nette ou un PDF de meilleure qualité');
     } finally {
       setScanning(false);
     }
@@ -40,7 +45,7 @@ export function DocumentScanner({ type, onResult, label = 'Scanner' }: DocumentS
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept={ACCEPT}
         capture="environment"
         className="hidden"
         onChange={e => {
@@ -61,9 +66,14 @@ export function DocumentScanner({ type, onResult, label = 'Scanner' }: DocumentS
             Lecture en cours...
           </>
         ) : (
-          <>📷 {label}</>
+          <>{preview?.isPdf ? '📄' : '📷'} {label}</>
         )}
       </button>
+      {preview?.isPdf && !scanning && (
+        <p className="mt-1 text-xs text-gray-400">
+          PDF : {preview.name} — seule la première page a été analysée
+        </p>
+      )}
       {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
     </div>
   );

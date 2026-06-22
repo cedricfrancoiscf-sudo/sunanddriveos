@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test'
+import { cleanupPlaywrightData } from './helpers/auth'
+
+test.afterAll(async () => { await cleanupPlaywrightData().catch(() => {}) })
 
 // Cas 4 : problème mécanique — "bruit bizarre au démarrage"
 // Cas 5 : retard — "je ne pourrai pas rendre la voiture à l'heure"

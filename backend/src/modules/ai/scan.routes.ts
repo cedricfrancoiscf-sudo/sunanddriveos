@@ -7,22 +7,38 @@ import multer from 'multer';
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
 
+// Accepte images ET PDFs (Claude Vision supporte nativement les deux)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB max (PDFs plus lourds)
   fileFilter: (_, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Seules les images sont acceptées'));
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Format non supporté — utilisez une image (JPG/PNG/WEBP) ou un PDF'));
+    }
   },
 });
 
-async function extractFromImage(
+type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+
+async function extractFromFile(
   file: Express.Multer.File,
   prompt: string,
 ): Promise<Record<string, unknown>> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const base64 = file.buffer.toString('base64');
-  const mediaType = file.mimetype as 'image/jpeg' | 'image/png' | 'image/webp';
+  const isPdf = file.mimetype === 'application/pdf';
+
+  if (isPdf) {
+    console.log('[Scan] PDF reçu → envoi à Claude Vision (document natif)');
+  }
+
+  // Claude API supporte nativement application/pdf via le block type 'document'
+  // (SDK v0.32 ne typifie pas encore DocumentBlockParam — cast nécessaire)
+  const fileBlock = isPdf
+    ? ({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } } as unknown as Anthropic.ImageBlockParam)
+    : ({ type: 'image', source: { type: 'base64', media_type: file.mimetype as ImageMediaType, data: base64 } } as Anthropic.ImageBlockParam);
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
@@ -30,8 +46,8 @@ async function extractFromImage(
     messages: [{
       role: 'user',
       content: [
-        { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-        { type: 'text', text: prompt },
+        fileBlock,
+        { type: 'text', text: isPdf ? `${prompt}\n\nNote : document PDF — analyse la première page.` : prompt },
       ],
     }],
   });
@@ -43,8 +59,9 @@ async function extractFromImage(
 // POST /api/v1/scan/vehicle
 router.post('/vehicle', upload.single('image'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    if (!req.file) { res.status(400).json({ error: 'Image requise' }); return; }
-    const data = await extractFromImage(req.file, `Analyse ce document (carte grise, certificat immatriculation, ou photo de véhicule).
+    if (!req.file) { res.status(400).json({ error: 'Image ou PDF requis' }); return; }
+    const isPdf = req.file.mimetype === 'application/pdf';
+    const data = await extractFromFile(req.file, `Analyse ce document (carte grise, certificat immatriculation, ou photo de véhicule).
 Extrait les informations du véhicule et retourne UNIQUEMENT ce JSON sans markdown :
 {
   "licensePlate": "immatriculation en majuscules sans tiret ex: AB123CD",
@@ -56,15 +73,16 @@ Extrait les informations du véhicule et retourne UNIQUEMENT ce JSON sans markdo
   "confidence": 0.95
 }
 Si une information n'est pas visible, mets null pour ce champ.`);
-    res.json({ success: true, data });
+    res.json({ success: true, data, isPdf });
   } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/scan/technical-control
 router.post('/technical-control', upload.single('image'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    if (!req.file) { res.status(400).json({ error: 'Image requise' }); return; }
-    const data = await extractFromImage(req.file, `Analyse ce rapport de contrôle technique.
+    if (!req.file) { res.status(400).json({ error: 'Image ou PDF requis' }); return; }
+    const isPdf = req.file.mimetype === 'application/pdf';
+    const data = await extractFromFile(req.file, `Analyse ce rapport de contrôle technique.
 Retourne UNIQUEMENT ce JSON sans markdown :
 {
   "licensePlate": "immatriculation si visible",
@@ -77,15 +95,16 @@ Retourne UNIQUEMENT ce JSON sans markdown :
   "confidence": 0.95
 }
 Si une information n'est pas visible, mets null.`);
-    res.json({ success: true, data });
+    res.json({ success: true, data, isPdf });
   } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/scan/maintenance
 router.post('/maintenance', upload.single('image'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    if (!req.file) { res.status(400).json({ error: 'Image requise' }); return; }
-    const data = await extractFromImage(req.file, `Analyse cette facture d'entretien ou de réparation automobile.
+    if (!req.file) { res.status(400).json({ error: 'Image ou PDF requis' }); return; }
+    const isPdf = req.file.mimetype === 'application/pdf';
+    const data = await extractFromFile(req.file, `Analyse cette facture d'entretien ou de réparation automobile.
 Retourne UNIQUEMENT ce JSON sans markdown :
 {
   "licensePlate": "immatriculation si visible",
@@ -100,15 +119,16 @@ Retourne UNIQUEMENT ce JSON sans markdown :
   "confidence": 0.95
 }
 Si une information n'est pas visible, mets null.`);
-    res.json({ success: true, data });
+    res.json({ success: true, data, isPdf });
   } catch (err: unknown) { next(err); }
 });
 
 // POST /api/v1/scan/invoice
 router.post('/invoice', upload.single('image'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    if (!req.file) { res.status(400).json({ error: 'Image requise' }); return; }
-    const data = await extractFromImage(req.file, `Analyse cette facture ou document financier.
+    if (!req.file) { res.status(400).json({ error: 'Image ou PDF requis' }); return; }
+    const isPdf = req.file.mimetype === 'application/pdf';
+    const data = await extractFromFile(req.file, `Analyse cette facture ou document financier.
 Retourne UNIQUEMENT ce JSON sans markdown :
 {
   "type": "assurance|parking|credit|entretien|autre",
@@ -123,7 +143,7 @@ Retourne UNIQUEMENT ce JSON sans markdown :
   "confidence": 0.95
 }
 Si une information n'est pas visible, mets null.`);
-    res.json({ success: true, data });
+    res.json({ success: true, data, isPdf });
   } catch (err: unknown) { next(err); }
 });
 

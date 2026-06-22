@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test'
+import { cleanupPlaywrightData } from './helpers/auth'
+
+test.afterAll(async () => { await cleanupPlaywrightData().catch(() => {}) })
 
 // Peugeot 208 — noter 4.5 en août 2026, puis 3.5 en juillet 2026
 // → alerte baisse consécutive attendue

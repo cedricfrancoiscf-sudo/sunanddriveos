@@ -99,6 +99,9 @@ test.describe('32-A — BLOC 4 : data-testids clés', () => {
       await page.waitForLoadState('domcontentloaded')
       await page.waitForTimeout(1500)
       await page.keyboard.press('Escape').catch(() => {})
+      // Le bouton Modifier est en haut de la fiche — s'assurer d'être en position 0
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await page.waitForTimeout(400)
       const btn = page.locator('[data-testid="btn-modifier"]')
       await btn.waitFor({ state: 'visible', timeout: 8000 })
       rPass('btn-modifier présent sur page véhicule')

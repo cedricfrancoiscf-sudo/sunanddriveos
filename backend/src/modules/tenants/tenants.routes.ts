@@ -1211,22 +1211,67 @@ router.post('/tenants/:slug/cleanup-test-data', async (req: Request, res: Respon
     const master = getMasterClient();
     const company = await master.company.findUnique({
       where: { slug },
-      select: { tenantDbUrl: true },
+      select: { tenantDbUrl: true, id: true },
     });
     if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
 
     const db = getTenantClient(company.tenantDbUrl);
+    const testPattern = { contains: 'playwright', mode: 'insensitive' as const };
 
+    // 1. Coûts véhicule hors coûts récurrents officiels
     const keepLabels = ['Assurance AON', 'Boîtier Connect', 'Parking P3'];
     const costsResult = await db.vehicleCost.deleteMany({
       where: { label: { notIn: keepLabels } },
     });
 
+    // 2. Locations avec nom conducteur playwright ou "Test Playwright"
     const rentalsResult = await db.rental.deleteMany({
-      where: { driverName: { contains: 'playwright', mode: 'insensitive' } },
+      where: {
+        OR: [
+          { driverName: testPattern },
+          { driverName: { contains: 'Test Playwright', mode: 'insensitive' } },
+        ],
+      },
     });
 
-    res.json({ costsDeleted: costsResult.count, rentalsDeleted: rentalsResult.count });
+    // 3. Entretiens dont les notes ou le prestataire contiennent "playwright"
+    const maintenanceResult = await db.maintenance.deleteMany({
+      where: {
+        OR: [
+          { notes: testPattern },
+          { provider: testPattern },
+          { type: testPattern },
+        ],
+      },
+    });
+
+    // 4. Contrôles techniques dont le centre contient "playwright"
+    const ctResult = await db.technicalControl.deleteMany({
+      where: { center: testPattern },
+    });
+
+    // 5. Messages dont le contenu contient "playwright"
+    const messagesResult = await db.message.deleteMany({
+      where: { content: testPattern },
+    });
+
+    // 6. Notes NPS dans master DB avec comment playwright
+    const npsResult = await master.npsResponse.deleteMany({
+      where: {
+        companyId: company.id,
+        comment: testPattern,
+      },
+    }).catch(() => ({ count: 0 }));
+
+    res.json({
+      success: true,
+      costsDeleted: costsResult.count,
+      rentalsDeleted: rentalsResult.count,
+      maintenanceDeleted: maintenanceResult.count,
+      ctDeleted: ctResult.count,
+      messagesDeleted: messagesResult.count,
+      npsDeleted: npsResult.count,
+    });
   } catch (err: unknown) { next(err); }
 });
 

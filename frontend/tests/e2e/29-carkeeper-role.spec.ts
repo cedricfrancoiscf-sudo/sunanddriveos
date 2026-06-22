@@ -10,8 +10,12 @@ test.describe('Rôle Carkeeper — restrictions accès', () => {
 
   test.beforeAll(async ({ browser }) => {
     // Garantit l'existence du carkeeper (idempotent — seed crée l'user si absent)
-    await seedTestData(TENANT_SLUG).catch((e: unknown) => {
-      console.log('[29] seedTestData impossible (token absent?) :', e)
+    // Promise.race : si le seed prend trop longtemps, on continue quand même
+    await Promise.race([
+      seedTestData(TENANT_SLUG),
+      new Promise<void>(resolve => setTimeout(resolve, 10_000)),
+    ]).catch((e: unknown) => {
+      console.log('[29] seedTestData ignoré :', e)
     })
 
     // Toujours forcer un nouveau login pour éviter les sessions expirées

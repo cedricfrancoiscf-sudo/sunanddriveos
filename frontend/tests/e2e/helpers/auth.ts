@@ -71,11 +71,29 @@ export async function seedTestData(slug = TENANT_SLUG) {
 
 export async function deleteTestData(slug = TENANT_SLUG) {
   const token = await getSuperadminToken()
+  // Endpoint legacy (isTest=true rentals)
   const res = await fetch(`${API_URL}/api/v1/superadmin/test-data?slug=${slug}`, {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${token}` },
   })
-  return res.json()
+  const result = await res.json() as Record<string, unknown>
+
+  // Endpoint étendu (playwright-named data : maintenances, CTs, messages, NPS)
+  await fetch(`${API_URL}/api/v1/superadmin/tenants/${slug}/cleanup-test-data`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+  }).catch(() => { /* non bloquant */ })
+
+  return result
+}
+
+export async function cleanupPlaywrightData(slug = TENANT_SLUG) {
+  const token = await getSuperadminToken()
+  const res = await fetch(`${API_URL}/api/v1/superadmin/tenants/${slug}/cleanup-test-data`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+  })
+  return res.json() as Promise<Record<string, unknown>>
 }
 
 // Navigue vers août 2026 depuis la page planning (suppose vue Mois, date courante juin 2026)

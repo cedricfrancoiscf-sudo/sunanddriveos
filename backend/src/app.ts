@@ -102,8 +102,8 @@ export function createApp(): Express {
   // Webhook Stripe — raw body AVANT express.json()
   app.use('/api/v1/billing/webhook', express.raw({ type: 'application/json' }));
 
-  // Webhook Getaround — raw body avant le parser JSON global (pour signature verification future)
-  app.use('/api/v1/webhooks/getaround', express.raw({ type: '*/*' }), getaroundWebhooksRoutes);
+  // 2026-06 : webhooks Getaround non disponibles en self-service (désactivé)
+  // app.use('/api/v1/webhooks/getaround', express.raw({ type: '*/*' }), getaroundWebhooksRoutes);
 
   // Parsing requêtes
   app.use(express.json({ limit: '10mb' }));

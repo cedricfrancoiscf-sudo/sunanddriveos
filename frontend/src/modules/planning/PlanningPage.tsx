@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { trackEvent } from '../../utils/tracking';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, addDays, startOfWeek, parseISO, isSameDay, differenceInMinutes, startOfDay } from 'date-fns';
+import { format, addDays, subMonths, startOfWeek, parseISO, isSameDay, differenceInMinutes, startOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
 import { useAuth } from '../../hooks/useAuth';
@@ -313,6 +313,8 @@ export default function PlanningPage(): React.JSX.Element {
 
         {/* Navigation */}
         <div className="flex items-center gap-1.5">
+          <button type="button" title="6 mois en arrière" onClick={() => setPeriodStart(startOfWeek(subMonths(new Date(), 6), { weekStartsOn: 1 }))}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">← 6 mois</button>
           <button type="button" aria-label="prev" onClick={() => setPeriodStart(d => addDays(d, -viewMode))}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">←</button>
           <button type="button" onClick={() => setPeriodStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}

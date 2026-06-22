@@ -695,6 +695,7 @@ model CompanySettings {
   formatExportPreference   String   @default("fec")
   objectifSeuilAlerte      Int      @default(80)
   getaroundWebhookPath String?
+  boitierConnectAmount Int?                       // Montant mensuel Boîtier Connect (€) — null = 25€ par défaut
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

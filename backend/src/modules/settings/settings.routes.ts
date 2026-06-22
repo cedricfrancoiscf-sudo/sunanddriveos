@@ -79,6 +79,7 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       riskWeightFlags: z.number().int().min(0).max(100).optional(),
       riskWeightCancelled: z.number().int().min(0).max(100).optional(),
       riskWeightDelay: z.number().int().min(0).max(100).optional(),
+      boitierConnectAmount: z.number().int().min(0).max(500).nullable().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
 

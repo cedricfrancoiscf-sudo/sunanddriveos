@@ -268,7 +268,14 @@ export default function RentalListPage(): React.JSX.Element {
           {/* Sous-total mois */}
           <div className="mb-3 flex items-center justify-between rounded-xl border border-[#01696e]/20 bg-[#01696e]/5 px-4 py-2.5">
             <span className="text-sm font-medium capitalize text-gray-700">{monthLabel}</span>
-            <span className="text-sm text-gray-500">{filtered.length} location{filtered.length !== 1 ? 's' : ''}</span>
+            <div className="flex items-center gap-3 text-sm text-gray-500">
+              <span>{filtered.length} location{filtered.length !== 1 ? 's' : ''}</span>
+              {monthRevenue > 0 && (
+                <span className="font-semibold text-[#01696e]">
+                  {monthRevenue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">

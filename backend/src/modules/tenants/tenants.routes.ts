@@ -1204,5 +1204,31 @@ router.post('/tenants/:slug/fix-ct-data', async (req: Request, res: Response, ne
   } catch (err: unknown) { next(err); }
 });
 
+// POST /api/v1/superadmin/tenants/:slug/cleanup-test-data
+router.post('/tenants/:slug/cleanup-test-data', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { slug } = req.params as { slug: string };
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug },
+      select: { tenantDbUrl: true },
+    });
+    if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
+
+    const db = getTenantClient(company.tenantDbUrl);
+
+    const keepLabels = ['Assurance AON', 'Boîtier Connect', 'Parking P3'];
+    const costsResult = await db.vehicleCost.deleteMany({
+      where: { label: { notIn: keepLabels } },
+    });
+
+    const rentalsResult = await db.rental.deleteMany({
+      where: { driverName: { contains: 'playwright', mode: 'insensitive' } },
+    });
+
+    res.json({ costsDeleted: costsResult.count, rentalsDeleted: rentalsResult.count });
+  } catch (err: unknown) { next(err); }
+});
+
 export default router;
 

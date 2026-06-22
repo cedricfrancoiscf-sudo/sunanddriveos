@@ -150,8 +150,10 @@ export async function syncAccountVehicles(
           where: { vehicleId: upserted.id, label: 'Boîtier Connect' },
         });
         if (!existingBoitier) {
+          const settings = await db.companySettings.findFirst({ select: { boitierConnectAmount: true } });
+          const boitierAmount = settings?.boitierConnectAmount ?? 25;
           await db.vehicleCost.create({
-            data: { vehicleId: upserted.id, label: 'Boîtier Connect', amount: 25, type: 'fixed' },
+            data: { vehicleId: upserted.id, label: 'Boîtier Connect', amount: boitierAmount, type: 'fixed' },
           });
         }
 

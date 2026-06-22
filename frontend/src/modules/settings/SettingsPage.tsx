@@ -448,6 +448,7 @@ interface CompanySettings {
   autobizApiKey: string | null;
   depreciationThreshold: number;
   warrantyAlertDays: number;
+  boitierConnectAmount: number | null;
   co2FactorEssence: number;
   co2FactorHybride: number;
   co2FactorElectrique: number;
@@ -1270,6 +1271,7 @@ function VehicleSettingsSection(): React.JSX.Element {
     co2FactorHybride: 60,
     co2FactorElectrique: 10,
     co2EquivalentArbre: 10,
+    boitierConnectAmount: 25 as number,
   });
   const [showApiKey, setShowApiKey] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
@@ -1284,6 +1286,7 @@ function VehicleSettingsSection(): React.JSX.Element {
         co2FactorHybride: settings.co2FactorHybride ?? 60,
         co2FactorElectrique: settings.co2FactorElectrique ?? 10,
         co2EquivalentArbre: settings.co2EquivalentArbre ?? 10,
+        boitierConnectAmount: settings.boitierConnectAmount ?? 25,
       });
     }
   }, [settings]);
@@ -1336,9 +1339,10 @@ function VehicleSettingsSection(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         {numField('depreciationThreshold', 'Seuil dépréciation revente', '€/km', '0.01')}
         {numField('warrantyAlertDays', 'Alerte garantie avant expiration', 'jours', '1')}
+        {numField('boitierConnectAmount', 'Boîtier Connect', '€/mois', '1')}
       </div>
 
       <div>

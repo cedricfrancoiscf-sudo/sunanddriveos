@@ -12,9 +12,19 @@ async function loginSuperAdmin(page: import('@playwright/test').Page) {
   await page.goto(SA_URL);
   await page.evaluate((t: string) => { localStorage.setItem('superadmin_token', t); }, token);
   await page.reload();
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(2000);
+  await page.locator('text=Sociétés').waitFor({ state: 'visible', timeout: 8000 });
   await page.keyboard.press('Escape').catch(() => {});
 }
+
+test.beforeEach(async ({ page }) => {
+  const overlay = page.locator('div.fixed.inset-0[class*="z-[200]"]')
+  const visible = await overlay.isVisible({ timeout: 500 }).catch(() => false)
+  if (visible) {
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(500)
+  }
+})
 
 
 // ─── 1 & 2. Page /billing — tests tenant (admin@sunanddrive.fr) ───────────────

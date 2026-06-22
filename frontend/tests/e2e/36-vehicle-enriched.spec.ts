@@ -3,7 +3,12 @@ import { test, expect } from '@playwright/test';
 test.use({ storageState: 'tests/e2e/.auth/user.json' });
 
 test.beforeEach(async ({ page }) => {
-  await page.keyboard.press('Escape').catch(() => {});
+  const overlay = page.locator('div.fixed.inset-0[class*="z-[200]"]')
+  const visible = await overlay.isVisible({ timeout: 500 }).catch(() => false)
+  if (visible) {
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(500)
+  }
 });
 
 const BASE = 'https://appli.sunanddrive.com';

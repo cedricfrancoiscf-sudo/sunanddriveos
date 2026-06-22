@@ -69,6 +69,15 @@ const ROUTES = [
 test.describe('Monkey test admin — exhaustif', () => {
   test.afterAll(() => saveReport())
 
+  test.beforeEach(async ({ page }) => {
+    const overlay = page.locator('div.fixed.inset-0[class*="z-[200]"]')
+    const visible = await overlay.isVisible({ timeout: 500 }).catch(() => false)
+    if (visible) {
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(500)
+    }
+  })
+
   // ════════════════════════════════════════════════════════════════
   // SECTION 1 : ROUTES — chaque page charge sans erreur
   // ════════════════════════════════════════════════════════════════

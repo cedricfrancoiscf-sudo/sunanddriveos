@@ -144,6 +144,7 @@ model Vehicle {
   purchasePrice      Float?            // Prix d'achat TTC
   currentMileage     Int               @default(0)
   healthScore        Int               @default(100)
+  vehicleCategory    String            @default("tourisme") // "tourisme" | "utilitaire" | "camionnette"
   isActive           Boolean           @default(true)
   carekeeperUserId   String?
   carekeeperUser     User?             @relation("VehiclePrimaryCarkeeper", fields: [carekeeperUserId], references: [id])
@@ -342,9 +343,11 @@ model MaintenanceTask {
   lastNotes        String?
   nextDueDate      DateTime?
   nextDueMileage   Int?
-  intervalKm       Int?          // null pour CT (temporel seulement)
-  intervalMonths   Int?          // 12 pour revision, 24 pour CT
-  totalCost        Float         @default(0)
+  intervalKm             Int?      // null pour CT (temporel seulement)
+  intervalMonths         Int?      // 12 pour revision, 24 pour CT tourisme
+  ctResult               String?   // "favorable" | "defavorable" | "contre_visite"
+  ctCounterVisitDeadline DateTime? // performedAt + 2 mois si défavorable
+  totalCost              Float     @default(0)
   occurrenceCount  Int           @default(0)
   history          Maintenance[]
   createdAt        DateTime      @default(now())

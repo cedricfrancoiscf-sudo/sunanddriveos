@@ -135,12 +135,24 @@ router.get('/tasks/alerts', async (req: Request, res: Response, next: NextFuncti
   } catch (err: unknown) { next(err); }
 });
 
-// GET /api/v1/maintenance/tasks/history/:vehicleId — historique lié aux tâches
+// GET /api/v1/maintenance/tasks/history/:vehicleId — historique lié aux tâches (par véhicule)
 router.get('/tasks/history/:vehicleId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const type = typeof req.query.type === 'string' ? req.query.type : undefined;
     const history = await getTaskHistory(db, req.params.vehicleId as string, type);
+    res.json({ history });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/maintenance/tasks/:id/history — historique d'une tâche spécifique
+router.get('/tasks/:id/history', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const history = await db.maintenance.findMany({
+      where: { maintenanceTaskId: req.params.id as string },
+      orderBy: { performedAt: 'desc' },
+    });
     res.json({ history });
   } catch (err: unknown) { next(err); }
 });
@@ -154,6 +166,7 @@ const taskUpdateSchema = z.object({
   notes: z.string().optional(),
   nextDueDate: z.string().datetime().optional(),
   nextDueMileage: z.number().int().min(0).optional(),
+  ctResult: z.enum(['favorable', 'defavorable', 'contre_visite']).optional(),
 });
 
 router.put('/tasks/:id', async (req: Request, res: Response, next: NextFunction) => {
@@ -165,6 +178,7 @@ router.put('/tasks/:id', async (req: Request, res: Response, next: NextFunction)
       ...body.data,
       performedAt: new Date(body.data.performedAt),
       nextDueDate: body.data.nextDueDate ? new Date(body.data.nextDueDate) : undefined,
+      ctResult: body.data.ctResult,
     });
     res.json({ task });
   } catch (err: unknown) { next(err); }

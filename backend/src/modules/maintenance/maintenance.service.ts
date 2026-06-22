@@ -9,6 +9,7 @@ export type TaskUpdateInput = {
   notes?: string;
   nextDueDate?: Date;
   nextDueMileage?: number;
+  ctResult?: 'favorable' | 'defavorable' | 'contre_visite';
 };
 
 // ─── Tâches récurrentes ───────────────────────────────────────────────────────
@@ -16,9 +17,9 @@ export type TaskUpdateInput = {
 export async function listTasks(db: PrismaClient) {
   return db.maintenanceTask.findMany({
     include: {
-      vehicle: { select: { id: true, make: true, model: true, licensePlate: true, isActive: true } },
+      vehicle: { select: { id: true, make: true, model: true, licensePlate: true, isActive: true, vehicleCategory: true } },
     },
-    orderBy: [{ nextDueDate: 'asc' }, { vehicleId: 'asc' }],
+    orderBy: [{ vehicle: { licensePlate: 'asc' } }, { type: 'asc' }],
   });
 }
 
@@ -41,15 +42,38 @@ export async function getTaskHistory(db: PrismaClient, vehicleId: string, type?:
 }
 
 export async function updateTask(db: PrismaClient, taskId: string, input: TaskUpdateInput) {
-  const task = await db.maintenanceTask.findUniqueOrThrow({ where: { id: taskId } });
+  const task = await db.maintenanceTask.findUniqueOrThrow({
+    where: { id: taskId },
+    include: { vehicle: { select: { id: true, vehicleCategory: true } } },
+  });
 
-  // Calcul automatique de la prochaine échéance si non fournie
-  const nextDueDate = input.nextDueDate
-    ?? (task.intervalMonths ? addMonths(input.performedAt, task.intervalMonths) : null);
-  const nextDueMileage = input.nextDueMileage
-    ?? (task.intervalKm ? input.mileageAtService + task.intervalKm : null);
+  let nextDueDate: Date | null = null;
+  let nextDueMileage: number | null = null;
+  let ctCounterVisitDeadline: Date | null = null;
 
-  // 1. Créer l'entrée historique
+  if (task.type === 'ct') {
+    if (input.ctResult === 'favorable') {
+      const intervalMonths = task.vehicle.vehicleCategory === 'tourisme' ? 24 : 12;
+      nextDueDate = addMonths(input.performedAt, intervalMonths);
+    } else if (input.ctResult === 'defavorable' || input.ctResult === 'contre_visite') {
+      nextDueDate = addMonths(input.performedAt, 2);
+      ctCounterVisitDeadline = addMonths(input.performedAt, 2);
+    }
+    // Pas de nextDueMileage pour le CT
+  }
+
+  if (task.type === 'revision') {
+    nextDueDate = input.nextDueDate
+      ?? (task.intervalMonths ? addMonths(input.performedAt, task.intervalMonths) : null);
+    nextDueMileage = input.nextDueMileage
+      ?? (task.intervalKm ? input.mileageAtService + task.intervalKm : null);
+  }
+
+  // Override manuel explicite (toujours prioritaire sur le calcul auto)
+  if (input.nextDueDate) nextDueDate = input.nextDueDate;
+  if (input.nextDueMileage) nextDueMileage = input.nextDueMileage;
+
+  // 1. Créer l'entrée historique dans Maintenance
   await db.maintenance.create({
     data: {
       vehicleId: task.vehicleId,
@@ -65,7 +89,7 @@ export async function updateTask(db: PrismaClient, taskId: string, input: TaskUp
     },
   });
 
-  // 2. Mettre à jour la tâche (cumul coûts + prochain rendez-vous)
+  // 2. Mettre à jour la tâche (cumul lifetime + prochain rendez-vous)
   return db.maintenanceTask.update({
     where: { id: taskId },
     data: {
@@ -76,11 +100,13 @@ export async function updateTask(db: PrismaClient, taskId: string, input: TaskUp
       lastNotes: input.notes ?? null,
       nextDueDate: nextDueDate ?? null,
       nextDueMileage: nextDueMileage ?? null,
+      ctResult: input.ctResult ?? null,
+      ctCounterVisitDeadline: ctCounterVisitDeadline ?? null,
       totalCost: { increment: input.cost },
       occurrenceCount: { increment: 1 },
     },
     include: {
-      vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
+      vehicle: { select: { id: true, make: true, model: true, licensePlate: true, vehicleCategory: true } },
     },
   });
 }
@@ -91,21 +117,27 @@ export async function initMaintenanceTasks(
   db: PrismaClient,
   vehicles: Array<{ id: string }>,
 ): Promise<void> {
-  for (const vehicle of vehicles) {
+  for (const vRef of vehicles) {
+    const vehicle = await db.vehicle.findUnique({
+      where: { id: vRef.id },
+      select: { id: true, vehicleCategory: true },
+    });
+    if (!vehicle) continue;
+
     for (const type of ['revision', 'ct'] as const) {
-      // upsert : ne rien écraser si déjà existant
+      const intervalMonths = type === 'ct'
+        ? (vehicle.vehicleCategory === 'tourisme' ? 24 : 12)
+        : 12;
+      const intervalKm = type === 'revision' ? 15000 : null;
+
+      // upsert : jamais écraser une tâche existante
       const task = await db.maintenanceTask.upsert({
         where: { vehicleId_type: { vehicleId: vehicle.id, type } },
         update: {},
-        create: {
-          vehicleId: vehicle.id,
-          type,
-          intervalMonths: type === 'ct' ? 24 : 12,
-          intervalKm: type === 'revision' ? 15000 : null,
-        },
+        create: { vehicleId: vehicle.id, type, intervalMonths, intervalKm },
       });
 
-      // Backfill depuis l'historique Maintenance existant si la tâche est vide
+      // Backfill depuis l'historique Maintenance existant si la tâche est vierge
       if (task.occurrenceCount === 0) {
         const history = await db.maintenance.findMany({
           where: { vehicleId: vehicle.id, type },
@@ -114,7 +146,6 @@ export async function initMaintenanceTasks(
         if (history.length > 0) {
           const latest = history[0];
           const totalCost = history.reduce((s, m) => s + (m.cost ?? 0), 0);
-          // Lier tous les historiques à la tâche
           await db.maintenance.updateMany({
             where: { vehicleId: vehicle.id, type, maintenanceTaskId: null },
             data: { maintenanceTaskId: task.id },
@@ -139,7 +170,7 @@ export async function initMaintenanceTasks(
   }
 }
 
-// Alertes issues des tâches récurrentes (CT dans 60j, révision dans 30j)
+// Alertes issues des tâches récurrentes — logique contextuelle selon ctResult
 export async function getTaskAlerts(db: PrismaClient) {
   const now = new Date();
   const in30d = new Date(now.getTime() + 30 * 86_400_000);
@@ -149,14 +180,20 @@ export async function getTaskAlerts(db: PrismaClient) {
     where: {
       vehicle: { isActive: true },
       OR: [
+        // Contre-visite CT urgente (deadline dans 30j ou dépassée)
+        { type: 'ct', ctResult: { in: ['defavorable', 'contre_visite'] }, ctCounterVisitDeadline: { lte: in30d } },
+        // CT favorable à renouveler (dans 60j ou dépassé)
+        { type: 'ct', ctResult: 'favorable', nextDueDate: { lte: in60d } },
+        // CT sans résultat renseigné mais nextDueDate approche
+        { type: 'ct', ctResult: null, nextDueDate: { lte: in60d } },
+        // Révision à prévoir (dans 30j ou dépassée)
         { type: 'revision', nextDueDate: { lte: in30d } },
-        { type: 'ct', nextDueDate: { lte: in60d } },
-        // Tâches sans date connue et jamais effectuées → toujours en alerte
+        // Tâches jamais effectuées → à compléter
         { nextDueDate: null, occurrenceCount: 0 },
       ],
     },
     include: {
-      vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
+      vehicle: { select: { id: true, make: true, model: true, licensePlate: true, vehicleCategory: true } },
     },
     orderBy: { nextDueDate: 'asc' },
   });

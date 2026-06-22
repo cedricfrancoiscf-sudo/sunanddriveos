@@ -6,6 +6,7 @@ import { getTenantClient } from '../../prisma/client';
 import {
   listMaintenances, createMaintenance, updateMaintenance, deleteMaintenance,
   listTasks, updateTask, getTaskHistory, getTaskAlerts, initMaintenanceTasks,
+  migrateMaintenanceTasks,
 } from './maintenance.service';
 
 const router: Router = Router();
@@ -191,6 +192,19 @@ router.post('/tasks/init', async (req: Request, res: Response, next: NextFunctio
     const vehicles = await db.vehicle.findMany({ select: { id: true } });
     await initMaintenanceTasks(db, vehicles);
     res.json({ success: true, vehicleCount: vehicles.length });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/maintenance/tasks/migrate — migration données existantes vers tâches
+// Sûr à ré-exécuter : lie les Maintenance existants et met à jour les cumuls.
+router.post('/tasks/migrate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    // S'assurer que les tâches existent d'abord
+    const vehicles = await db.vehicle.findMany({ select: { id: true } });
+    await initMaintenanceTasks(db, vehicles);
+    const result = await migrateMaintenanceTasks(db);
+    res.json({ success: true, ...result });
   } catch (err: unknown) { next(err); }
 });
 

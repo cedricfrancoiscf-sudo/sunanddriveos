@@ -58,6 +58,7 @@ const MessageListPage = React.lazy(() => import('./modules/messages/MessageListP
 const MessageDetailPage = React.lazy(() => import('./modules/messages/MessageDetailPage'));
 const SequenceListPage = React.lazy(() => import('./modules/sequences/SequenceListPage'));
 const MaintenancePage = React.lazy(() => import('./modules/maintenance/MaintenancePage'));
+const CTPage = React.lazy(() => import('./modules/maintenance/CTPage'));
 const TechnicalControlPage = React.lazy(() => import('./modules/technical-control/TechnicalControlPage'));
 const VehicleCheckListPage = React.lazy(() => import('./modules/vehicle-checks/VehicleCheckListPage'));
 const VehicleCheckFormPage = React.lazy(() => import('./modules/vehicle-checks/VehicleCheckFormPage'));
@@ -162,7 +163,8 @@ export default function App(): React.JSX.Element {
               <Route path="/messages/:id" element={<MessageDetailPage />} />
               <Route path="/sequences" element={<SequenceListPage />} />
               <Route path="/maintenance" element={<MaintenancePage />} />
-              <Route path="/technical-control" element={<TechnicalControlPage />} />
+              <Route path="/ct" element={<CTPage />} />
+              <Route path="/technical-control" element={<Navigate to="/ct" replace />} />
               <Route path="/vehicle-checks" element={<VehicleCheckListPage />} />
               <Route path="/vehicle-checks/new" element={<VehicleCheckFormPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
@@ -186,7 +188,7 @@ export default function App(): React.JSX.Element {
               <Route path="/rentability" element={<CarkeeperBlockedRoute><RentabilityPage /></CarkeeperBlockedRoute>} />
               <Route path="/documentation" element={<DocumentationPage />} />
               {/* Alias routes */}
-              <Route path="/technical-controls" element={<Navigate to="/technical-control" replace />} />
+              <Route path="/technical-controls" element={<Navigate to="/ct" replace />} />
               <Route path="/fleet" element={<Navigate to="/vehicles" replace />} />
               <Route path="/settings/users" element={<Navigate to="/settings" replace />} />
             </Route>

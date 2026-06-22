@@ -199,6 +199,104 @@ export async function getTaskAlerts(db: PrismaClient) {
   });
 }
 
+// Migration : lie les Maintenance existants aux tâches et met à jour les cumuls.
+// Sûr à ré-exécuter (idempotent via upsert + updateMany with maintenanceTaskId=null).
+export async function migrateMaintenanceTasks(db: PrismaClient): Promise<{
+  vehicles: number;
+  tasksUpdated: number;
+}> {
+  const vehicles = await db.vehicle.findMany({ select: { id: true } });
+  let tasksUpdated = 0;
+
+  for (const vehicle of vehicles) {
+    // ── Révision (alias: vidange) ──────────────────────────────────────────────
+    const revHistory = await db.maintenance.findMany({
+      where: { vehicleId: vehicle.id, type: { in: ['revision', 'vidange'] } },
+      orderBy: { performedAt: 'desc' },
+    });
+
+    if (revHistory.length > 0) {
+      const task = await db.maintenanceTask.findUnique({
+        where: { vehicleId_type: { vehicleId: vehicle.id, type: 'revision' } },
+        select: { id: true, intervalKm: true, intervalMonths: true },
+      });
+
+      if (task) {
+        const latest = revHistory[0];
+        const totalCost = revHistory.reduce((s, m) => s + (m.cost ?? 0), 0);
+        const intervalKm = task.intervalKm ?? 15000;
+        const intervalMonths = task.intervalMonths ?? 12;
+        const nextDueDate = latest.nextServiceDate ?? addMonths(latest.performedAt, intervalMonths);
+        const nextDueMileage = latest.nextServiceMileage ?? (latest.mileageAtService + intervalKm);
+
+        await db.maintenanceTask.update({
+          where: { id: task.id },
+          data: {
+            lastPerformedAt: latest.performedAt,
+            lastMileage: latest.mileageAtService,
+            lastCost: latest.cost,
+            lastProvider: latest.provider,
+            lastNotes: latest.notes,
+            nextDueDate,
+            nextDueMileage,
+            totalCost,
+            occurrenceCount: revHistory.length,
+          },
+        });
+
+        await db.maintenance.updateMany({
+          where: { vehicleId: vehicle.id, type: { in: ['revision', 'vidange'] }, maintenanceTaskId: null },
+          data: { maintenanceTaskId: task.id },
+        });
+
+        tasksUpdated++;
+      }
+    }
+
+    // ── CT ─────────────────────────────────────────────────────────────────────
+    const ctHistory = await db.maintenance.findMany({
+      where: { vehicleId: vehicle.id, type: 'ct' },
+      orderBy: { performedAt: 'desc' },
+    });
+
+    if (ctHistory.length > 0) {
+      const task = await db.maintenanceTask.findUnique({
+        where: { vehicleId_type: { vehicleId: vehicle.id, type: 'ct' } },
+        select: { id: true },
+      });
+
+      if (task) {
+        const latest = ctHistory[0];
+        const totalCost = ctHistory.reduce((s, m) => s + (m.cost ?? 0), 0);
+
+        await db.maintenanceTask.update({
+          where: { id: task.id },
+          data: {
+            lastPerformedAt: latest.performedAt,
+            lastMileage: latest.mileageAtService,
+            lastCost: latest.cost,
+            lastProvider: latest.provider,
+            lastNotes: latest.notes,
+            nextDueDate: latest.nextServiceDate,
+            totalCost,
+            occurrenceCount: ctHistory.length,
+          },
+        });
+
+        await db.maintenance.updateMany({
+          where: { vehicleId: vehicle.id, type: 'ct', maintenanceTaskId: null },
+          data: { maintenanceTaskId: task.id },
+        });
+
+        tasksUpdated++;
+      }
+    }
+  }
+
+  console.log(`[migrateMaintenanceTasks] ${vehicles.length} véhicules traités, ${tasksUpdated} tâches mises à jour`);
+  return { vehicles: vehicles.length, tasksUpdated };
+}
+
 export type MaintenanceInput = {
   vehicleId: string;
   type: string;

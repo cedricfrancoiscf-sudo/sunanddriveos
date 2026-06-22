@@ -21,12 +21,34 @@ export default defineConfig({
       testMatch: '**/helpers/setup.ts',
     },
     {
+      name: 'superadmin-setup',
+      testMatch: '**/helpers/superadmin-setup.ts',
+      use: {
+        ...devices['Desktop Chrome'],
+        // Start from user storageState so auth_token is already present;
+        // superadmin-setup then injects superadmin_token on top.
+        storageState: 'tests/e2e/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+    {
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
         storageState: 'tests/e2e/.auth/user.json',
       },
       dependencies: ['setup'],
-    }
-  ]
+      // Exclude files that belong to the dedicated superadmin project
+      testIgnore: ['**/33-superadmin-stripe.spec.ts'],
+    },
+    {
+      name: 'superadmin',
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: 'tests/e2e/.auth/superadmin.json',
+      },
+      dependencies: ['superadmin-setup'],
+      testMatch: ['**/33-superadmin-stripe.spec.ts'],
+    },
+  ],
 })

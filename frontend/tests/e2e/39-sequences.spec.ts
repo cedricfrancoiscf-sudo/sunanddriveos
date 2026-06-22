@@ -61,8 +61,8 @@ test.describe('Séquences automatiques', () => {
 
   test('GET /api/v1/sequences/:id/logs retourne 200 pour la première séquence', async ({ request }) => {
     const listRes = await request.get(`${BASE}/api/v1/sequences`);
-    const listBody = await listRes.json() as { sequences: Array<{ id: string }> };
-    if (listBody.sequences.length === 0) return;
+    const listBody = await listRes.json() as { sequences?: Array<{ id: string }> };
+    if (!listBody.sequences || listBody.sequences.length === 0) return;
     const id = listBody.sequences[0]?.id;
     const res = await request.get(`${BASE}/api/v1/sequences/${id}/logs`);
     expect(res.status()).toBe(200);

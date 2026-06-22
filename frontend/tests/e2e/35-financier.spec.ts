@@ -37,7 +37,8 @@ test('35-03 Export page — onglet Autres exports visible', async ({ page }) => 
 
   await page.getByTestId('tab-export-other').click();
   await expect(page.locator('text=Locations détaillées')).toBeVisible();
-  await expect(page.locator('text=Flotte')).toBeVisible();
+  // Scoped to main to avoid matching the "Flotte" sidebar link
+  await expect(page.locator('main').getByText('Flotte').first()).toBeVisible();
 });
 
 test('35-04 Rentabilité — onglets Sinistres et Simulateur visibles', async ({ page }) => {

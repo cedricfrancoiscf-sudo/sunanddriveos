@@ -1,22 +1,21 @@
 import { test, expect } from '@playwright/test';
+import { getSuperadminToken } from './helpers/auth';
 
 const BASE_URL = 'https://appli.sunanddrive.com';
 const SA_URL = 'https://appli.sunanddrive.com/superadmin';
 const API_URL = 'https://appli.sunanddrive.com/api/v1';
 
-const SA_EMAIL = 'superadmin@sunanddrive.fr';
-const SA_PASSWORD = 'superadmin-password';
-
+// Uses storageState from superadmin project (superadmin.json) which already has superadmin_token.
+// This helper re-injects the token for tests that navigate away or need a fresh context.
 async function loginSuperAdmin(page: import('@playwright/test').Page) {
-  await page.goto(`${SA_URL}/login`);
-  await page.fill('input[type="email"]', SA_EMAIL);
-  await page.fill('input[type="password"]', SA_PASSWORD);
-  await page.click('button[type="submit"]');
-  // SPA — pas de navigation complète, on attend l'apparition de l'interface superadmin
-  await page.waitForTimeout(2000);
-  await page.locator('text=Sociétés').waitFor({ timeout: 8_000 }).catch(() => {});
+  const token = await getSuperadminToken();
+  await page.goto(SA_URL);
+  await page.evaluate((t: string) => { localStorage.setItem('superadmin_token', t); }, token);
+  await page.reload();
+  await page.waitForTimeout(1000);
   await page.keyboard.press('Escape').catch(() => {});
 }
+
 
 // ─── 1. Page /billing charge avec plan actuel visible ─────────────────────────
 

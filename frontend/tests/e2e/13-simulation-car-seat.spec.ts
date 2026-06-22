@@ -20,7 +20,7 @@ test('Simulation — Flux siège auto complet', async ({ page }) => {
 
   const testMsg = page.locator('main').getByText('Test Locataire')
   if (await testMsg.isVisible({ timeout: 5000 })) {
-    await testMsg.first().click()
+    await testMsg.last().click()
     await page.waitForTimeout(1000)
     const textarea = page.locator('textarea')
     if (await textarea.isVisible()) {

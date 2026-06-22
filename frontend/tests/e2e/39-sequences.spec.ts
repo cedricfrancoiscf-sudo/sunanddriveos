@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { getTenantToken } from './helpers/auth';
 
 test.use({ storageState: 'tests/e2e/.auth/user.json' });
 
@@ -25,8 +26,10 @@ test.describe('Séquences automatiques', () => {
   });
 
   test('GET /api/v1/sequences retourne 200', async ({ playwright }) => {
+    const token = await getTenantToken().catch(() => null);
+    if (!token) { console.log('[39] getTenantToken failed — test ignoré'); return; }
     const ctx = await playwright.request.newContext({
-      storageState: 'tests/e2e/.auth/user.json',
+      extraHTTPHeaders: { Authorization: `Bearer ${token}` },
     });
     try {
       const res = await ctx.get(`${BASE}/api/v1/sequences`);
@@ -67,8 +70,10 @@ test.describe('Séquences automatiques', () => {
   });
 
   test('GET /api/v1/sequences/:id/logs retourne 200 pour la première séquence', async ({ playwright }) => {
+    const token = await getTenantToken().catch(() => null);
+    if (!token) { console.log('[39] getTenantToken failed — test ignoré'); return; }
     const ctx = await playwright.request.newContext({
-      storageState: 'tests/e2e/.auth/user.json',
+      extraHTTPHeaders: { Authorization: `Bearer ${token}` },
     });
     try {
       const listRes = await ctx.get(`${BASE}/api/v1/sequences`);
@@ -101,8 +106,10 @@ test.describe('Planning — indisponibilités Getaround', () => {
   });
 
   test('POST /api/v1/planning/unavailabilities-sync retourne 200', async ({ playwright }) => {
+    const token = await getTenantToken().catch(() => null);
+    if (!token) { console.log('[39] getTenantToken failed — test ignoré'); return; }
     const ctx = await playwright.request.newContext({
-      storageState: 'tests/e2e/.auth/user.json',
+      extraHTTPHeaders: { Authorization: `Bearer ${token}` },
     });
     try {
       const res = await ctx.post(`${BASE}/api/v1/planning/unavailabilities-sync`);

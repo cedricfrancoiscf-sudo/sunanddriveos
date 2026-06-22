@@ -21,6 +21,19 @@ export async function getSuperadminToken(): Promise<string> {
   return data.token
 }
 
+// JWT tenant via API — nécessaire car user.json stocke le token en localStorage
+// (pas en cookie), donc playwright.request.newContext({ storageState }) ne le transmet pas.
+export async function getTenantToken(): Promise<string> {
+  const res = await fetch(`${API_URL}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: TEST_EMAIL, password: TEST_PASSWORD, slug: TENANT_SLUG }),
+  })
+  const data = await res.json() as { token?: string }
+  if (!data.token) throw new Error(`Tenant login failed: ${JSON.stringify(data)}`)
+  return data.token
+}
+
 export async function login(page: Page) {
   await page.goto('/login')
   await page.fill('input[type="email"]', TEST_EMAIL)

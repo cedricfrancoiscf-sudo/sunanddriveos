@@ -9,14 +9,14 @@ import { sendEmail } from '../../utils/mailer';
 
 const router: Router = Router();
 
-// Réécrit les URLs localhost stockées en base vers le domaine public
-function normalizeLogoUrl(url: string | null | undefined, req: Request): string | null {
+// Réécrit les URLs locales (localhost, 127.x, 192.168.x, 10.x, IP NAS) vers PUBLIC_URL
+const PRIVATE_HOST_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?/;
+
+function normalizeLogoUrl(url: string | null | undefined, _req: Request): string | null {
   if (!url) return null;
-  if (!url.includes('localhost') && !url.includes('127.0.0.1')) return url;
-  const publicBase = process.env.BACKEND_URL
-    ? process.env.BACKEND_URL.replace(/\/api\/v1\/?$/, '')
-    : `${req.protocol}://${req.get('host')}`;
-  return url.replace(/https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/, publicBase);
+  if (!PRIVATE_HOST_RE.test(url)) return url;
+  const publicBase = (process.env.PUBLIC_URL ?? process.env.FRONTEND_URL ?? 'https://appli.sunanddrive.com').replace(/\/$/, '');
+  return url.replace(PRIVATE_HOST_RE, publicBase);
 }
 
 const loginSchema = z.object({

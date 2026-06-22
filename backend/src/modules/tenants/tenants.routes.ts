@@ -1275,5 +1275,30 @@ router.post('/tenants/:slug/cleanup-test-data', async (req: Request, res: Respon
   } catch (err: unknown) { next(err); }
 });
 
+// POST /api/v1/superadmin/tenants/:slug/fix-logo-url
+// Corrige l'URL du logo stockée en base (ex: http://192.168.1.x → PUBLIC_URL)
+router.post('/tenants/:slug/fix-logo-url', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { slug } = req.params as { slug: string };
+    const publicBase = (process.env.PUBLIC_URL ?? process.env.FRONTEND_URL ?? 'https://appli.sunanddrive.com').replace(/\/$/, '');
+
+    const master = getMasterClient();
+    const company = await master.company.findUnique({ where: { slug }, select: { tenantDbUrl: true } });
+    if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
+
+    const db = getTenantClient(company.tenantDbUrl);
+    const settings = await db.companySettings.findFirst({ select: { id: true, logoUrl: true } });
+    if (!settings?.logoUrl) { res.json({ fixed: false, reason: 'Aucun logo en base' }); return; }
+
+    // Réécrit n'importe quel host local / IP privée vers PUBLIC_URL
+    const fixed = settings.logoUrl.replace(/https?:\/\/(?:localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?/, publicBase);
+
+    if (fixed === settings.logoUrl) { res.json({ fixed: false, reason: 'URL déjà publique', logoUrl: settings.logoUrl }); return; }
+
+    await db.companySettings.update({ where: { id: settings.id }, data: { logoUrl: fixed } });
+    res.json({ fixed: true, before: settings.logoUrl, after: fixed });
+  } catch (err: unknown) { next(err); }
+});
+
 export default router;
 

@@ -9,15 +9,22 @@ import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { sendAlertEmail } from '../../utils/mailer';
 
-const LOGO_DIR = process.env.UPLOAD_PATH ? path.join(process.env.UPLOAD_PATH, 'logos') : path.join(process.cwd(), 'uploads', 'logos');
+const UPLOAD_ROOT = process.env.UPLOAD_PATH ?? path.join(process.cwd(), 'uploads');
+
+// Multer en mémoire — on détermine le chemin final après avoir connu le slug
 const logoUpload = multer({
-  dest: LOGO_DIR,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (['image/png', 'image/jpeg', 'image/svg+xml'].includes(file.mimetype)) cb(null, true);
     else cb(new Error('Format non supporté (PNG, JPG, SVG uniquement)'));
   },
 });
+
+function publicUrl(urlPath: string): string {
+  const base = (process.env.PUBLIC_URL ?? process.env.FRONTEND_URL ?? 'https://appli.sunanddrive.com').replace(/\/$/, '');
+  return `${base}${urlPath}`;
+}
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -97,20 +104,19 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
 
 // POST /api/v1/settings/logo — upload logo (multipart/form-data)
 router.post('/logo', requireRole('admin'), (req: Request, res: Response, next: NextFunction) => {
-  fs.mkdirSync(LOGO_DIR, { recursive: true });
   logoUpload.single('logo')(req, res, async (err) => {
     if (err) { res.status(400).json({ error: err.message }); return; }
     if (!req.file) { res.status(400).json({ error: 'Fichier manquant' }); return; }
     try {
+      const slug = req.auth!.tenantSlug!;
       const ext = req.file.mimetype === 'image/svg+xml' ? 'svg' : req.file.mimetype === 'image/png' ? 'png' : 'jpg';
-      const filename = `${randomUUID()}.${ext}`;
-      const destPath = path.join(LOGO_DIR, filename);
-      fs.renameSync(req.file.path, destPath);
-      // Priorité : BACKEND_URL > host de la requête (évite les URLs localhost en prod)
-      const baseUrl = process.env.BACKEND_URL
-        ? process.env.BACKEND_URL.replace(/\/api\/v1\/?$/, '')
-        : `${req.protocol}://${req.get('host')}`;
-      const logoUrl = `${baseUrl}/uploads/logos/${filename}`;
+      // Fichier canonique par tenant — un seul logo, pas de prolifération UUID
+      const filename = `logo.${ext}`;
+      const tenantDir = path.join(UPLOAD_ROOT, 'tenants', slug);
+      fs.mkdirSync(tenantDir, { recursive: true });
+      fs.writeFileSync(path.join(tenantDir, filename), req.file.buffer);
+
+      const logoUrl = publicUrl(`/uploads/tenants/${slug}/${filename}`);
 
       const db = getTenantClient(req.tenantDbUrl!);
       let settings = await db.companySettings.findFirst();

@@ -78,25 +78,23 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const tenantClient = getTenantClient(req.tenantDbUrl!);
-      const user = await tenantClient.user.findUnique({
-        where: { id: req.auth!.userId! },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          roles: true,
-          lastLoginAt: true,
-          createdAt: true,
-        },
-      });
+      const [user, settings] = await Promise.all([
+        tenantClient.user.findUnique({
+          where: { id: req.auth!.userId! },
+          select: { id: true, name: true, email: true, role: true, roles: true, lastLoginAt: true, createdAt: true },
+        }),
+        tenantClient.companySettings.findFirst({ select: { logoUrl: true } }),
+      ]);
 
       if (!user) {
         res.status(404).json({ error: 'Utilisateur introuvable' });
         return;
       }
 
-      res.json({ user, tenantSlug: req.auth!.tenantSlug });
+      res.json({
+        user: { ...user, logoUrl: settings?.logoUrl ?? null },
+        tenantSlug: req.auth!.tenantSlug,
+      });
     } catch (err: unknown) {
       next(err);
     }

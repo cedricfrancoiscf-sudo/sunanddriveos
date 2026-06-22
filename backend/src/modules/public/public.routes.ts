@@ -41,4 +41,29 @@ router.get('/vehicles/:licensePlate', async (req: Request, res: Response, next: 
   } catch (err: unknown) { next(err); }
 });
 
+// GET /public/brand?slug=sun-and-drive — branding public pour la page de connexion
+router.get('/brand', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const slug = typeof req.query.slug === 'string' ? req.query.slug : 'sun-and-drive';
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { slug },
+      select: { tenantDbUrl: true, name: true, isActive: true },
+    });
+    if (!company || !company.isActive) {
+      res.json({ logoUrl: null, companyName: null });
+      return;
+    }
+    const db = getTenantClient(company.tenantDbUrl);
+    const settings = await db.companySettings.findFirst({
+      select: { logoUrl: true, primaryColor: true },
+    });
+    res.json({
+      logoUrl: settings?.logoUrl ?? null,
+      companyName: company.name ?? null,
+      primaryColor: settings?.primaryColor ?? '#01696e',
+    });
+  } catch (err: unknown) { next(err); }
+});
+
 export default router;

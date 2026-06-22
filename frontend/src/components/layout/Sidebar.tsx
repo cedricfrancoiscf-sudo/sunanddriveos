@@ -144,10 +144,18 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
     <div className="flex h-full flex-col bg-white">
       {/* Logo */}
       <div className={`flex h-16 shrink-0 items-center border-b border-gray-100 ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: PRIMARY }}>
-          <span className="text-sm font-bold text-white">S</span>
-        </div>
-        {!collapsed && <span className="font-semibold text-gray-900 truncate flex-1">SunanddriveOS</span>}
+        {user?.logoUrl ? (
+          <img
+            src={user.logoUrl}
+            alt="Logo"
+            className={`shrink-0 object-contain ${collapsed ? 'h-8 w-8' : 'h-10 max-w-[130px]'}`}
+          />
+        ) : (
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: PRIMARY }}>
+            <span className="text-sm font-bold text-white">S</span>
+          </div>
+        )}
+        {!collapsed && !user?.logoUrl && <span className="font-semibold text-gray-900 truncate flex-1">SunanddriveOS</span>}
         {onToggleCollapse && (
           <button type="button" onClick={onToggleCollapse} title={collapsed ? 'Agrandir la sidebar' : 'Réduire la sidebar'}
             className={`rounded-md p-1 text-gray-400 hover:text-gray-600 hidden lg:block ${collapsed ? '' : 'ml-auto'}`}>

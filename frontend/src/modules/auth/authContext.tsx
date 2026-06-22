@@ -11,6 +11,7 @@ export interface AuthUser {
   plan?: string;
   trialEndsAt?: string | null;
   hasActiveSubscription?: boolean;
+  logoUrl?: string | null;
 }
 
 interface AuthState {

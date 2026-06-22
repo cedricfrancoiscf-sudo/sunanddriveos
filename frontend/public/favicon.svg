@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="7" fill="#01696e"/>
+  <!-- Carrosserie -->
+  <path d="M5 20h22v2a1 1 0 01-1 1H6a1 1 0 01-1-1v-2z" fill="white"/>
+  <path d="M6 20l2.5-5h15l2.5 5H6z" fill="white"/>
+  <!-- Toit -->
+  <path d="M10 15l2-4h8l2 4H10z" fill="white" opacity="0.85"/>
+  <!-- Vitre -->
+  <path d="M11.5 15l1.5-3h7l1.5 3H11.5z" fill="#01696e"/>
+  <!-- Roues -->
+  <circle cx="10" cy="22" r="2.5" fill="#01696e" stroke="white" stroke-width="1.2"/>
+  <circle cx="22" cy="22" r="2.5" fill="#01696e" stroke="white" stroke-width="1.2"/>
+  <!-- Phare avant -->
+  <rect x="24" y="18.5" width="2" height="1.2" rx="0.6" fill="#fbbf24"/>
+  <!-- Feu arrière -->
+  <rect x="6" y="18.5" width="1.5" height="1.2" rx="0.6" fill="#fca5a5"/>
+</svg>

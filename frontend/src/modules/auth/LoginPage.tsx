@@ -1,7 +1,19 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
+
+const SLUG = 'sun-and-drive';
+const API_BASE = import.meta.env.VITE_API_URL as string | undefined ?? '';
+
+interface BrandData { logoUrl: string | null; companyName: string | null; primaryColor: string }
+
+async function fetchBrand(): Promise<BrandData> {
+  const res = await fetch(`${API_BASE}/public/brand?slug=${SLUG}`);
+  if (!res.ok) return { logoUrl: null, companyName: null, primaryColor: '#01696e' };
+  return res.json() as Promise<BrandData>;
+}
 
 interface LocationState {
   from?: { pathname: string };
@@ -12,6 +24,13 @@ export default function LoginPage(): React.JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as LocationState)?.from?.pathname ?? '/dashboard';
+
+  const { data: brand } = useQuery<BrandData>({
+    queryKey: ['public-brand', SLUG],
+    queryFn: fetchBrand,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -38,13 +57,21 @@ export default function LoginPage(): React.JSX.Element {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="mb-8 text-center">
-          <div
-            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl shadow-md"
-            style={{ backgroundColor: '#01696e' }}
-          >
-            <span className="text-2xl font-bold text-white">S</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">SunanddriveOS</h1>
+          {brand?.logoUrl ? (
+            <img
+              src={brand.logoUrl}
+              alt={brand.companyName ?? 'Logo'}
+              className="mx-auto mb-4 h-16 max-w-[180px] object-contain"
+            />
+          ) : (
+            <div
+              className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl shadow-md"
+              style={{ backgroundColor: brand?.primaryColor ?? '#01696e' }}
+            >
+              <span className="text-2xl font-bold text-white">S</span>
+            </div>
+          )}
+          <h1 className="text-2xl font-bold text-gray-900">{brand?.companyName ?? 'SunanddriveOS'}</h1>
           <p className="mt-1 text-sm text-gray-500">Sun and Drive — La liberté à quatre roues</p>
         </div>
 

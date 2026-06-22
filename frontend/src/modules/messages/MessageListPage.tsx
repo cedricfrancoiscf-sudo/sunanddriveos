@@ -213,6 +213,7 @@ export default function MessageListPage(): React.JSX.Element {
             <button
               key={conv.rentalId}
               type="button"
+              data-rental-id={conv.rentalId}
               onClick={() => navigate(`/messages/${conv.lastMessage.id}?rentalId=${conv.rentalId}`)}
               className={`w-full flex items-start gap-3 px-4 py-4 text-left hover:bg-gray-50 transition-colors ${idx > 0 ? 'border-t border-gray-100' : ''}`}
             >

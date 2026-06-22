@@ -17,27 +17,27 @@ async function loginSuperAdmin(page: import('@playwright/test').Page) {
 }
 
 
-// ─── 1. Page /billing charge avec plan actuel visible ─────────────────────────
+// ─── 1 & 2. Page /billing — tests tenant (admin@sunanddrive.fr) ───────────────
+// Ces tests visitent /billing du TENANT, pas du SuperAdmin.
+// Ils doivent tourner avec le storageState tenant (user.json), pas superadmin.
+test.describe('Billing — page tenant', () => {
+  test.use({ storageState: 'tests/e2e/.auth/user.json' });
 
-test('page /billing charge avec plan actuel visible', async ({ page }) => {
-  // Use admin session stored in auth file
-  await page.goto(`${BASE_URL}/billing`);
-  await page.waitForLoadState('networkidle');
+  test('page /billing charge avec plan actuel visible', async ({ page }) => {
+    await page.goto(`${BASE_URL}/billing`);
+    await page.waitForLoadState('networkidle');
 
-  // Should show billing page with plan info
-  const heading = page.getByText(/Abonnement|Facturation/i);
-  await expect(heading.first()).toBeVisible({ timeout: 10_000 });
-});
+    const heading = page.getByText(/Abonnement|Facturation/i);
+    await expect(heading.first()).toBeVisible({ timeout: 10_000 });
+  });
 
-// ─── 2. Bouton "Gérer mon abonnement" présent ─────────────────────────────────
+  test('bouton "Gérer mon abonnement" présent ou bouton Changer de plan', async ({ page }) => {
+    await page.goto(`${BASE_URL}/billing`);
+    await page.waitForLoadState('networkidle');
 
-test('bouton "Gérer mon abonnement" présent ou bouton Changer de plan', async ({ page }) => {
-  await page.goto(`${BASE_URL}/billing`);
-  await page.waitForLoadState('networkidle');
-
-  // Either portal button or "Changer de plan" should be visible
-  const manageBtn = page.getByRole('button', { name: /Gérer mon abonnement|Changer de plan/i });
-  await expect(manageBtn.first()).toBeVisible({ timeout: 10_000 });
+    const manageBtn = page.getByRole('button', { name: /Gérer mon abonnement|Changer de plan/i });
+    await expect(manageBtn.first()).toBeVisible({ timeout: 10_000 });
+  });
 });
 
 // ─── 3. Endpoint GET /api/v1/billing/status répond 200 ───────────────────────

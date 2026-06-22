@@ -24,11 +24,18 @@ test.describe('Séquences automatiques', () => {
     await expect(input).toHaveValue('90');
   });
 
-  test('GET /api/v1/sequences retourne 200', async ({ request }) => {
-    const res = await request.get(`${BASE}/api/v1/sequences`);
-    expect(res.status()).toBe(200);
-    const body = await res.json() as { sequences: unknown[] };
-    expect(Array.isArray(body.sequences)).toBe(true);
+  test('GET /api/v1/sequences retourne 200', async ({ playwright }) => {
+    const ctx = await playwright.request.newContext({
+      storageState: 'tests/e2e/.auth/user.json',
+    });
+    try {
+      const res = await ctx.get(`${BASE}/api/v1/sequences`);
+      expect(res.status()).toBe(200);
+      const body = await res.json() as { sequences: unknown[] };
+      expect(Array.isArray(body.sequences)).toBe(true);
+    } finally {
+      await ctx.dispose();
+    }
   });
 
   test('bouton Historique présent sur la première séquence', async ({ page }) => {
@@ -59,15 +66,22 @@ test.describe('Séquences automatiques', () => {
     await expect(page.locator('text=Simulation uniquement')).toBeVisible();
   });
 
-  test('GET /api/v1/sequences/:id/logs retourne 200 pour la première séquence', async ({ request }) => {
-    const listRes = await request.get(`${BASE}/api/v1/sequences`);
-    const listBody = await listRes.json() as { sequences?: Array<{ id: string }> };
-    if (!listBody.sequences || listBody.sequences.length === 0) return;
-    const id = listBody.sequences[0]?.id;
-    const res = await request.get(`${BASE}/api/v1/sequences/${id}/logs`);
-    expect(res.status()).toBe(200);
-    const body = await res.json() as { logs: unknown[] };
-    expect(Array.isArray(body.logs)).toBe(true);
+  test('GET /api/v1/sequences/:id/logs retourne 200 pour la première séquence', async ({ playwright }) => {
+    const ctx = await playwright.request.newContext({
+      storageState: 'tests/e2e/.auth/user.json',
+    });
+    try {
+      const listRes = await ctx.get(`${BASE}/api/v1/sequences`);
+      const listBody = await listRes.json() as { sequences?: Array<{ id: string }> };
+      if (!listBody.sequences || listBody.sequences.length === 0) return;
+      const id = listBody.sequences[0]?.id;
+      const res = await ctx.get(`${BASE}/api/v1/sequences/${id}/logs`);
+      expect(res.status()).toBe(200);
+      const body = await res.json() as { logs: unknown[] };
+      expect(Array.isArray(body.logs)).toBe(true);
+    } finally {
+      await ctx.dispose();
+    }
   });
 });
 
@@ -86,8 +100,15 @@ test.describe('Planning — indisponibilités Getaround', () => {
     await expect(toggle).toBeVisible();
   });
 
-  test('POST /api/v1/planning/unavailabilities-sync retourne 200', async ({ request }) => {
-    const res = await request.post(`${BASE}/api/v1/planning/unavailabilities-sync`);
-    expect([200, 500]).toContain(res.status()); // 500 si pas de compte GA configuré
+  test('POST /api/v1/planning/unavailabilities-sync retourne 200', async ({ playwright }) => {
+    const ctx = await playwright.request.newContext({
+      storageState: 'tests/e2e/.auth/user.json',
+    });
+    try {
+      const res = await ctx.post(`${BASE}/api/v1/planning/unavailabilities-sync`);
+      expect([200, 500]).toContain(res.status()); // 500 si pas de compte GA configuré
+    } finally {
+      await ctx.dispose();
+    }
   });
 });

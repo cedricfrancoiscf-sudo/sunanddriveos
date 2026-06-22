@@ -18,9 +18,11 @@ test('Simulation — Flux siège auto complet', async ({ page }) => {
   await page.waitForLoadState('domcontentloaded')
   await page.waitForTimeout(1000)
 
-  const testMsg = page.locator('main').getByText('Test Locataire')
-  if (await testMsg.isVisible({ timeout: 5000 })) {
-    await testMsg.last().click()
+  // Cibler la conversation par rentalId (attribut data-rental-id ajouté sur le bouton)
+  const conv = page.locator(`[data-rental-id="${rental.rentalId}"]`)
+  const convVisible = await conv.isVisible({ timeout: 5000 }).catch(() => false)
+  if (convVisible) {
+    await conv.click()
     await page.waitForTimeout(1000)
     const textarea = page.locator('textarea')
     if (await textarea.isVisible()) {

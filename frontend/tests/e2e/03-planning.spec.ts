@@ -17,8 +17,8 @@ test('Planning — Vue 14 jours', async ({ page }) => {
 })
 
 test('Planning — Vue Mois', async ({ page }) => {
-  await page.getByRole('button', { name: 'Mois' }).click()
-  await expect(page.getByRole('button', { name: 'Mois' })).toBeVisible()
+  await page.getByRole('button', { name: 'Mois', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Mois', exact: true })).toBeVisible()
 })
 
 test('Planning — Bouton Blocage ouvre modal', async ({ page }) => {

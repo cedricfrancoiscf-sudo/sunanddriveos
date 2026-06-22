@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../utils/api';
+import { useAuth } from '../../hooks/useAuth';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -23,7 +24,7 @@ interface CarSeat {
   carkeeperId: string | null;
 }
 interface CarkeeperUser { id: string; name: string; role: string; roles: string[]; }
-type Tab = 'accessories' | 'car-seats';
+type Tab = 'accessories' | 'car-seats' | 'marketplace';
 
 // ── Utilitaires ───────────────────────────────────────────────────────────
 
@@ -640,9 +641,60 @@ function StockBar({ seat }: { seat: CarSeat }): React.JSX.Element {
   );
 }
 
+// ── Marketplace tab ─────────────────────────────────────────────────────────
+
+function MarketplaceTab(): React.JSX.Element {
+  return (
+    <div className="py-8 text-center" data-testid="marketplace-content">
+      <div className="mx-auto max-w-sm">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-50 mx-auto">
+          <svg className="h-8 w-8 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17M17 13v4a2 2 0 11-4 0m4 0a2 2 0 11-4 0" />
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Marketplace accessoires</h2>
+        <p className="text-sm text-gray-500 mb-6">
+          Commandez des accessoires (housses, câbles de recharge, sièges bébé…) directement auprès de fournisseurs partenaires.
+        </p>
+        <div className="space-y-3 text-left">
+          {[
+            { name: 'Siège bébé isofix Groupe 0+', price: '89 €', category: 'Siège auto', badge: 'Populaire' },
+            { name: 'Câble recharge type 2 – 7m', price: '45 €', category: 'Électrique', badge: null },
+            { name: 'Housse de siège imperméable', price: '29 €', category: 'Protection', badge: 'Nouveau' },
+            { name: 'Kit nettoyage intérieur', price: '19 €', category: 'Entretien', badge: null },
+          ].map(item => (
+            <div key={item.name} className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4">
+              <div>
+                <p className="text-sm font-medium text-gray-900">{item.name}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-gray-400">{item.category}</span>
+                  {item.badge && <span className="rounded-full bg-[#01696e]/10 px-2 py-0.5 text-[10px] font-medium text-[#01696e]">{item.badge}</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold text-gray-900">{item.price}</span>
+                <button type="button"
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-white"
+                  style={{ backgroundColor: '#01696e' }}>
+                  Commander
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 text-[11px] text-gray-400">
+          Fonctionnalité en cours de déploiement — catalogue complet disponible prochainement
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Page container ─────────────────────────────────────────────────────────
 
 export default function AccessoriesPage(): React.JSX.Element {
+  const { user } = useAuth();
+  const isEnterprise = user?.plan === 'enterprise';
   const [activeTab, setActiveTab] = useState<Tab>('car-seats');
 
   const { data: carSeats = [] } = useQuery({
@@ -664,9 +716,12 @@ export default function AccessoriesPage(): React.JSX.Element {
           badge={outOfStockCount > 0 ? outOfStockCount : undefined}
         />
         <TabBtn label="Accessoires" active={activeTab === 'accessories'} onClick={() => setActiveTab('accessories')} testId="tab-accessoires" />
+        {isEnterprise && (
+          <TabBtn label="Marketplace" active={activeTab === 'marketplace'} onClick={() => setActiveTab('marketplace')} testId="tab-marketplace" />
+        )}
       </div>
 
-      {activeTab === 'accessories' ? <AccessoriesTab /> : <CarSeatsTab />}
+      {activeTab === 'accessories' ? <AccessoriesTab /> : activeTab === 'marketplace' ? <MarketplaceTab /> : <CarSeatsTab />}
     </div>
   );
 }

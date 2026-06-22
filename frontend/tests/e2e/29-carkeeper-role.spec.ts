@@ -6,7 +6,7 @@ const CARKEEPER_AUTH_FILE = 'tests/e2e/.auth/carkeeper.json'
 test.describe('Rôle Carkeeper — restrictions accès', () => {
   test.use({ storageState: CARKEEPER_AUTH_FILE })
   // seedTestData + loginAsCarkeeper peuvent dépasser 30 s (analyse IA + navigation UI)
-  test.setTimeout(90000)
+  test.setTimeout(120000)
 
   test.beforeAll(async ({ browser }) => {
     // Garantit l'existence du carkeeper (idempotent — seed crée l'user si absent)

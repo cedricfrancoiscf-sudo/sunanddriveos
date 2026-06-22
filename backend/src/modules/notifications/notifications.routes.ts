@@ -120,6 +120,28 @@ router.delete('/all', async (req: Request, res: Response, next: NextFunction) =>
   } catch (err: unknown) { next(err); }
 });
 
+// POST /api/v1/notifications/slack/test — envoie un message test au webhook Slack configuré
+router.post('/slack/test', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const settings = await db.companySettings.findFirst({ select: { slackWebhookUrl: true } });
+    if (!settings?.slackWebhookUrl) {
+      res.json({ sent: false, reason: 'Webhook Slack non configuré dans les Paramètres' });
+      return;
+    }
+    const response = await fetch(settings.slackWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '🚗 *SunanddriveOS* — Message test Slack ✓\nVotre intégration Slack est bien configurée.' }),
+    });
+    if (!response.ok) {
+      res.json({ sent: false, reason: `Erreur Slack HTTP ${response.status}` });
+      return;
+    }
+    res.json({ sent: true });
+  } catch (err: unknown) { next(err); }
+});
+
 // DELETE /api/v1/notifications/:id
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -228,6 +228,52 @@ router.get('/accounting', async (req: Request, res: Response, next: NextFunction
   } catch (err: unknown) { next(err); }
 });
 
+// GET /api/v1/exports/monthly-report — rapport mensuel JSON (CA, top/flop véhicules, alertes)
+router.get('/monthly-report', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const to = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+    const [rentals, vehicles] = await Promise.all([
+      db.rental.findMany({
+        where: { startAt: { gte: from, lte: to }, status: { in: ['active', 'completed'] } },
+        include: { vehicle: { select: { id: true, make: true, model: true, licensePlate: true } } },
+      }),
+      db.vehicle.findMany({ where: { isActive: true }, select: { id: true, make: true, model: true, licensePlate: true } }),
+    ]);
+
+    const totalRevenue = rentals.reduce((s: number, r) => s + (r.ownerPayout ?? 0), 0);
+    const grossRevenue = rentals.reduce((s: number, r) => s + (r.grossRevenue ?? 0), 0);
+
+    type VehicleRow = { vehicleId: string; name: string; plate: string; revenue: number; count: number };
+    const byVehicle = new Map<string, VehicleRow>();
+    for (const r of rentals) {
+      const key = r.vehicleId;
+      const e: VehicleRow = byVehicle.get(key) ?? { vehicleId: key, name: `${r.vehicle.make} ${r.vehicle.model}`, plate: r.vehicle.licensePlate, revenue: 0, count: 0 };
+      e.revenue += r.ownerPayout ?? 0;
+      e.count += 1;
+      byVehicle.set(key, e);
+    }
+
+    const sorted = [...byVehicle.values()].sort((a, b) => b.revenue - a.revenue);
+
+    res.json({
+      month: from.toISOString().slice(0, 7),
+      generatedAt: now.toISOString(),
+      summary: {
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        grossRevenue: Math.round(grossRevenue * 100) / 100,
+        rentalCount: rentals.length,
+        vehicleCount: vehicles.length,
+      },
+      topVehicles: sorted.slice(0, 3),
+      flopVehicles: sorted.slice(-3).reverse(),
+    });
+  } catch (err: unknown) { next(err); }
+});
+
 // GET /api/v1/exports/vehicles
 router.get('/vehicles', async (req: Request, res: Response, next: NextFunction) => {
   try {

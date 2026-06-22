@@ -77,6 +77,7 @@ import intelligenceRoutes from './modules/intelligence/intelligence.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
 import rentersRoutes from './modules/renters/renters.routes';
 import publicRoutes from './modules/public/public.routes';
+import oauthRoutes from './modules/oauth/oauth.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -182,6 +183,8 @@ export function createApp(): Express {
   app.use('/api/v1/intelligence', intelligenceRoutes);
   app.use('/api/v1/dashboard', dashboardRoutes);
   app.use('/api/v1/renters', rentersRoutes);
+  // OAuth2 — token endpoint + public API authentifiée par token OAuth
+  app.use('/api/v1/oauth', oauthRoutes);
   // Routes publiques — pas de JWT requis
   app.use('/ical', icalRoutes);
   app.use('/public', publicRoutes);

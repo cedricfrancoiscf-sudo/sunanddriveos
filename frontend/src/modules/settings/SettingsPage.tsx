@@ -462,6 +462,7 @@ interface CompanySettings {
   riskWeightFlags: number;
   riskWeightCancelled: number;
   riskWeightDelay: number;
+  slackWebhookUrl: string | null;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -961,6 +962,94 @@ function TelegramSection(): React.JSX.Element {
       {saved && <p className="mt-1 text-xs text-green-600">Chat ID sauvegardé ✓</p>}
       <p className="mt-1.5 text-[11px] text-gray-400">
         Pour obtenir votre Chat ID : créez un bot avec @BotFather, ajoutez-le au groupe, puis envoyez un message et vérifiez <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>
+      </p>
+    </div>
+  );
+}
+
+// ─── Slack ────────────────────────────────────────────────────────────────────
+
+function SlackSection(): React.JSX.Element {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const plan = user?.plan ?? 'starter';
+  const isEnterprise = plan === 'enterprise';
+
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [testResult, setTestResult] = useState<{ sent: boolean; reason?: string } | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<{ settings: CompanySettings }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
+  });
+
+  useEffect(() => {
+    if (settings?.slackWebhookUrl) setWebhookUrl(settings.slackWebhookUrl);
+  }, [settings]);
+
+  const saveMutation = useMutation({
+    mutationFn: (url: string) => api.put('/settings', { slackWebhookUrl: url || null }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () => api.post<{ sent: boolean; reason?: string }>('/notifications/slack/test', {}).then(r => r.data),
+    onSuccess: (data) => { setTestResult(data); setTimeout(() => setTestResult(null), 4000); },
+  });
+
+  if (!isEnterprise) return (
+    <div className="border-t border-gray-100 pt-4">
+      <div className="flex items-start gap-3">
+        <div>
+          <p className="text-sm font-medium text-gray-900">Slack</p>
+          <p className="text-xs text-gray-400 mt-0.5">Notifications dans votre espace Slack — disponible avec le plan Enterprise</p>
+        </div>
+        <span className="ml-auto rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">Enterprise</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="border-t border-gray-100 pt-4" data-testid="slack-section">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-gray-900">Slack</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Recevez les alertes critiques dans votre workspace Slack via un Incoming Webhook
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
+          placeholder="https://hooks.slack.com/services/T.../B.../..."
+          data-testid="input-slack-webhook"
+          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono outline-none focus:border-[#01696e]" />
+        <button type="button" disabled={saveMutation.isPending}
+          onClick={() => saveMutation.mutate(webhookUrl)}
+          className="rounded-xl px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+          style={{ backgroundColor: '#01696e' }}>
+          {saveMutation.isPending ? '...' : 'Sauvegarder'}
+        </button>
+        <button type="button" disabled={testMutation.isPending || !webhookUrl}
+          onClick={() => testMutation.mutate()}
+          className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">
+          {testMutation.isPending ? 'Envoi...' : 'Tester'}
+        </button>
+      </div>
+      {saved && <p className="mt-1 text-xs text-green-600">Webhook Slack sauvegardé ✓</p>}
+      {testResult && (
+        <p className={`mt-1 text-xs ${testResult.sent ? 'text-green-600' : 'text-red-600'}`}>
+          {testResult.sent ? 'Message Slack envoyé ✓' : `Erreur : ${testResult.reason ?? 'webhook non configuré'}`}
+        </p>
+      )}
+      <p className="mt-1.5 text-[11px] text-gray-400">
+        Créez un Incoming Webhook dans votre espace Slack : <em>Mon espace → Apps → Incoming Webhooks</em>
       </p>
     </div>
   );
@@ -1855,6 +1944,9 @@ export default function SettingsPage(): React.JSX.Element {
 
           {/* Alertes email */}
           <AlertEmailsSection />
+
+          {/* Slack */}
+          <SlackSection />
         </section>
 
         {/* 5. Messagerie automatique */}

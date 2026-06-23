@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
-import { getUpcomingMaintenances } from '../maintenance/maintenance.service';
+import { getTaskAlerts } from '../maintenance/maintenance.service';
 import { getRentalStats } from '../rentals/rentals.service';
 
 const copilotCache = new Map<string, { text: string; ts: number }>();
@@ -145,16 +145,15 @@ router.get('/copilot', async (req: Request, res: Response, next: NextFunction) =
       select: { name: true },
     });
 
-    const [stats, activeCount, todayDepartCount, todayReturnCount, maintenances, unansweredCount, ctCount] = await Promise.all([
+    const [stats, activeCount, todayDepartCount, todayReturnCount, taskAlerts, unansweredCount] = await Promise.all([
       getRentalStats(db, startOfMonth, endOfMonth),
       db.rental.count({ where: { status: 'active' } }),
       db.rental.count({ where: { startAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['booked', 'active'] } } }),
       db.rental.count({ where: { endAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['active', 'completed'] } } }),
-      getUpcomingMaintenances(db),
+      getTaskAlerts(db),
       db.message.count({
         where: { direction: 'inbound', createdAt: { lt: new Date(Date.now() - 12 * 3_600_000) }, rental: { status: { in: ['active', 'booked'] } } },
       }),
-      db.technicalControl.count({ where: { expiryAt: { lte: new Date(Date.now() + 45 * 86_400_000) }, archived: false } }),
     ]);
 
     const caEncaisse = stats.totalEncaisse;
@@ -162,7 +161,7 @@ router.get('/copilot', async (req: Request, res: Response, next: NextFunction) =
     const occupancyRate = stats.occupancyRate;
     const vehicleCount = stats.vehicleCount;
 
-    const alertCount = maintenances.length + ctCount + (unansweredCount > 0 ? 1 : 0);
+    const alertCount = taskAlerts.length + (unansweredCount > 0 ? 1 : 0);
 
     if (!process.env.ANTHROPIC_API_KEY) {
       res.status(503).json({ error: 'Copilote non disponible' });
@@ -198,12 +197,11 @@ router.get('/copilot', async (req: Request, res: Response, next: NextFunction) =
   }
 });
 
-// GET /api/v1/dashboard/maintenances
-// Entretiens dont l'échéance date (45j) OU km (2500km avant) est atteinte
+// GET /api/v1/dashboard/maintenances — alertes tâches (source de vérité : MaintenanceTask)
 router.get('/maintenances', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
-    const maintenances = await getUpcomingMaintenances(db);
+    const maintenances = await getTaskAlerts(db);
     res.json({ maintenances, count: maintenances.length });
   } catch (err) {
     next(err);

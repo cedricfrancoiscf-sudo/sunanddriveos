@@ -1710,7 +1710,7 @@ export async function calculateHealthScore(
 
   const [incidents, maintenances, ct] = await Promise.all([
     db.incident.count({ where: { vehicleId, createdAt: { gte: twelveMonthsAgo } } }),
-    db.maintenance.count({ where: { vehicleId, nextServiceDate: { not: null, lte: now } } }),
+    db.maintenanceTask.count({ where: { vehicleId, OR: [{ nextDueDate: { lte: now } }, { ctCounterVisitDeadline: { lte: now } }] } }),
     db.technicalControl.findFirst({
       where: { vehicleId }, orderBy: { expiryAt: 'desc' }, select: { expiryAt: true },
     }),

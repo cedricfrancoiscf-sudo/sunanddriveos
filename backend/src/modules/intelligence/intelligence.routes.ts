@@ -44,7 +44,16 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
         select: { grossRevenue: true, ownerPayout: true, vehicleId: true },
       }),
       db.vehicle.findMany({ where: { isActive: true }, select: { id: true, healthScore: true } }),
-      db.maintenance.count({ where: { nextServiceDate: { not: null, lte: now } } }),
+      db.maintenanceTask.count({
+        where: {
+          vehicle: { isActive: true },
+          OR: [
+            { nextDueDate: { lte: thirtyDaysFromNow } },
+            { ctCounterVisitDeadline: { lte: thirtyDaysFromNow } },
+            { nextDueDate: null, occurrenceCount: 0 },
+          ],
+        },
+      }),
       db.technicalControl.count({ where: { expiryAt: { gte: now, lte: thirtyDaysFromNow }, archived: false } }),
     ]);
 
@@ -584,9 +593,15 @@ router.post('/chat', async (req: Request, res: Response, next: NextFunction) => 
         where: { createdAt: { gte: oneYearAgo } },
         select: { vehicleId: true, type: true, cost: true, createdAt: true },
       }),
-      db.maintenance.findMany({
-        where: { nextServiceDate: { not: null, lte: now } },
-        select: { vehicleId: true, type: true, cost: true },
+      db.maintenanceTask.findMany({
+        where: {
+          vehicle: { isActive: true },
+          OR: [
+            { nextDueDate: { lte: now } },
+            { ctCounterVisitDeadline: { lte: now } },
+          ],
+        },
+        select: { vehicleId: true },
       }),
     ]);
 
@@ -811,7 +826,16 @@ router.get('/suggestions', async (req: Request, res: Response, next: NextFunctio
         where: { startAt: { gte: sixMonthsAgo }, status: { in: ['completed', 'active', 'booked'] } },
         select: { vehicleId: true, ownerPayout: true, grossRevenue: true, startAt: true, endAt: true },
       }),
-      db.maintenance.count({ where: { nextServiceDate: { not: null, lte: new Date(Date.now() + 30 * 86_400_000) } } }),
+      db.maintenanceTask.count({
+        where: {
+          vehicle: { isActive: true },
+          OR: [
+            { nextDueDate: { lte: new Date(Date.now() + 30 * 86_400_000) } },
+            { ctCounterVisitDeadline: { lte: new Date(Date.now() + 30 * 86_400_000) } },
+            { nextDueDate: null, occurrenceCount: 0 },
+          ],
+        },
+      }),
       db.incident.count({ where: { status: { in: ['open', 'in_progress'] } } }),
     ]);
 

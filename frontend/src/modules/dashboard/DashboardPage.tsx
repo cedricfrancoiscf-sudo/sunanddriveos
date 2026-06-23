@@ -65,7 +65,16 @@ export default function DashboardPage(): React.JSX.Element {
   type UnansweredMsg = { rentalId: string; driverName: string; vehicleLabel: string; msgPreview: string; createdAt: string };
   type PendingApprovalMsg = { messageId: string; rentalId: string; driverName: string; vehicleLabel: string };
   type InboxSummary = { pendingCount: number; unansweredRentals: number; unansweredMessages: UnansweredMsg[]; pendingApprovalMessages: PendingApprovalMsg[] };
-  type MaintenanceAlert = { id: string; type: string; nextServiceDate: string | null; nextServiceMileage: number | null; vehicle: { make: string; model: string; licensePlate: string; currentMileage: number | null } };
+  type MaintenanceAlert = {
+    id: string;
+    type: 'revision' | 'ct';
+    nextDueDate: string | null;
+    nextDueMileage: number | null;
+    ctResult: string | null;
+    ctCounterVisitDeadline: string | null;
+    occurrenceCount: number;
+    vehicle: { id: string; make: string; model: string; licensePlate: string; vehicleCategory: string };
+  };
 
   const { data: statsData } = useQuery<RentalStats>({
     queryKey: ['rental-stats'],
@@ -184,25 +193,27 @@ export default function DashboardPage(): React.JSX.Element {
       link: `/messages?rentalId=${m.rentalId}`,
     })),
     ...upcomingMaintenances.slice(0, 3).map(m => {
-      const plate = m.vehicle.licensePlate;
-      const dateExpired = m.nextServiceDate ? isPast(new Date(m.nextServiceDate)) : false;
-      const kmExceeded = m.nextServiceMileage != null && m.vehicle.currentMileage != null && m.vehicle.currentMileage >= m.nextServiceMileage;
-      const severity = (dateExpired || kmExceeded) ? 'high' as const : 'medium' as const;
-      let label = `Entretien ${m.type} — ${m.vehicle.make} ${m.vehicle.model} (${plate})`;
-      if (dateExpired) {
-        label += ` — date dépassée (${format(new Date(m.nextServiceDate!), 'dd/MM/yy', { locale: fr })})`;
-      } else if (m.nextServiceDate) {
-        label += ` — expire le ${format(new Date(m.nextServiceDate), 'dd/MM/yy', { locale: fr })}`;
-      }
-      if (m.nextServiceMileage != null && m.vehicle.currentMileage != null) {
-        const remaining = m.nextServiceMileage - m.vehicle.currentMileage;
-        if (remaining <= 0) {
-          label += (m.nextServiceDate ? ' · km dépassé' : ' — km dépassé');
-        } else {
-          label += (m.nextServiceDate ? ` · dans ${remaining.toLocaleString('fr-FR')} km` : ` — dans ${remaining.toLocaleString('fr-FR')} km`);
+      const vLabel = `${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`;
+      const isCtContreVisite = m.type === 'ct' && (m.ctResult === 'defavorable' || m.ctResult === 'contre_visite');
+      const deadline = isCtContreVisite && m.ctCounterVisitDeadline ? new Date(m.ctCounterVisitDeadline) : m.nextDueDate ? new Date(m.nextDueDate) : null;
+      const overdue = deadline ? isPast(deadline) : false;
+      const severity = overdue ? 'high' as const : 'medium' as const;
+      const link = m.type === 'ct' ? '/ct' : '/maintenance';
+      let label: string;
+      if (m.occurrenceCount === 0) {
+        label = `${m.type === 'ct' ? 'CT' : 'Révision'} ${vLabel} — à renseigner`;
+      } else if (m.type === 'ct' && isCtContreVisite) {
+        const dl = m.ctCounterVisitDeadline ? new Date(m.ctCounterVisitDeadline) : null;
+        label = `Contre-visite CT ${vLabel}${dl ? (isPast(dl) ? ` — délai dépassé le ${format(dl, 'dd/MM/yy', { locale: fr })}` : ` — avant le ${format(dl, 'dd/MM/yy', { locale: fr })}`) : ''}`;
+      } else if (m.type === 'ct') {
+        label = `CT ${vLabel}${m.nextDueDate ? (isPast(new Date(m.nextDueDate)) ? ` — expiré le ${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })}` : ` — à renouveler avant le ${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })}`) : ''}`;
+      } else {
+        label = `Révision ${vLabel}${m.nextDueDate ? (isPast(new Date(m.nextDueDate)) ? ` — date dépassée (${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })})` : ` — à prévoir avant le ${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })}`) : ''}`;
+        if (m.nextDueMileage != null) {
+          label += ` · ${m.nextDueMileage.toLocaleString('fr-FR')} km`;
         }
       }
-      return { id: `maint-${m.id}`, type: 'maintenance', severity, label, link: '/maintenance' };
+      return { id: `maint-${m.id}`, type: 'maintenance', severity, label, link };
     }),
   ];
 

@@ -5,7 +5,7 @@ import { requireAuth, requireRole, requireActiveUser } from '../../middleware/au
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
-import { sendInvitationEmail, sendWelcomeEmail } from '../../utils/mailer';
+import { sendInvitationEmail, sendWelcomeEmail, sendDeactivationEmail } from '../../utils/mailer';
 import type { UserRole } from '../../generated/tenant';
 
 const router: Router = Router();
@@ -128,7 +128,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     const adminCount = await db.user.count({ where: { role: 'admin', isActive: true } });
     const targetUser = await db.user.findUnique({
       where: { id: targetId },
-      select: { role: true, email: true },
+      select: { role: true, email: true, name: true },
     });
 
     console.log(`[Users] Cible: ${targetUser?.email ?? 'introuvable'} (${targetUser?.role}), admins actifs: ${adminCount}`);
@@ -150,6 +150,15 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
 
     await db.user.update({ where: { id: targetId }, data: { isActive: false } });
     console.log(`[Users] Soft-delete (isActive=false) appliqué pour ${targetId}`);
+
+    void (async () => {
+      try {
+        const master = getMasterClient();
+        const company = await master.company.findUnique({ where: { slug: req.auth!.tenantSlug }, select: { name: true } });
+        await sendDeactivationEmail(targetUser.email, targetUser.name, company?.name ?? 'SunanddriveOS');
+      } catch (e) { console.error('[Users] Erreur email désactivation:', e); }
+    })();
+
     res.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -218,6 +227,17 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       data: body.data,
       select: { id: true, name: true, email: true, role: true, isActive: true },
     });
+
+    if (body.data.isActive === false) {
+      void (async () => {
+        try {
+          const master = getMasterClient();
+          const company = await master.company.findUnique({ where: { slug: req.auth!.tenantSlug }, select: { name: true } });
+          await sendDeactivationEmail(user.email, user.name, company?.name ?? 'SunanddriveOS');
+        } catch (e) { console.error('[Users] Erreur email désactivation:', e); }
+      })();
+    }
+
     res.json({ user });
   } catch (err: unknown) { next(err); }
 });

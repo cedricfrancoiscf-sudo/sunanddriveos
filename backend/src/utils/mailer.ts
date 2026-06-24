@@ -1,5 +1,5 @@
 import { Resend } from 'resend';
-import { welcomeEmailHtml, invitationEmailHtml } from '../modules/email/templates';
+import { welcomeEmailHtml, invitationEmailHtml, deactivationEmailHtml } from '../modules/email/templates';
 
 function getResend(): Resend {
   return new Resend(process.env.RESEND_API_KEY);
@@ -82,10 +82,27 @@ export async function sendInvitationEmail(
     return;
   }
   await getResend().emails.send({
-    from: `${companyName} <${process.env.RESEND_FROM ?? 'noreply@sunanddrive.fr'}>`,
+    from: FROM_DEFAULT,
     to,
-    subject: `${companyName} vous invite sur SunanddriveOS`,
+    subject: 'Invitation à rejoindre SunanddriveOS',
     html: invitationEmailHtml(inviterName ?? companyName, companyName, inviteUrl),
   });
   void inviteeName;
+}
+
+export async function sendDeactivationEmail(
+  to: string,
+  userName: string,
+  companyName: string,
+): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[Mailer] RESEND_API_KEY non défini — email de désactivation non envoyé');
+    return;
+  }
+  await getResend().emails.send({
+    from: FROM_DEFAULT,
+    to,
+    subject: 'Votre compte SunanddriveOS a été désactivé',
+    html: deactivationEmailHtml(userName.split(' ')[0] ?? userName, companyName),
+  });
 }

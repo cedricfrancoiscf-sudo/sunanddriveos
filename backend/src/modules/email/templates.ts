@@ -47,10 +47,22 @@ export function welcomeEmailHtml(firstName: string, companyName: string): string
 // EMAIL 2 — Invitation utilisateur
 export function invitationEmailHtml(inviterName: string, companyName: string, activationUrl: string): string {
   return emailBase(`
-<p style="font-size:16px;color:#1e293b;margin:0 0 16px"><strong>${inviterName}</strong> vous a ajouté(e) à l'espace <strong>${companyName}</strong>.</p>
-<p style="margin:0 0 32px">Cliquez sur le bouton ci-dessous pour activer votre compte SunanddriveOS.</p>
-<p style="margin:0 0 24px">${btn('Activer mon compte', activationUrl)}</p>
-<p style="font-size:12px;color:#94a3b8;margin:0">Ce lien expire dans 48h.</p>
+<p style="font-size:16px;color:#1e293b;margin:0 0 16px">Bonjour,</p>
+<p style="margin:0 0 16px">Vous avez été invité(e) à rejoindre l'espace de gestion de flotte <strong>SunanddriveOS</strong> par <strong>${inviterName !== companyName ? inviterName : companyName}</strong>.</p>
+<p style="margin:0 0 24px">Cliquez sur le bouton ci-dessous pour créer votre compte :</p>
+<p style="margin:0 0 32px">${btn('Créer mon compte', activationUrl)}</p>
+<p style="font-size:12px;color:#94a3b8;margin:0 0 16px">Ou copiez ce lien dans votre navigateur :<br><span style="color:#64748b">${activationUrl}</span></p>
+<p style="font-size:12px;color:#94a3b8;margin:0">Ce lien est valable 48h.</p>
+`);
+}
+
+// EMAIL 4 — Compte désactivé
+export function deactivationEmailHtml(userName: string, companyName: string): string {
+  return emailBase(`
+<p style="font-size:16px;color:#1e293b;margin:0 0 16px">Bonjour ${userName},</p>
+<p style="margin:0 0 16px">Votre compte <strong>${companyName}</strong> sur SunanddriveOS a été désactivé par un administrateur.</p>
+<p style="margin:0 0 32px">Si vous pensez qu'il s'agit d'une erreur, contactez votre administrateur.</p>
+<p style="font-size:12px;color:#94a3b8;margin:0">Cordialement,<br>L'équipe SunanddriveOS</p>
 `);
 }
 

@@ -1711,8 +1711,8 @@ export async function calculateHealthScore(
   const [incidents, maintenances, ct] = await Promise.all([
     db.incident.count({ where: { vehicleId, createdAt: { gte: twelveMonthsAgo } } }),
     db.maintenanceTask.count({ where: { vehicleId, OR: [{ nextDueDate: { lte: now } }, { ctCounterVisitDeadline: { lte: now } }] } }),
-    db.technicalControl.findFirst({
-      where: { vehicleId }, orderBy: { expiryAt: 'desc' }, select: { expiryAt: true },
+    db.maintenanceTask.findFirst({
+      where: { vehicleId, type: 'ct' }, select: { nextDueDate: true, ctCounterVisitDeadline: true },
     }),
   ]);
 
@@ -1725,7 +1725,8 @@ export async function calculateHealthScore(
   const incidentScore = incidents === 0 ? 25 : incidents === 1 ? 18 : incidents === 2 ? 10 : 0;
 
   let maintenanceScore = maintenances === 0 ? 25 : maintenances === 1 ? 15 : 0;
-  if (ct?.expiryAt && ct.expiryAt < now) maintenanceScore = Math.max(0, maintenanceScore - 10);
+  const ctExpired = ct && ((ct.nextDueDate && ct.nextDueDate < now) || (ct.ctCounterVisitDeadline && ct.ctCounterVisitDeadline < now));
+  if (ctExpired) maintenanceScore = Math.max(0, maintenanceScore - 10);
 
   return Math.max(0, Math.min(100, kmScore + ageScore + incidentScore + maintenanceScore));
 }

@@ -54,7 +54,7 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
           ],
         },
       }),
-      db.technicalControl.count({ where: { expiryAt: { gte: now, lte: thirtyDaysFromNow }, archived: false } }),
+      db.maintenanceTask.count({ where: { type: 'ct', vehicle: { isActive: true }, nextDueDate: { gte: now, lte: thirtyDaysFromNow } } }),
     ]);
 
     const safe = (v: number | null | undefined): number => Math.max(0, v ?? 0);
@@ -165,10 +165,9 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
     const vehicles = await db.vehicle.findMany({ where: { isActive: true }, select: { id: true } });
     const vehicleCount = vehicles.length;
 
-    const [vehicleCostsAll, annualMaints, annualCTs] = await Promise.all([
+    const [vehicleCostsAll, annualMaints] = await Promise.all([
       db.vehicleCost.findMany({ select: { amount: true, type: true } }),
       db.maintenance.findMany({ where: { performedAt: { gte: yearStart, lte: yearEnd } }, select: { cost: true, performedAt: true } }),
-      db.technicalControl.findMany({ where: { performedAt: { gte: yearStart, lte: yearEnd } }, select: { cost: true, performedAt: true } }),
     ]);
     const totalFixedCostsMonthly = vehicleCostsAll.filter(c => c.type === 'fixed').reduce((s, c) => s + c.amount, 0);
     const totalVariableCostsMonthly = vehicleCostsAll.filter(c => c.type !== 'fixed').reduce((s, c) => s + c.amount, 0);
@@ -278,9 +277,8 @@ router.get('/annual-kpis', async (req: Request, res: Response, next: NextFunctio
         km: v.km,
         ...((): { costsFixed: number; costsVariable: number; costsTotal: number; margin: number } => {
           const maint = annualMaints.filter(m => new Date(m.performedAt).toISOString().slice(0, 7) === key).reduce((s, m) => s + (m.cost ?? 0), 0);
-          const ct = annualCTs.filter(c => new Date(c.performedAt).toISOString().slice(0, 7) === key).reduce((s, c) => s + (c.cost ?? 0), 0);
           const costsFixed = rnd(totalFixedCostsMonthly);
-          const costsVariable = rnd(totalVariableCostsMonthly + maint + ct);
+          const costsVariable = rnd(totalVariableCostsMonthly + maint);
           const costsTotal = rnd(costsFixed + costsVariable);
           return { costsFixed, costsVariable, costsTotal, margin: rnd(e.total + v.previsionnel - costsTotal) };
         })(),
@@ -439,7 +437,7 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const yearStart = new Date(Date.now() - 365 * 86_400_000);
-    const [vehicles, rentals, costs, annualRentals, annualMaintenances, annualTechControls] = await Promise.all([
+    const [vehicles, rentals, costs, annualRentals, annualMaintenances] = await Promise.all([
       db.vehicle.findMany({
         where: { isActive: true },
         select: { id: true, make: true, model: true, licensePlate: true },
@@ -454,7 +452,6 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
         select: { vehicleId: true, ownerPayout: true, grossRevenue: true },
       }),
       db.maintenance.findMany({ where: { performedAt: { gte: yearStart } }, select: { vehicleId: true, cost: true } }),
-      db.technicalControl.findMany({ where: { performedAt: { gte: yearStart } }, select: { vehicleId: true, cost: true } }),
     ]);
 
     const rentability = vehicles.map(v => {
@@ -472,8 +469,7 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
       const vAnnualRentals = annualRentals.filter(r => r.vehicleId === v.id);
       const caAnnuel = vAnnualRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
       const annualMaintCosts = annualMaintenances.filter(m => m.vehicleId === v.id).reduce((s, m) => s + (m.cost ?? 0), 0);
-      const annualCtCosts = annualTechControls.filter(ct => ct.vehicleId === v.id).reduce((s, ct) => s + (ct.cost ?? 0), 0);
-      const costsAnnuels = fixedCosts * 12 + annualMaintCosts + annualCtCosts;
+      const costsAnnuels = fixedCosts * 12 + annualMaintCosts;
       const margeAnnuelle = caAnnuel - costsAnnuels;
 
       return {

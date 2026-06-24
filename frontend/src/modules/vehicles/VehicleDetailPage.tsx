@@ -68,15 +68,15 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }): R
 }
 
 const RESULT_LABELS: Record<string, string> = {
-  pass: 'Favorable',
-  advisory: 'Défavorable mineur',
-  fail: 'Défavorable majeur',
+  favorable: 'Favorable',
+  defavorable: 'Défavorable',
+  contre_visite: 'Contre-visite',
 };
 
 const RESULT_COLORS: Record<string, string> = {
-  pass: 'text-green-600',
-  advisory: 'text-yellow-600',
-  fail: 'text-red-600',
+  favorable: 'text-green-600',
+  defavorable: 'text-red-600',
+  contre_visite: 'text-orange-600',
 };
 
 const BLOCKING_TYPES = ['maintenance', 'incident', 'administrative', 'other'] as const;
@@ -638,7 +638,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
     );
   }
 
-  const lastCT = vehicle.technicalControls[0];
+  const lastCT = vehicle.maintenanceTasks?.find(t => t.type === 'ct') ?? null;
 
   return (<>
     <div className="p-4 lg:p-6">
@@ -1056,20 +1056,24 @@ export default function VehicleDetailPage(): React.JSX.Element {
         <div className="space-y-4">
           {/* Contrôle technique */}
           <Section title="Contrôle technique">
-            {lastCT ? (
+            {lastCT?.lastPerformedAt ? (
               <>
-                <InfoRow
-                  label="Résultat"
-                  value={<span className={RESULT_COLORS[lastCT.result]}>{RESULT_LABELS[lastCT.result]}</span>}
-                />
+                {lastCT.ctResult && (
+                  <InfoRow
+                    label="Résultat"
+                    value={<span className={RESULT_COLORS[lastCT.ctResult] ?? 'text-gray-500'}>{RESULT_LABELS[lastCT.ctResult] ?? lastCT.ctResult}</span>}
+                  />
+                )}
                 <InfoRow
                   label="Réalisé le"
-                  value={format(new Date(lastCT.performedAt), 'dd/MM/yyyy', { locale: fr })}
+                  value={format(new Date(lastCT.lastPerformedAt), 'dd/MM/yyyy', { locale: fr })}
                 />
-                <InfoRow
-                  label="Expire le"
-                  value={format(new Date(lastCT.expiryAt), 'dd/MM/yyyy', { locale: fr })}
-                />
+                {lastCT.nextDueDate && (
+                  <InfoRow
+                    label="Prochain CT"
+                    value={format(new Date(lastCT.nextDueDate), 'dd/MM/yyyy', { locale: fr })}
+                  />
+                )}
               </>
             ) : (
               <p className="text-sm text-gray-400">Aucun contrôle technique enregistré</p>

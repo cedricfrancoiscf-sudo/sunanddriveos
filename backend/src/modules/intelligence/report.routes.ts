@@ -63,9 +63,13 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
       select: { vehicleId: true, type: true, cost: true, nextServiceDate: true,
                 vehicle: { select: { make: true, model: true, licensePlate: true } } },
     }),
-    db.technicalControl.findMany({
-      where: { expiryAt: { lte: new Date(Date.now() + 90 * 86_400_000) }, archived: false },
-      select: { vehicleId: true, expiryAt: true, result: true, cost: true,
+    db.maintenanceTask.findMany({
+      where: {
+        type: 'ct',
+        vehicle: { isActive: true },
+        nextDueDate: { lte: new Date(Date.now() + 90 * 86_400_000) },
+      },
+      select: { vehicleId: true, nextDueDate: true, ctResult: true, lastCost: true,
                 vehicle: { select: { make: true, model: true, licensePlate: true } } },
     }),
     db.carSeatRequest.findMany({
@@ -138,7 +142,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
       kmAnnuelPrevu: Math.round(vKm / (180 / 365)),
       incidents: vIncidents,
       entretiensEnAttente: vMaint.length,
-      ctExpiration: vCT.length > 0 ? vCT[0].expiryAt : null,
+      ctExpiration: vCT.length > 0 ? vCT[0].nextDueDate : null,
       coutsMensuels: Math.round((vFixedMonthly + vVariableMonthly) * 100) / 100,
       coutsAnnuels: Math.round(vCostsAnnuels * 100) / 100,
       margeAnnuelle: Math.round(vMargeAnnuelle * 100) / 100,
@@ -178,7 +182,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     })),
     ctExpiration: technicalControls.map(ct => ({
       vehicule: `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`,
-      expiration: ct.expiryAt,
+      expiration: ct.nextDueDate,
     })),
     evolutionMensuelle: Object.entries(monthlyCA)
       .map(([mois, ca]) => ({ mois, ca: Math.round(ca * 100) / 100 })),
@@ -338,9 +342,9 @@ async function collectMonthlyData(db: ReturnType<typeof getTenantClient>, monthS
         ownerPayout: true, grossRevenue: true, kmDriven: true,
       },
     }),
-    db.technicalControl.findMany({
-      where: { expiryAt: { lte: new Date(Date.now() + 90 * 86_400_000) }, archived: false },
-      select: { expiryAt: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
+    db.maintenanceTask.findMany({
+      where: { type: 'ct', vehicle: { isActive: true }, nextDueDate: { lte: new Date(Date.now() + 90 * 86_400_000) } },
+      select: { nextDueDate: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
     }),
     db.carSeatRequest.findMany({
       where: { status: { in: ['pending', 'unavailable'] } },
@@ -416,7 +420,7 @@ async function collectMonthlyData(db: ReturnType<typeof getTenantClient>, monthS
     nbReservationsNextMonth: rentalsInPeriod(nextM.start, nextM.end).length,
     alertes_ct: ctAlerts.map(ct => ({
       vehicule: `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`,
-      expiration: ct.expiryAt,
+      expiration: ct.nextDueDate,
     })),
     siege_auto_alerts: carSeatAlerts.length,
     messages_en_attente: pendingMessages.length,
@@ -448,7 +452,7 @@ export async function generateMonthlyReportAsync(
     const { settings } = data;
     const now = new Date();
 
-    const ctLines = data.alertes_ct.map(ct => `- ${ct.vehicule}: expire le ${new Date(ct.expiration).toLocaleDateString('fr-FR')}`).join('\n') || 'Aucun';
+    const ctLines = data.alertes_ct.map(ct => `- ${ct.vehicule}: expire le ${ct.expiration ? new Date(ct.expiration).toLocaleDateString('fr-FR') : '?'}`).join('\n') || 'Aucun';
 
     const response = await claude.messages.create({
       model: 'claude-sonnet-4-6',

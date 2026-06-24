@@ -29,7 +29,7 @@ export interface Vehicle {
 
 export interface VehicleDetail extends Vehicle {
   documents: Array<{ id: string; type: string; name: string; expiryDate: string | null }>;
-  technicalControls: Array<{ id: string; performedAt: string; expiryAt: string; result: string }>;
+  maintenanceTasks: Array<{ id: string; type: string; lastPerformedAt: string | null; nextDueDate: string | null; ctResult: string | null; ctCounterVisitDeadline: string | null }>;
   maintenances: Array<{ id: string; type: string; performedAt: string; nextServiceDate: string | null }>;
   blockings: Array<{ id: string; startAt: string; endAt: string; reason: string | null; type: string }>;
   accessories: Array<{ vehicleId: string; accessoryId: string; accessory: { id: string; name: string; description: string | null } }>;

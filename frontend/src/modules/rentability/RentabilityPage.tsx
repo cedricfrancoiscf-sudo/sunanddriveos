@@ -205,7 +205,142 @@ function CostPanel({ vehicleId, breakEven }: { vehicleId: string; breakEven: num
 }
 
 type SortKey = 'licensePlate' | 'caNet' | 'totalCosts' | 'margin' | 'caAnnuel' | 'costsAnnuels' | 'margeAnnuelle';
-type MainTab = 'rentabilite' | 'sinistres' | 'simulateur' | 'objectifs';
+type MainTab = 'rentabilite' | 'sinistres' | 'simulateur' | 'objectifs' | 'revente';
+
+// ─── Revente optimale ─────────────────────────────────────────────────────────
+
+interface RoiFleetEntry {
+  vehicleId: string;
+  make: string;
+  model: string;
+  licensePlate: string;
+  hasData: boolean;
+  analysis: {
+    roiActuel: number;
+    roiMax: number;
+    moisOptimal: number;
+    dateOptimale: string;
+    plusValueNette: number;
+    capitalRestantDu: number;
+    signal: 'vendre_maintenant' | 'bientot' | 'attendre' | 'optimal';
+  } | null;
+}
+
+const SIGNAL_SORT: Record<string, number> = { vendre_maintenant: 0, bientot: 1, optimal: 2, attendre: 3 };
+const SIGNAL_BADGE: Record<string, string> = {
+  vendre_maintenant: 'bg-red-100 text-red-700',
+  bientot: 'bg-amber-100 text-amber-700',
+  optimal: 'bg-green-100 text-green-700',
+  attendre: 'bg-gray-100 text-gray-600',
+};
+const SIGNAL_ICON: Record<string, string> = { vendre_maintenant: '🔴', bientot: '🟡', optimal: '🟢', attendre: '⚪' };
+const SIGNAL_LABEL: Record<string, string> = {
+  vendre_maintenant: 'Revendre maintenant',
+  bientot: 'Revendre bientôt',
+  optimal: 'Fenêtre optimale',
+  attendre: 'Continuer à exploiter',
+};
+
+function ReventeTab(): React.JSX.Element {
+  const { data, isLoading } = useQuery<{ fleet: RoiFleetEntry[] }>({
+    queryKey: ['roi-fleet'],
+    queryFn: () => api.get<{ fleet: RoiFleetEntry[] }>('/vehicles/roi-fleet').then(r => r.data),
+    staleTime: 10 * 60_000,
+  });
+
+  const rows = [...(data?.fleet ?? [])].sort((a, b) => {
+    if (!a.hasData && b.hasData) return 1;
+    if (a.hasData && !b.hasData) return -1;
+    if (!a.analysis && !b.analysis) return 0;
+    if (!a.analysis) return 1;
+    if (!b.analysis) return -1;
+    return (SIGNAL_SORT[a.analysis.signal] ?? 9) - (SIGNAL_SORT[b.analysis.signal] ?? 9);
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} />
+      </div>
+    );
+  }
+
+  return (
+    <div data-testid="revente-tab" className="space-y-4">
+      <p className="text-sm text-gray-500">
+        Classement de la flotte par signal de revente optimale. Trier par urgence pour prioriser les décisions.
+      </p>
+      <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="border-b border-gray-100 bg-gray-50">
+            <tr>
+              {['Véhicule', 'Valeur marchande', 'Plus-value nette', 'ROI actuel', 'Fenêtre optimale', 'Signal', 'Jours avant optimal'].map(h => (
+                <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.map(row => {
+              const a = row.analysis;
+              const now = new Date();
+              const daysBeforeOptimal = a ? Math.round(a.moisOptimal * 30.44) : null;
+
+              if (!row.hasData || !a) {
+                return (
+                  <tr key={row.vehicleId} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {row.make} {row.model}
+                      <span className="ml-2 font-mono text-xs text-gray-400">{row.licensePlate}</span>
+                    </td>
+                    <td colSpan={6} className="px-4 py-3 text-xs text-gray-400 italic">
+                      Données incomplètes —{' '}
+                      <a href={`/vehicles/${row.vehicleId}/edit`} className="text-[#01696e] hover:underline">
+                        Compléter la fiche
+                      </a>
+                    </td>
+                  </tr>
+                );
+              }
+
+              const optDate = new Date(a.dateOptimale + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+              return (
+                <tr key={row.vehicleId} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <a href={`/vehicles/${row.vehicleId}`} className="hover:text-[#01696e] hover:underline">
+                      {row.make} {row.model}
+                    </a>
+                    <span className="ml-2 font-mono text-xs text-gray-400">{row.licensePlate}</span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">
+                    {a.capitalRestantDu > 0 ? `${a.capitalRestantDu.toLocaleString('fr-FR')} €` : '—'}
+                  </td>
+                  <td className={`px-4 py-3 font-semibold ${a.plusValueNette >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    {a.plusValueNette >= 0 ? '+' : ''}{a.plusValueNette.toLocaleString('fr-FR')} €
+                  </td>
+                  <td className={`px-4 py-3 font-semibold ${a.roiActuel >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    {a.roiActuel.toFixed(1)}%
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{optDate}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${SIGNAL_BADGE[a.signal]}`}>
+                      {SIGNAL_ICON[a.signal]} {SIGNAL_LABEL[a.signal]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {daysBeforeOptimal === 0 ? <span className="font-semibold text-red-600">Maintenant</span> : `${daysBeforeOptimal} j`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {rows.length === 0 && (
+          <p className="py-8 text-center text-sm text-gray-400">Aucune donnée — complétez les fiches véhicule avec le prix d'achat et la valeur marchande.</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SinistresTab(): React.JSX.Element {
   const { data, isLoading } = useQuery<{ rentals: FlaggedRental[] }>({
@@ -496,6 +631,7 @@ export default function RentabilityPage(): React.JSX.Element {
     { key: 'sinistres', label: 'Sinistres' },
     { key: 'simulateur', label: 'Simulateur ROI' },
     { key: 'objectifs', label: 'Objectifs CA' },
+    { key: 'revente', label: 'Revente optimale' },
   ];
 
   return (
@@ -639,6 +775,7 @@ export default function RentabilityPage(): React.JSX.Element {
       {tab === 'sinistres' && <SinistresTab />}
       {tab === 'simulateur' && <SimulateurTab />}
       {tab === 'objectifs' && <ObjectifsTab entries={rawEntries} />}
+      {tab === 'revente' && <ReventeTab />}
     </div>
   );
 }

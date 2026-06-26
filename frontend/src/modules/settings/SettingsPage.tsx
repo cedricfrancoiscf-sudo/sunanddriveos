@@ -463,6 +463,15 @@ interface CompanySettings {
   riskWeightCancelled: number;
   riskWeightDelay: number;
   slackWebhookUrl: string | null;
+  // Revente & Décote
+  depreciationRateYear1: number;
+  depreciationRateYear2: number;
+  depreciationRateYear3: number;
+  depreciationRateYears4to6: number;
+  depreciationRateAfter6: number;
+  majorMaintenanceCost: number;
+  majorMaintenanceKm: number;
+  roiAlertMonthsBefore: number;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -1457,6 +1466,119 @@ function VehicleSettingsSection(): React.JSX.Element {
   );
 }
 
+function ReventeDecoteSection(): React.JSX.Element {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get<{ settings: CompanySettings }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
+  });
+
+  const [form, setForm] = React.useState({
+    depreciationRateYear1: 0.20,
+    depreciationRateYear2: 0.15,
+    depreciationRateYear3: 0.12,
+    depreciationRateYears4to6: 0.08,
+    depreciationRateAfter6: 0.05,
+    majorMaintenanceCost: 1500,
+    majorMaintenanceKm: 30000,
+    roiAlertMonthsBefore: 6,
+  });
+  const [saved, setSaved] = React.useState(false);
+
+  React.useEffect(() => {
+    if (settings) {
+      setForm({
+        depreciationRateYear1: settings.depreciationRateYear1 ?? 0.20,
+        depreciationRateYear2: settings.depreciationRateYear2 ?? 0.15,
+        depreciationRateYear3: settings.depreciationRateYear3 ?? 0.12,
+        depreciationRateYears4to6: settings.depreciationRateYears4to6 ?? 0.08,
+        depreciationRateAfter6: settings.depreciationRateAfter6 ?? 0.05,
+        majorMaintenanceCost: settings.majorMaintenanceCost ?? 1500,
+        majorMaintenanceKm: settings.majorMaintenanceKm ?? 30000,
+        roiAlertMonthsBefore: settings.roiAlertMonthsBefore ?? 6,
+      });
+    }
+  }, [settings]);
+
+  const saveMut = useMutation({
+    mutationFn: () => api.put('/settings', form),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+      void qc.invalidateQueries({ queryKey: ['roi-analysis'] });
+      void qc.invalidateQueries({ queryKey: ['roi-fleet'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  function pctField(key: keyof typeof form, label: string) {
+    const pct = (form[key] as number) * 100;
+    return (
+      <div key={key}>
+        <label className="mb-1 block text-xs font-medium text-gray-600">{label} (%/an)</label>
+        <input type="number" min="0" max="100" step="0.1"
+          value={parseFloat(pct.toFixed(1))}
+          onChange={e => setForm(f => ({ ...f, [key]: parseFloat(e.target.value) / 100 || 0 }))}
+          data-testid={`input-roi-${key}`}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+      </div>
+    );
+  }
+
+  function numField(key: keyof typeof form, label: string, unit = '') {
+    return (
+      <div key={key}>
+        <label className="mb-1 block text-xs font-medium text-gray-600">{label}{unit ? ` (${unit})` : ''}</label>
+        <input type="number" min="0" step="1"
+          value={form[key] as number}
+          onChange={e => setForm(f => ({ ...f, [key]: parseFloat(e.target.value) || 0 }))}
+          data-testid={`input-roi-${key}`}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+      </div>
+    );
+  }
+
+  return (
+    <section data-testid="revente-decote-section" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
+      <div>
+        <h2 className="text-sm font-semibold text-gray-900">Revente & Décote</h2>
+        <p className="mt-0.5 text-xs text-gray-400">Paramètres pour le calcul de la fenêtre optimale de revente</p>
+      </div>
+
+      <div>
+        <p className="mb-3 text-xs font-semibold text-gray-700">Taux de décote annuels</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {pctField('depreciationRateYear1', 'Année 1')}
+          {pctField('depreciationRateYear2', 'Année 2')}
+          {pctField('depreciationRateYear3', 'Année 3')}
+          {pctField('depreciationRateYears4to6', 'Années 4 à 6')}
+          {pctField('depreciationRateAfter6', 'Après 6 ans')}
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-3 text-xs font-semibold text-gray-700">Entretien majeur</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {numField('majorMaintenanceCost', 'Coût entretien majeur estimé', '€')}
+          {numField('majorMaintenanceKm', 'Kilométrage déclencheur', 'km')}
+        </div>
+      </div>
+
+      {numField('roiAlertMonthsBefore', 'Seuil alerte "Revendre bientôt"', 'mois avant optimal')}
+
+      <div className="flex items-center gap-3 pt-1">
+        <button type="button" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+          className="rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          style={{ backgroundColor: '#01696e' }}>
+          {saveMut.isPending ? 'Enregistrement...' : 'Enregistrer'}
+        </button>
+        {saved && <p className="text-sm font-medium text-green-600">Sauvegardé ✓</p>}
+      </div>
+    </section>
+  );
+}
+
 function IntelligenceSettingsSection(): React.JSX.Element {
   const qc = useQueryClient();
   const { data: settings } = useQuery({
@@ -2129,6 +2251,9 @@ export default function SettingsPage(): React.JSX.Element {
 
         {/* Véhicule */}
         <VehicleSettingsSection />
+
+        {/* Revente & Décote */}
+        <ReventeDecoteSection />
 
         {/* Intelligence */}
         <IntelligenceSettingsSection />

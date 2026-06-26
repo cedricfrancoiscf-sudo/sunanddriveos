@@ -88,6 +88,15 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       riskWeightDelay: z.number().int().min(0).max(100).optional(),
       boitierConnectAmount: z.number().int().min(0).max(500).nullable().optional(),
       slackWebhookUrl: z.string().nullable().optional(),
+      // Revente & Décote
+      depreciationRateYear1: z.number().min(0).max(1).optional(),
+      depreciationRateYear2: z.number().min(0).max(1).optional(),
+      depreciationRateYear3: z.number().min(0).max(1).optional(),
+      depreciationRateYears4to6: z.number().min(0).max(1).optional(),
+      depreciationRateAfter6: z.number().min(0).max(1).optional(),
+      majorMaintenanceCost: z.number().min(0).max(50000).optional(),
+      majorMaintenanceKm: z.number().int().min(1000).max(200000).optional(),
+      roiAlertMonthsBefore: z.number().int().min(1).max(24).optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
 

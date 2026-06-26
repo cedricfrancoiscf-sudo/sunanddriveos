@@ -15,12 +15,21 @@ export type VehicleCreateInput = {
   deliveryPostalCode?: string | null;
   pickupInstructions?: string | null;
   returnInstructions?: string | null;
+  purchaseDate?: Date | string | null;
+  loanAmount?: number | null;
+  loanRate?: number | null;
+  loanDurationMonths?: number | null;
+  loanStartDate?: Date | string | null;
+  marketValue?: number | null;
+  marketValueDate?: Date | string | null;
 };
 
 export type VehicleUpdateInput = Partial<VehicleCreateInput> & {
   isActive?: boolean;
   healthScore?: number;
   carekeeperUserId?: string | null;
+  critAir?: string | null;
+  purchasePrice?: number | null;
 };
 
 export async function listVehicles(db: PrismaClient, includeInactive = false) {

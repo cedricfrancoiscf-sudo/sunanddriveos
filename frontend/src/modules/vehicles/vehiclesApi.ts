@@ -13,6 +13,13 @@ export interface Vehicle {
   fuelType: string | null;
   critAir: string | null;
   purchasePrice: number | null;
+  purchaseDate: string | null;
+  loanAmount: number | null;
+  loanRate: number | null;
+  loanDurationMonths: number | null;
+  loanStartDate: string | null;
+  marketValue: number | null;
+  marketValueDate: string | null;
   parkingZone: string | null;
   deliveryPointName: string | null;
   deliveryPostalCode: string | null;

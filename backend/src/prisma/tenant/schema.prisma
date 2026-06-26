@@ -142,6 +142,13 @@ model Vehicle {
   returnInstructions String?           // Instructions de retour : où garer, clés, carburant...
   critAir            String?           // "0"|"1"|"2"|"3"|"4"|"5"|"NC"
   purchasePrice      Float?            // Prix d'achat TTC
+  purchaseDate       DateTime?         // Date d'achat
+  loanAmount         Float?            // Montant emprunté (€)
+  loanRate           Float?            // Taux annuel (%)
+  loanDurationMonths Int?              // Durée du prêt (mois)
+  loanStartDate      DateTime?         // Date de début du prêt
+  marketValue        Float?            // Valeur de revente estimée (€) — saisie manuelle
+  marketValueDate    DateTime?         // Date de la dernière estimation
   currentMileage     Int               @default(0)
   healthScore        Int               @default(100)
   vehicleCategory    String            @default("tourisme") // "tourisme" | "utilitaire" | "camionnette"
@@ -727,6 +734,15 @@ model CompanySettings {
   getaroundWebhookPath String?
   boitierConnectAmount Int?                       // Montant mensuel Boîtier Connect (€) — null = 25€ par défaut
   slackWebhookUrl      String?                    // Webhook Slack pour notifications Enterprise
+  // Revente & Décote
+  depreciationRateYear1     Float    @default(0.20) // Taux décote annuel année 1
+  depreciationRateYear2     Float    @default(0.15) // Taux décote annuel année 2
+  depreciationRateYear3     Float    @default(0.12) // Taux décote annuel année 3
+  depreciationRateYears4to6 Float    @default(0.08) // Taux décote annuel années 4-6
+  depreciationRateAfter6    Float    @default(0.05) // Taux décote annuel après 6 ans
+  majorMaintenanceCost      Float    @default(1500) // Coût entretien majeur estimé (€)
+  majorMaintenanceKm        Int      @default(30000) // Kilométrage déclencheur entretien majeur
+  roiAlertMonthsBefore      Int      @default(6)    // Seuil alerte "Revendre bientôt" (mois avant optimal)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

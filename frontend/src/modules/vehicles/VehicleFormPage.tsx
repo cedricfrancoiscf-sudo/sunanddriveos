@@ -31,6 +31,13 @@ const EMPTY_FORM = {
   carekeeperUserId: '',
   critAir: null as string | null,
   purchasePrice: null as number | null,
+  purchaseDate: '',
+  loanAmount: null as number | null,
+  loanRate: null as number | null,
+  loanDurationMonths: null as number | null,
+  loanStartDate: '',
+  marketValue: null as number | null,
+  marketValueDate: '',
 };
 
 export default function VehicleFormPage(): React.JSX.Element {
@@ -73,10 +80,25 @@ export default function VehicleFormPage(): React.JSX.Element {
         carekeeperUserId: vehicle.carekeeperUserId ?? '',
         critAir: (vehicle as { critAir?: string | null }).critAir ?? null,
         purchasePrice: (vehicle as { purchasePrice?: number | null }).purchasePrice ?? null,
+        purchaseDate: (vehicle as { purchaseDate?: string | null }).purchaseDate
+          ? new Date((vehicle as { purchaseDate: string }).purchaseDate).toISOString().slice(0, 10)
+          : '',
+        loanAmount: (vehicle as { loanAmount?: number | null }).loanAmount ?? null,
+        loanRate: (vehicle as { loanRate?: number | null }).loanRate ?? null,
+        loanDurationMonths: (vehicle as { loanDurationMonths?: number | null }).loanDurationMonths ?? null,
+        loanStartDate: (vehicle as { loanStartDate?: string | null }).loanStartDate
+          ? new Date((vehicle as { loanStartDate: string }).loanStartDate).toISOString().slice(0, 10)
+          : '',
+        marketValue: (vehicle as { marketValue?: number | null }).marketValue ?? null,
+        marketValueDate: (vehicle as { marketValueDate?: string | null }).marketValueDate
+          ? new Date((vehicle as { marketValueDate: string }).marketValueDate).toISOString().slice(0, 10)
+          : '',
       });
       setHealthScore(vehicle.healthScore);
     }
   }, [vehicle]);
+
+  function toIsoOrNull(d: string): string | null { return d ? new Date(d).toISOString() : null; }
 
   const createMutation = useMutation({
     mutationFn: (data: typeof EMPTY_FORM) => vehiclesApi.create({
@@ -92,7 +114,10 @@ export default function VehicleFormPage(): React.JSX.Element {
       pickupInstructions: data.pickupInstructions || null,
       returnInstructions: data.returnInstructions || null,
       carekeeperUserId: data.carekeeperUserId || null,
-    }),
+      purchaseDate: toIsoOrNull(data.purchaseDate),
+      loanStartDate: toIsoOrNull(data.loanStartDate),
+      marketValueDate: toIsoOrNull(data.marketValueDate),
+    } as never),
     onSuccess: (v) => {
       void qc.invalidateQueries({ queryKey: ['vehicles'] });
       navigate(`/vehicles/${v.id}`);
@@ -115,7 +140,10 @@ export default function VehicleFormPage(): React.JSX.Element {
         returnInstructions: data.returnInstructions || null,
         carekeeperUserId: data.carekeeperUserId || null,
         healthScore: Number(data.healthScore),
-      }),
+        purchaseDate: toIsoOrNull(data.purchaseDate),
+        loanStartDate: toIsoOrNull(data.loanStartDate),
+        marketValueDate: toIsoOrNull(data.marketValueDate),
+      } as never),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['vehicles'] });
       void qc.invalidateQueries({ queryKey: ['vehicle', id] });
@@ -286,6 +314,90 @@ export default function VehicleFormPage(): React.JSX.Element {
           {form.photoUrl && (
             <img src={form.photoUrl} alt="Aperçu" className="h-32 w-full rounded-lg object-cover border border-gray-200" />
           )}
+        </div>
+
+        {/* Données financières & Prêt */}
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+          <h2 className="text-sm font-semibold text-gray-900">Données financières</h2>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Prix d'achat TTC (€)</label>
+              <input type="number" min="0" step="100"
+                value={form.purchasePrice ?? ''}
+                onChange={e => setForm(f => ({ ...f, purchasePrice: e.target.value ? parseFloat(e.target.value) : null }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+                placeholder="ex : 15000" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Date d'achat</label>
+              <input type="date"
+                value={form.purchaseDate}
+                onChange={e => setForm(f => ({ ...f, purchaseDate: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs font-semibold text-gray-600">Crédit / Prêt</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Montant emprunté (€)</label>
+                <input type="number" min="0" step="100"
+                  value={form.loanAmount ?? ''}
+                  onChange={e => setForm(f => ({ ...f, loanAmount: e.target.value ? parseFloat(e.target.value) : null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+                  placeholder="ex : 10000" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Taux annuel (%)</label>
+                <input type="number" min="0" max="30" step="0.01"
+                  value={form.loanRate ?? ''}
+                  onChange={e => setForm(f => ({ ...f, loanRate: e.target.value ? parseFloat(e.target.value) : null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+                  placeholder="ex : 4.5" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Durée du prêt (mois)</label>
+                <input type="number" min="1" max="360" step="1"
+                  value={form.loanDurationMonths ?? ''}
+                  onChange={e => setForm(f => ({ ...f, loanDurationMonths: e.target.value ? parseInt(e.target.value) : null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+                  placeholder="ex : 60" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Date de début du prêt</label>
+                <input type="date"
+                  value={form.loanStartDate}
+                  onChange={e => setForm(f => ({ ...f, loanStartDate: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs font-semibold text-gray-600">Valeur marchande (estimation manuelle)</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Valeur de revente estimée (€)
+                  <span className="ml-1 font-normal text-gray-400">Source recommandée : vendezvotrevoiture.fr</span>
+                </label>
+                <input type="number" min="0" step="100"
+                  value={form.marketValue ?? ''}
+                  onChange={e => setForm(f => ({ ...f, marketValue: e.target.value ? parseFloat(e.target.value) : null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+                  placeholder="ex : 9500" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Date de la dernière estimation</label>
+                <input type="date"
+                  value={form.marketValueDate}
+                  onChange={e => setForm(f => ({ ...f, marketValueDate: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+              </div>
+            </div>
+          </div>
         </div>
 
         {(createMutation.isError || updateMutation.isError) && (

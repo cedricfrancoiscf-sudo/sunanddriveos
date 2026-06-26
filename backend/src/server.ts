@@ -490,6 +490,9 @@ async function runMorningRebalayage(): Promise<void> {
 
         // ─── Alertes intelligence : baisse note + sous-utilisation ────────────
         await runIntelligenceAlerts(db, company.slug);
+
+        // ─── Alertes ROI fenêtre de revente optimale ────────────────────────
+        await runRoiAlerts(db, company.slug);
       } catch (e) { console.error(`[Rebalayage] Erreur tenant ${company.slug}:`, e); }
     }
   } catch (e) { console.error('[Rebalayage] Erreur générale:', e); }
@@ -671,6 +674,68 @@ async function runIntelligenceAlerts(db: ReturnType<typeof getTenantClient>, slu
 
     console.log(`[Intelligence] ${slug} : alertes notes + sous-utilisation traitées`);
   } catch (e) { console.error(`[Intelligence] Erreur alertes ${slug}:`, e); }
+}
+
+async function runRoiAlerts(db: ReturnType<typeof getTenantClient>, slug: string): Promise<void> {
+  try {
+    const { calculateOptimalSaleWindow } = await import('./modules/vehicles/roi.service');
+    const vehicles = await db.vehicle.findMany({
+      where: { isActive: true },
+      select: { id: true, make: true, model: true, licensePlate: true, purchasePrice: true, purchaseDate: true, marketValue: true },
+    });
+
+    const adminUsers = await db.user.findMany({
+      where: { isActive: true, roles: { has: 'admin' } },
+      select: { id: true },
+    });
+    if (adminUsers.length === 0) return;
+
+    const chatId = await getTelegramChatId(db as never);
+    let count = 0;
+
+    for (const v of vehicles) {
+      if (!v.purchasePrice || !v.purchaseDate || !v.marketValue) continue;
+      try {
+        const analysis = await calculateOptimalSaleWindow(v.id, db);
+        if (!analysis) continue;
+        if (analysis.signal !== 'vendre_maintenant' && analysis.signal !== 'bientot') continue;
+
+        const label = `${v.make} ${v.model} (${v.licensePlate})`;
+        const signalLabel = analysis.signal === 'vendre_maintenant' ? 'ROI en déclin' : `fenêtre optimale dans ${analysis.moisOptimal} mois`;
+        const title = analysis.signal === 'vendre_maintenant'
+          ? `Revendre maintenant — ${label}`
+          : `Fenêtre de revente dans ${analysis.moisOptimal} mois — ${label}`;
+        const body = `ROI actuel : ${analysis.roiActuel.toFixed(1)}%. ${signalLabel}. Plus-value nette : ${analysis.plusValueNette.toLocaleString('fr-FR')} €.`;
+
+        for (const admin of adminUsers) {
+          const existing = await db.notification.findFirst({
+            where: { userId: admin.id, type: 'roi_sale_alert', relatedEntityId: v.id },
+          });
+          if (existing) continue;
+          await db.notification.create({
+            data: {
+              userId: admin.id,
+              type: 'roi_sale_alert',
+              title,
+              body,
+              relatedEntityType: 'vehicle',
+              relatedEntityId: v.id,
+              targetUrl: `/vehicles/${v.id}`,
+            },
+          });
+        }
+
+        if (chatId) {
+          const icon = analysis.signal === 'vendre_maintenant' ? '🔴' : '🟡';
+          await sendTelegramMessage(chatId,
+            `${icon} <b>Revente véhicule</b> — ${slug}\n${label}\n${signalLabel}. ROI : ${analysis.roiActuel.toFixed(1)}%\nPlus-value nette : ${analysis.plusValueNette.toLocaleString('fr-FR')} €`);
+        }
+        count++;
+      } catch (e) { console.error(`[ROI] Erreur véhicule ${v.id}:`, e); }
+    }
+
+    if (count > 0) console.log(`[ROI] ${slug} : ${count} alerte(s) revente générée(s)`);
+  } catch (e) { console.error(`[ROI] Erreur alertes ${slug}:`, e); }
 }
 
 cron.schedule('0 7 * * *', () => void runMorningRebalayage());

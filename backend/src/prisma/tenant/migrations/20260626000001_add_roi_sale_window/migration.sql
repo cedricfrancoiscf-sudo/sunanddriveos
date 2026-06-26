@@ -1,0 +1,20 @@
+-- Add purchase/loan/market value fields to vehicles
+ALTER TABLE "vehicles"
+  ADD COLUMN IF NOT EXISTS "purchaseDate"       TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "loanAmount"         DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS "loanRate"           DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS "loanDurationMonths" INTEGER,
+  ADD COLUMN IF NOT EXISTS "loanStartDate"      TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "marketValue"        DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS "marketValueDate"    TIMESTAMP(3);
+
+-- Add depreciation rate and ROI settings to company_settings
+ALTER TABLE "company_settings"
+  ADD COLUMN IF NOT EXISTS "depreciationRateYear1"     DOUBLE PRECISION NOT NULL DEFAULT 0.20,
+  ADD COLUMN IF NOT EXISTS "depreciationRateYear2"     DOUBLE PRECISION NOT NULL DEFAULT 0.15,
+  ADD COLUMN IF NOT EXISTS "depreciationRateYear3"     DOUBLE PRECISION NOT NULL DEFAULT 0.12,
+  ADD COLUMN IF NOT EXISTS "depreciationRateYears4to6" DOUBLE PRECISION NOT NULL DEFAULT 0.08,
+  ADD COLUMN IF NOT EXISTS "depreciationRateAfter6"    DOUBLE PRECISION NOT NULL DEFAULT 0.05,
+  ADD COLUMN IF NOT EXISTS "majorMaintenanceCost"      DOUBLE PRECISION NOT NULL DEFAULT 1500,
+  ADD COLUMN IF NOT EXISTS "majorMaintenanceKm"        INTEGER NOT NULL DEFAULT 30000,
+  ADD COLUMN IF NOT EXISTS "roiAlertMonthsBefore"      INTEGER NOT NULL DEFAULT 6;

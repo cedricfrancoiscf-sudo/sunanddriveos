@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart, CartesianGrid, ReferenceArea, ReferenceLine, Legend } from 'recharts';
 import { QRCodeCanvas } from 'qrcode.react';
 import { vehiclesApi, vehicleCarkeepersApi, vehiclePhotosApi, vehicleRatingsApi, type VehiclePhoto, type VehicleRating } from './vehiclesApi';
 import { blockingsApi, BLOCKING_TYPE_LABELS, BLOCKING_TYPE_COLORS } from './blockingsApi';
@@ -94,6 +94,222 @@ const emptyForm: BlockingFormData = {
   reason: '',
   type: 'maintenance',
 };
+
+// ─── ROI Analysis ─────────────────────────────────────────────────────────────
+
+interface RoiDataPoint {
+  mois: number;
+  roi: number;
+  valeurMarchande: number;
+  plusValue: number;
+  couts: number;
+  capitalRestant: number;
+  caCumule: number;
+}
+
+interface RoiAnalysis {
+  roiActuel: number;
+  roiMax: number;
+  moisOptimal: number;
+  dateOptimale: string;
+  plusValueNette: number;
+  capitalRestantDu: number;
+  signal: 'vendre_maintenant' | 'bientot' | 'attendre' | 'optimal';
+  courbe: RoiDataPoint[];
+  caMensuelMoyen: number;
+  coutsMensuelsTotaux: number;
+}
+
+const SIGNAL_CONFIG: Record<RoiAnalysis['signal'], { colorClass: string; icon: string; label: string }> = {
+  vendre_maintenant: { colorClass: 'bg-red-100 text-red-700 border border-red-200', icon: '🔴', label: 'Revendre maintenant — ROI en déclin' },
+  bientot: { colorClass: 'bg-amber-100 text-amber-700 border border-amber-200', icon: '🟡', label: 'Revendre dans les 6 prochains mois' },
+  optimal: { colorClass: 'bg-green-100 text-green-700 border border-green-200', icon: '🟢', label: '' },
+  attendre: { colorClass: 'bg-gray-100 text-gray-600 border border-gray-200', icon: '⚪', label: 'Continuer à exploiter — ROI croissant' },
+};
+
+function fmtMonthYear(iso: string): string {
+  return new Date(iso + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+}
+
+function RoiKpi({ label, value, colorClass }: { label: string; value: React.ReactNode; colorClass?: string }): React.JSX.Element {
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className={`text-base font-bold ${colorClass ?? 'text-gray-900'}`}>{value}</p>
+    </div>
+  );
+}
+
+function RoiAnalysisSection({ vehicleId, vehicle }: {
+  vehicleId: string;
+  vehicle: { purchasePrice?: number | null; purchaseDate?: string | null; marketValue?: number | null; marketValueDate?: string | null };
+}): React.JSX.Element {
+  const navigate = useNavigate();
+  const hasData = Boolean(vehicle.purchasePrice && vehicle.purchaseDate && vehicle.marketValue);
+  const now = new Date();
+
+  const { data: roiResp, isLoading } = useQuery<{ analysis: RoiAnalysis | null }>({
+    queryKey: ['roi-analysis', vehicleId],
+    queryFn: () => api.get<{ analysis: RoiAnalysis | null }>(`/vehicles/${vehicleId}/roi-analysis`).then(r => r.data),
+    enabled: hasData,
+    staleTime: 10 * 60_000,
+  });
+
+  const mktDateStale = vehicle.marketValueDate
+    ? (now.getTime() - new Date(vehicle.marketValueDate).getTime()) > 30 * 24 * 60 * 60 * 1000
+    : false;
+
+  return (
+    <div data-testid="roi-analysis-section" className="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Analyse de revente</h2>
+
+      {!hasData ? (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500">
+            Saisissez la valeur de revente estimée (source :{' '}
+            <span className="text-[#01696e] font-medium">vendezvotrevoiture.fr</span>) pour calculer
+            votre fenêtre optimale de vente.
+          </p>
+          <button type="button" onClick={() => navigate(`/vehicles/${vehicleId}/edit`)}
+            className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
+            style={{ backgroundColor: '#01696e' }}>
+            Saisir la valeur
+          </button>
+        </div>
+      ) : isLoading ? (
+        <div className="flex justify-center py-6">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} />
+        </div>
+      ) : roiResp?.analysis ? (
+        <RoiAnalysisDisplay analysis={roiResp.analysis} vehicleId={vehicleId} mktDateStale={mktDateStale} />
+      ) : (
+        <p className="text-sm text-gray-400 italic">Données insuffisantes pour le calcul.</p>
+      )}
+    </div>
+  );
+}
+
+function RoiAnalysisDisplay({ analysis, mktDateStale }: {
+  analysis: RoiAnalysis; vehicleId: string; mktDateStale: boolean;
+}): React.JSX.Element {
+  const cfg = SIGNAL_CONFIG[analysis.signal];
+  const signalLabel = analysis.signal === 'optimal'
+    ? `Moment optimal dans ${analysis.moisOptimal} mois (${fmtMonthYear(analysis.dateOptimale)})`
+    : cfg.label;
+
+  // Build chart data sampled every 3 months + optimal point
+  const now = new Date();
+  const chartData = analysis.courbe
+    .filter((d, i) => i % 3 === 0 || d.mois === analysis.moisOptimal)
+    .map(d => {
+      const dt = new Date(now);
+      dt.setMonth(dt.getMonth() + d.mois);
+      return {
+        ...d,
+        label: dt.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
+      };
+    });
+
+  const todayLabel = now.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+  const optStart = Math.max(0, analysis.moisOptimal - 3);
+  const optEnd = Math.min(84, analysis.moisOptimal + 3);
+
+  const optLabelStart = (() => {
+    const d = new Date(now); d.setMonth(d.getMonth() + optStart);
+    return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+  })();
+  const optLabelEnd = (() => {
+    const d = new Date(now); d.setMonth(d.getMonth() + optEnd);
+    return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+  })();
+
+  const optimalPoint = analysis.courbe[analysis.moisOptimal];
+
+  return (
+    <div className="space-y-4">
+      {/* Badge date valorisation */}
+      {mktDateStale && (
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-700">
+          ⚠ Mettre à jour la valeur marchande (estimation &gt; 30 jours)
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 gap-2">
+        <RoiKpi label="ROI actuel" value={`${analysis.roiActuel.toFixed(1)}%`}
+          colorClass={analysis.roiActuel >= 0 ? 'text-green-700' : 'text-red-600'} />
+        <RoiKpi label="ROI optimal" value={`${analysis.roiMax.toFixed(1)}%`} colorClass="text-blue-700" />
+        <RoiKpi label="Plus-value nette" value={`${analysis.plusValueNette >= 0 ? '+' : ''}${analysis.plusValueNette.toLocaleString('fr-FR')} €`}
+          colorClass={analysis.plusValueNette >= 0 ? 'text-green-700' : 'text-red-600'} />
+        {analysis.capitalRestantDu > 0 ? (
+          <RoiKpi label="Capital restant dû" value={`${analysis.capitalRestantDu.toLocaleString('fr-FR')} €`} colorClass="text-orange-600" />
+        ) : (
+          <RoiKpi label="CA généré (6 mois)" value={`${(analysis.caMensuelMoyen * 6).toLocaleString('fr-FR')} €`} />
+        )}
+      </div>
+
+      {/* Signal */}
+      <div className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${cfg.colorClass}`}>
+        <span>{cfg.icon}</span>
+        <span>{signalLabel}</span>
+      </div>
+
+      {/* Chart */}
+      <div>
+        <ResponsiveContainer width="100%" height={200}>
+          <ComposedChart data={chartData} margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="label" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
+            <YAxis yAxisId="roi" tick={{ fontSize: 9 }} tickFormatter={v => `${v}%`} width={38} />
+            <YAxis yAxisId="euro" orientation="right" tick={{ fontSize: 9 }} tickFormatter={v => `${Math.round(v / 1000)}k`} width={32} />
+            <Tooltip
+              formatter={(value: number, name: string) =>
+                name === 'ROI' ? [`${value.toFixed(1)}%`, name] : [`${Math.round(value).toLocaleString('fr-FR')} €`, name]
+              }
+              labelFormatter={l => `Mois : ${l}`}
+              contentStyle={{ fontSize: 11 }}
+            />
+            <Legend wrapperStyle={{ fontSize: 10 }} />
+            {analysis.moisOptimal > 0 && (
+              <ReferenceArea yAxisId="roi" x1={optLabelStart} x2={optLabelEnd}
+                fill="#01696e" fillOpacity={0.10}
+                label={{ value: 'Fenêtre optimale', position: 'insideTop', fontSize: 9, fill: '#01696e' }} />
+            )}
+            <ReferenceLine yAxisId="roi" x={todayLabel} stroke="#9ca3af" strokeDasharray="3 3"
+              label={{ value: "Auj.", position: 'insideTopLeft', fontSize: 9, fill: '#6b7280' }} />
+            <Line yAxisId="roi" type="monotone" dataKey="roi" stroke="#3b82f6" strokeWidth={2} dot={false} name="ROI" />
+            <Line yAxisId="euro" type="monotone" dataKey="valeurMarchande" stroke="#f97316" strokeWidth={1.5} dot={false} name="Valeur marchande" />
+            <Line yAxisId="euro" type="monotone" dataKey="plusValue" stroke="#22c55e" strokeWidth={1.5} dot={false} name="Plus-value" />
+            {analysis.capitalRestantDu > 0 && (
+              <Line yAxisId="euro" type="monotone" dataKey="capitalRestant" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="Capital dû" />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Message explicatif */}
+      <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 leading-relaxed">
+        {analysis.moisOptimal > 0 && optimalPoint ? (
+          <>
+            La fenêtre optimale de revente est estimée à{' '}
+            <strong>{fmtMonthYear(analysis.dateOptimale)}</strong>.{' '}
+            Capital restant dû à cette date :{' '}
+            <strong>{optimalPoint.capitalRestant.toLocaleString('fr-FR')} €</strong>.{' '}
+            Plus-value nette estimée : <strong>{optimalPoint.plusValue.toLocaleString('fr-FR')} €</strong>.{' '}
+            CA mensuel moyen : <strong>{analysis.caMensuelMoyen.toLocaleString('fr-FR')} €/mois</strong>.
+          </>
+        ) : (
+          <>
+            Le moment optimal de revente est <strong>maintenant</strong> — le ROI est en déclin.
+            Plus-value nette actuelle : <strong>{analysis.plusValueNette.toLocaleString('fr-FR')} €</strong>.
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function ValeurReventeSection({ vehicleId, purchasePrice, currentMileage, settings }: {
   vehicleId: string; purchasePrice: number | null; currentMileage: number;
@@ -1252,6 +1468,12 @@ export default function VehicleDetailPage(): React.JSX.Element {
             purchasePrice={vehicle.purchasePrice ?? null}
             currentMileage={vehicle.currentMileage ?? 0}
             settings={vehicleSettings}
+          />
+
+          {/* Analyse de revente ROI */}
+          <RoiAnalysisSection
+            vehicleId={id!}
+            vehicle={vehicle as { purchasePrice?: number | null; purchaseDate?: string | null; marketValue?: number | null; marketValueDate?: string | null }}
           />
 
           {/* Garanties */}

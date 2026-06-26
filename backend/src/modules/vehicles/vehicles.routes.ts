@@ -14,6 +14,7 @@ import {
   updateVehicle,
   deleteVehicle,
 } from './vehicles.service';
+import { calculateOptimalSaleWindow } from './roi.service';
 
 const UPLOAD_BASE = process.env.UPLOAD_DIR ?? '/app/uploads';
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
@@ -68,6 +69,13 @@ const updateSchema = createSchema.partial().extend({
   carekeeperUserId: z.string().nullable().optional(),
   critAir: z.enum(['0', '1', '2', '3', '4', '5', 'NC']).nullable().optional(),
   purchasePrice: z.number().min(0).nullable().optional(),
+  purchaseDate: z.string().datetime().nullable().optional(),
+  loanAmount: z.number().min(0).nullable().optional(),
+  loanRate: z.number().min(0).max(100).nullable().optional(),
+  loanDurationMonths: z.number().int().min(1).max(360).nullable().optional(),
+  loanStartDate: z.string().datetime().nullable().optional(),
+  marketValue: z.number().min(0).nullable().optional(),
+  marketValueDate: z.string().datetime().nullable().optional(),
 });
 
 // GET /api/v1/vehicles
@@ -77,6 +85,35 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const includeInactive = req.query.includeInactive === 'true';
     const vehicles = await listVehicles(db, includeInactive);
     res.json({ vehicles });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/vehicles/roi-fleet — analyse de revente pour toute la flotte
+router.get('/roi-fleet', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const vehicles = await db.vehicle.findMany({
+      where: { isActive: true },
+      select: { id: true, make: true, model: true, licensePlate: true, purchasePrice: true, purchaseDate: true, marketValue: true },
+    });
+    const results = await Promise.all(
+      vehicles.map(async (v) => {
+        try {
+          const analysis = await calculateOptimalSaleWindow(v.id, db);
+          return {
+            vehicleId: v.id,
+            make: v.make,
+            model: v.model,
+            licensePlate: v.licensePlate,
+            hasData: Boolean(v.purchasePrice && v.marketValue && v.purchaseDate),
+            analysis,
+          };
+        } catch {
+          return { vehicleId: v.id, make: v.make, model: v.model, licensePlate: v.licensePlate, hasData: false, analysis: null };
+        }
+      }),
+    );
+    res.json({ fleet: results });
   } catch (err: unknown) { next(err); }
 });
 
@@ -425,6 +462,17 @@ router.put('/:id/warranty', async (req: Request, res: Response, next: NextFuncti
       create: { vehicleId: req.params.id as string, ...data },
     });
     res.json({ warranty });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Analyse ROI / Fenêtre optimale de revente ────────────────────────────────
+
+// GET /api/v1/vehicles/:id/roi-analysis
+router.get('/:id/roi-analysis', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const analysis = await calculateOptimalSaleWindow(req.params.id as string, db);
+    res.json({ analysis });
   } catch (err: unknown) { next(err); }
 });
 

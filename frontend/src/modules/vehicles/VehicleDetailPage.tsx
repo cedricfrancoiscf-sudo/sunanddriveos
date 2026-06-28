@@ -105,12 +105,24 @@ interface RoiDataPoint {
   couts: number;
   capitalRestant: number;
   caCumule: number;
+  dateLabel: string;
+  estHistorique: boolean;
+  estAujourdhui: boolean;
+  hasSnapshot: boolean;
+  cashflow: number;
+  cashflowCumule: number;
+  mensualite: number;
+  totalSortiDePoche: number;
+  cocReturn: number | null;
+  tri: number | null;
+  caReel: number;
 }
 
 interface RoiAnalysis {
   roiActuel: number;
   roiMax: number;
   moisOptimal: number;
+  moisRestants: number;
   dateOptimale: string;
   plusValueNette: number;
   capitalRestantDu: number;
@@ -118,6 +130,16 @@ interface RoiAnalysis {
   courbe: RoiDataPoint[];
   caMensuelMoyen: number;
   coutsMensuelsTotaux: number;
+  mensualitePret: number;
+  loanDeposit: number;
+  caMensuelNormalise: number;
+  caParMoisCalendaire: number[];
+  triActuel: number | null;
+  triMax: number | null;
+  moisOptimalTri: number;
+  cocActuel: number | null;
+  cocMax: number | null;
+  cashflowMensuelNet: number;
 }
 
 const SIGNAL_CONFIG: Record<RoiAnalysis['signal'], { colorClass: string; icon: string; label: string }> = {
@@ -193,53 +215,48 @@ function RoiAnalysisDisplay({ analysis, mktDateStale }: {
   analysis: RoiAnalysis; vehicleId: string; mktDateStale: boolean;
 }): React.JSX.Element {
   const cfg = SIGNAL_CONFIG[analysis.signal];
-  const signalLabel = analysis.signal === 'optimal'
-    ? `Moment optimal dans ${analysis.moisOptimal} mois (${fmtMonthYear(analysis.dateOptimale)})`
-    : cfg.label;
+  const signalLabel =
+    analysis.signal === 'optimal'
+      ? `Moment optimal dans ${analysis.moisRestants} mois (${fmtMonthYear(analysis.dateOptimale)})`
+      : analysis.signal === 'bientot'
+        ? `Revendre dans ${analysis.moisRestants} mois (${fmtMonthYear(analysis.dateOptimale)})`
+        : cfg.label;
 
-  // Build chart data sampled every 3 months + optimal point
-  const now = new Date();
+  // Indice du mois actuel dans la courbe 48 mois
+  const moisActuelIdx = analysis.courbe.findIndex(d => d.estAujourdhui);
+  const todayLabel = moisActuelIdx >= 0 ? analysis.courbe[moisActuelIdx].dateLabel : '';
+
+  // Courbe échantillonnée : toutes les 3 périodes + point optimal + aujourd'hui
   const chartData = analysis.courbe
-    .filter((d, i) => i % 3 === 0 || d.mois === analysis.moisOptimal)
-    .map(d => {
-      const dt = new Date(now);
-      dt.setMonth(dt.getMonth() + d.mois);
-      return {
-        ...d,
-        label: dt.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
-      };
-    });
+    .filter((d, i) => i % 3 === 0 || d.mois === analysis.moisOptimal || d.estAujourdhui)
+    .map(d => ({ ...d, label: d.dateLabel }));
 
-  const todayLabel = now.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+  // Fenêtre optimale ±3 mois (indices absolus depuis purchaseDate)
   const optStart = Math.max(0, analysis.moisOptimal - 3);
-  const optEnd = Math.min(84, analysis.moisOptimal + 3);
+  const optEnd = Math.min(48, analysis.moisOptimal + 3);
+  const optLabelStart = analysis.courbe[optStart]?.dateLabel ?? '';
+  const optLabelEnd = analysis.courbe[optEnd]?.dateLabel ?? '';
 
-  const optLabelStart = (() => {
-    const d = new Date(now); d.setMonth(d.getMonth() + optStart);
-    return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
-  })();
-  const optLabelEnd = (() => {
-    const d = new Date(now); d.setMonth(d.getMonth() + optEnd);
-    return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
-  })();
+  // Zone historique
+  const histoStart = analysis.courbe[0]?.dateLabel ?? '';
 
   const optimalPoint = analysis.courbe[analysis.moisOptimal];
 
   return (
     <div className="space-y-4">
-      {/* Badge date valorisation */}
       {mktDateStale && (
         <div className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-700">
           ⚠ Mettre à jour la valeur marchande (estimation &gt; 30 jours)
         </div>
       )}
 
-      {/* KPIs */}
+      {/* KPIs — ligne 1 */}
       <div className="grid grid-cols-2 gap-2">
         <RoiKpi label="ROI actuel" value={`${analysis.roiActuel.toFixed(1)}%`}
           colorClass={analysis.roiActuel >= 0 ? 'text-green-700' : 'text-red-600'} />
         <RoiKpi label="ROI optimal" value={`${analysis.roiMax.toFixed(1)}%`} colorClass="text-blue-700" />
-        <RoiKpi label="Plus-value nette" value={`${analysis.plusValueNette >= 0 ? '+' : ''}${analysis.plusValueNette.toLocaleString('fr-FR')} €`}
+        <RoiKpi label="Plus-value nette"
+          value={`${analysis.plusValueNette >= 0 ? '+' : ''}${analysis.plusValueNette.toLocaleString('fr-FR')} €`}
           colorClass={analysis.plusValueNette >= 0 ? 'text-green-700' : 'text-red-600'} />
         {analysis.capitalRestantDu > 0 ? (
           <RoiKpi label="Capital restant dû" value={`${analysis.capitalRestantDu.toLocaleString('fr-FR')} €`} colorClass="text-orange-600" />
@@ -248,15 +265,38 @@ function RoiAnalysisDisplay({ analysis, mktDateStale }: {
         )}
       </div>
 
+      {/* KPIs — ligne 2 : mensualité, cashflow, CA normalisé */}
+      <div className="grid grid-cols-3 gap-2">
+        <RoiKpi label="Mensualité prêt"
+          value={analysis.mensualitePret > 0 ? `${analysis.mensualitePret.toLocaleString('fr-FR')} €/mois` : '—'} />
+        <RoiKpi label="Cashflow net"
+          value={`${analysis.cashflowMensuelNet >= 0 ? '+' : ''}${analysis.cashflowMensuelNet.toLocaleString('fr-FR')} €/mois`}
+          colorClass={analysis.cashflowMensuelNet >= 0 ? 'text-green-700' : 'text-red-600'} />
+        <RoiKpi label="CA normalisé" value={`${analysis.caMensuelNormalise.toLocaleString('fr-FR')} €/mois`} />
+      </div>
+
+      {/* KPIs — ligne 3 : TRI, CoC */}
+      <div className="grid grid-cols-3 gap-2">
+        <RoiKpi label="TRI actuel"
+          value={analysis.triActuel !== null ? `${analysis.triActuel.toFixed(1)}%/an` : '—'}
+          colorClass={analysis.triActuel !== null ? (analysis.triActuel >= 0 ? 'text-green-700' : 'text-red-600') : undefined} />
+        <RoiKpi label="TRI optimal"
+          value={analysis.triMax !== null ? `${analysis.triMax.toFixed(1)}%/an` : '—'}
+          colorClass="text-blue-700" />
+        <RoiKpi label="Cash-on-Cash"
+          value={analysis.cocActuel !== null ? `${analysis.cocActuel.toFixed(1)}%` : '—'}
+          colorClass={analysis.cocActuel !== null ? (analysis.cocActuel >= 0 ? 'text-green-700' : 'text-red-600') : undefined} />
+      </div>
+
       {/* Signal */}
       <div className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${cfg.colorClass}`}>
         <span>{cfg.icon}</span>
         <span>{signalLabel}</span>
       </div>
 
-      {/* Chart */}
+      {/* Graphique 48 mois depuis purchaseDate */}
       <div>
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={220}>
           <ComposedChart data={chartData} margin={{ top: 4, right: 38, left: 0, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="label" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
@@ -264,24 +304,55 @@ function RoiAnalysisDisplay({ analysis, mktDateStale }: {
             <YAxis yAxisId="euro" orientation="right" tick={{ fontSize: 9 }} tickFormatter={v => `${Math.round(v / 1000)}k`} width={32} />
             <Tooltip
               formatter={(value: number, name: string) =>
-                name === 'ROI' ? [`${value.toFixed(1)}%`, name] : [`${Math.round(value).toLocaleString('fr-FR')} €`, name]
+                name === 'ROI' || name === 'TRI%' || name === 'CoC%'
+                  ? [`${value.toFixed(1)}%`, name]
+                  : [`${Math.round(value).toLocaleString('fr-FR')} €`, name]
               }
-              labelFormatter={l => `Mois : ${l}`}
+              labelFormatter={l => `Période : ${l}`}
               contentStyle={{ fontSize: 11 }}
             />
             <Legend wrapperStyle={{ fontSize: 10 }} />
-            {analysis.moisOptimal > 0 && (
+            {/* Zone historique (grisée) */}
+            {moisActuelIdx > 0 && (
+              <ReferenceArea yAxisId="roi" x1={histoStart} x2={todayLabel}
+                fill="#6b7280" fillOpacity={0.06} />
+            )}
+            {/* Fenêtre optimale */}
+            {analysis.moisRestants > 0 && (
               <ReferenceArea yAxisId="roi" x1={optLabelStart} x2={optLabelEnd}
                 fill="#01696e" fillOpacity={0.10}
                 label={{ value: 'Fenêtre optimale', position: 'insideTop', fontSize: 9, fill: '#01696e' }} />
             )}
-            <ReferenceLine yAxisId="roi" x={todayLabel} stroke="#9ca3af" strokeDasharray="3 3"
-              label={{ value: "Auj.", position: 'insideTopLeft', fontSize: 9, fill: '#6b7280' }} />
+            {/* Ligne zéro ROI */}
+            <ReferenceLine yAxisId="roi" y={0} stroke="#9ca3af" strokeDasharray="2 2" />
+            {/* Aujourd'hui */}
+            {todayLabel && (
+              <ReferenceLine yAxisId="roi" x={todayLabel} stroke="#9ca3af" strokeDasharray="3 3"
+                label={{ value: 'Auj.', position: 'insideTopLeft', fontSize: 9, fill: '#6b7280' }} />
+            )}
             <Line yAxisId="roi" type="monotone" dataKey="roi" stroke="#3b82f6" strokeWidth={2} dot={false} name="ROI" />
-            <Line yAxisId="euro" type="monotone" dataKey="valeurMarchande" stroke="#f97316" strokeWidth={1.5} dot={false} name="Valeur marchande" />
+            <Line yAxisId="euro" type="monotone" dataKey="valeurMarchande" stroke="#f97316" strokeWidth={1.5}
+              dot={(props: Record<string, unknown>) => {
+                const payload = props.payload as RoiDataPoint | undefined;
+                if (!payload?.hasSnapshot) return <g key={String(props.key ?? '')} />;
+                const cx = Number(props.cx ?? 0);
+                const cy = Number(props.cy ?? 0);
+                return (
+                  <polygon key={String(props.key ?? '')}
+                    points={`${cx},${cy - 5} ${cx + 5},${cy} ${cx},${cy + 5} ${cx - 5},${cy}`}
+                    fill="#f97316" />
+                );
+              }}
+              name="Valeur marchande" />
             <Line yAxisId="euro" type="monotone" dataKey="plusValue" stroke="#22c55e" strokeWidth={1.5} dot={false} name="Plus-value" />
             {analysis.capitalRestantDu > 0 && (
               <Line yAxisId="euro" type="monotone" dataKey="capitalRestant" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="Capital dû" />
+            )}
+            {analysis.triMax !== null && (
+              <Line yAxisId="roi" type="monotone" dataKey="tri" stroke="#01696e" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="TRI%" connectNulls />
+            )}
+            {analysis.cocMax !== null && (
+              <Line yAxisId="roi" type="monotone" dataKey="cocReturn" stroke="#f59e0b" strokeWidth={1} strokeDasharray="2 2" dot={false} name="CoC%" connectNulls />
             )}
           </ComposedChart>
         </ResponsiveContainer>
@@ -289,10 +360,13 @@ function RoiAnalysisDisplay({ analysis, mktDateStale }: {
 
       {/* Message explicatif */}
       <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800 leading-relaxed">
-        {analysis.moisOptimal > 0 && optimalPoint ? (
+        {analysis.moisRestants > 0 && optimalPoint ? (
           <>
-            La fenêtre optimale de revente est estimée à{' '}
-            <strong>{fmtMonthYear(analysis.dateOptimale)}</strong>.{' '}
+            Fenêtre optimale basée sur le TRI :{' '}
+            <strong>{fmtMonthYear(analysis.dateOptimale)}</strong>
+            {analysis.triMax !== null && (
+              <> — TRI max <strong>{analysis.triMax.toFixed(1)}%/an</strong></>
+            )}.{' '}
             Capital restant dû à cette date :{' '}
             <strong>{optimalPoint.capitalRestant.toLocaleString('fr-FR')} €</strong>.{' '}
             Plus-value nette estimée : <strong>{optimalPoint.plusValue.toLocaleString('fr-FR')} €</strong>.{' '}
@@ -300,8 +374,11 @@ function RoiAnalysisDisplay({ analysis, mktDateStale }: {
           </>
         ) : (
           <>
-            Le moment optimal de revente est <strong>maintenant</strong> — le ROI est en déclin.
+            Le moment optimal de revente est <strong>maintenant</strong> — le ROI est en déclin.{' '}
             Plus-value nette actuelle : <strong>{analysis.plusValueNette.toLocaleString('fr-FR')} €</strong>.
+            {analysis.triActuel !== null && (
+              <> TRI actuel : <strong>{analysis.triActuel.toFixed(1)}%/an</strong>.</>
+            )}
           </>
         )}
       </div>

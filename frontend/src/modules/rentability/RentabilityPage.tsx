@@ -221,10 +221,15 @@ interface RoiFleetEntry {
     roiActuel: number;
     roiMax: number;
     moisOptimal: number;
+    moisRestants: number;
     dateOptimale: string;
     plusValueNette: number;
     capitalRestantDu: number;
     signal: 'vendre_maintenant' | 'bientot' | 'attendre' | 'optimal';
+    triActuel: number | null;
+    cocActuel: number | null;
+    cashflowMensuelNet: number;
+    mensualitePret: number;
   } | null;
 }
 
@@ -276,7 +281,7 @@ function ReventeTab(): React.JSX.Element {
         <table className="w-full text-sm">
           <thead className="border-b border-gray-100 bg-gray-50">
             <tr>
-              {['Véhicule', 'Valeur marchande', 'Plus-value nette', 'ROI actuel', 'Fenêtre optimale', 'Signal', 'Jours avant optimal'].map(h => (
+              {['Véhicule', 'Valeur marchande', 'Plus-value nette', 'ROI actuel', 'TRI', 'Cash/Cash', 'Cashflow net', 'Fenêtre optimale', 'Signal', 'Mois avant optimal'].map(h => (
                 <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">{h}</th>
               ))}
             </tr>
@@ -284,8 +289,7 @@ function ReventeTab(): React.JSX.Element {
           <tbody className="divide-y divide-gray-100">
             {rows.map(row => {
               const a = row.analysis;
-              const now = new Date();
-              const daysBeforeOptimal = a ? Math.round(a.moisOptimal * 30.44) : null;
+              const moisAvantOptimal = a ? a.moisRestants : null;
 
               if (!row.hasData || !a) {
                 return (
@@ -294,7 +298,7 @@ function ReventeTab(): React.JSX.Element {
                       {row.make} {row.model}
                       <span className="ml-2 font-mono text-xs text-gray-400">{row.licensePlate}</span>
                     </td>
-                    <td colSpan={6} className="px-4 py-3 text-xs text-gray-400 italic">
+                    <td colSpan={9} className="px-4 py-3 text-xs text-gray-400 italic">
                       Données incomplètes —{' '}
                       <a href={`/vehicles/${row.vehicleId}/edit`} className="text-[#01696e] hover:underline">
                         Compléter la fiche
@@ -322,6 +326,15 @@ function ReventeTab(): React.JSX.Element {
                   <td className={`px-4 py-3 font-semibold ${a.roiActuel >= 0 ? 'text-green-700' : 'text-red-600'}`}>
                     {a.roiActuel.toFixed(1)}%
                   </td>
+                  <td className={`px-4 py-3 font-semibold ${a.triActuel !== null ? (a.triActuel >= 0 ? 'text-green-700' : 'text-red-600') : 'text-gray-400'}`}>
+                    {a.triActuel !== null ? `${a.triActuel.toFixed(1)}%` : '—'}
+                  </td>
+                  <td className={`px-4 py-3 ${a.cocActuel !== null ? (a.cocActuel >= 0 ? 'text-green-700' : 'text-red-600') : 'text-gray-400'}`}>
+                    {a.cocActuel !== null ? `${a.cocActuel.toFixed(1)}%` : '—'}
+                  </td>
+                  <td className={`px-4 py-3 ${a.cashflowMensuelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                    {a.cashflowMensuelNet >= 0 ? '+' : ''}{a.cashflowMensuelNet.toLocaleString('fr-FR')} €
+                  </td>
                   <td className="px-4 py-3 text-gray-700">{optDate}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${SIGNAL_BADGE[a.signal]}`}>
@@ -329,7 +342,7 @@ function ReventeTab(): React.JSX.Element {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {daysBeforeOptimal === 0 ? <span className="font-semibold text-red-600">Maintenant</span> : `${daysBeforeOptimal} j`}
+                    {moisAvantOptimal === 0 ? <span className="font-semibold text-red-600">Maintenant</span> : `${moisAvantOptimal} mois`}
                   </td>
                 </tr>
               );

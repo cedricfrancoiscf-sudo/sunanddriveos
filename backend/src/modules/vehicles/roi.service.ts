@@ -8,12 +8,24 @@ export interface RoiDataPoint {
   couts: number;
   capitalRestant: number;
   caCumule: number;
+  dateLabel: string;
+  estHistorique: boolean;
+  estAujourdhui: boolean;
+  hasSnapshot: boolean;
+  cashflow: number;
+  cashflowCumule: number;
+  mensualite: number;
+  totalSortiDePoche: number;
+  cocReturn: number | null;
+  tri: number | null;
+  caReel: number;
 }
 
 export interface RoiAnalysis {
   roiActuel: number;
   roiMax: number;
   moisOptimal: number;
+  moisRestants: number;
   dateOptimale: string;
   plusValueNette: number;
   capitalRestantDu: number;
@@ -21,6 +33,16 @@ export interface RoiAnalysis {
   courbe: RoiDataPoint[];
   caMensuelMoyen: number;
   coutsMensuelsTotaux: number;
+  mensualitePret: number;
+  loanDeposit: number;
+  caMensuelNormalise: number;
+  caParMoisCalendaire: number[];
+  triActuel: number | null;
+  triMax: number | null;
+  moisOptimalTri: number;
+  cocActuel: number | null;
+  cocMax: number | null;
+  cashflowMensuelNet: number;
 }
 
 type Db = ReturnType<typeof import('../../prisma/client').getTenantClient>;
@@ -57,14 +79,19 @@ function getAnnualDepreciationRate(ageYears: number, s: RoiSettings): number {
   return s.depreciationRateAfter6;
 }
 
-function loanRemainingBalance(principal: number, annualRatePct: number, totalMonths: number, elapsedMonths: number): number {
+function loanRemainingBalance(
+  principal: number,
+  annualRatePct: number,
+  totalMonths: number,
+  elapsedMonths: number,
+): number {
   if (elapsedMonths >= totalMonths) return 0;
   if (annualRatePct === 0) {
     return Math.max(0, principal - (principal / totalMonths) * elapsedMonths);
   }
   const r = annualRatePct / 100 / 12;
-  const pmt = principal * (r * Math.pow(1 + r, totalMonths)) / (Math.pow(1 + r, totalMonths) - 1);
-  return Math.max(0, pmt * (1 - Math.pow(1 + r, -(totalMonths - elapsedMonths))) / r);
+  const pmt = (principal * (r * Math.pow(1 + r, totalMonths))) / (Math.pow(1 + r, totalMonths) - 1);
+  return Math.max(0, (pmt * (1 - Math.pow(1 + r, -(totalMonths - elapsedMonths)))) / r);
 }
 
 export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Promise<RoiAnalysis | null> {
@@ -78,6 +105,7 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
         loanRate: true,
         loanDurationMonths: true,
         loanStartDate: true,
+        loanDeposit: true,
         marketValue: true,
         currentMileage: true,
         year: true,
@@ -112,6 +140,9 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
 
   if (!vehicle?.purchasePrice || !vehicle.marketValue || !vehicle.purchaseDate) return null;
 
+  const now = new Date();
+  const purchaseDate = new Date(vehicle.purchaseDate);
+
   const s: RoiSettings = settings
     ? {
         depreciationRateYear1: settings.depreciationRateYear1,
@@ -126,92 +157,231 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
       }
     : DEFAULT_SETTINGS;
 
-  // Fenêtre de mois complets — exclure le mois en cours
+  // Fenêtre caMensuelMoyen — mois complets, exclure le mois en cours
   const debutMoisEnCours = new Date(now.getFullYear(), now.getMonth(), 1);
   const moisDepuisAchat = Math.floor(
-    (debutMoisEnCours.getTime() - purchaseDate.getTime())
-    / (30.44 * 86_400_000)
+    (debutMoisEnCours.getTime() - purchaseDate.getTime()) / (30.44 * 86_400_000),
   );
-  // Nb mois effectifs = min(config, historique dispo) — jamais < 1
   const nbMoisEffectifs = Math.max(1, Math.min(s.roiCaMoyenMois, moisDepuisAchat));
-
   const debutFenetre = new Date(debutMoisEnCours);
   debutFenetre.setMonth(debutFenetre.getMonth() - nbMoisEffectifs);
 
-  // Filtre sur endAt (pas startAt) — completed + booked + active
-  const rentalsCA = await db.rental.findMany({
-    where: {
-      vehicleId,
-      endAt: { gte: debutFenetre, lt: debutMoisEnCours },
-      status: { in: ['completed', 'booked', 'active'] },
-    },
-    select: { ownerPayout: true, grossRevenue: true },
-  });
+  // Coûts mensuels (pour projection et coutsMensuelsTotaux)
+  const fixedMonthly = fixedCosts.reduce((sum, c) => sum + c.amount, 0);
+  const totalMaintCost = maintenances.reduce((sum, m) => sum + (m.cost ?? 0), 0);
+  const variableMonthly = maintenances.length > 0 ? totalMaintCost / 12 : 0;
+  const coutsMensuelsTotaux = fixedMonthly + variableMonthly;
 
-  // ownerPayout si > 0, sinon grossRevenue (locations fin de mois)
-  const totalCA = rentalsCA.reduce((sum, r) =>
-    sum + ((r.ownerPayout ?? 0) > 0
-      ? r.ownerPayout!
-      : Math.max(0, r.grossRevenue ?? 0)),
-    0
+  // Nouvelles données : historique rentals, évaluations, coûts avec dates
+  const [allRentals, valuations, allCosts] = await Promise.all([
+    db.rental.findMany({
+      where: {
+        vehicleId,
+        startAt: { gte: purchaseDate },
+        status: { in: ['completed', 'booked', 'active'] },
+      },
+      select: { ownerPayout: true, grossRevenue: true, startAt: true, endAt: true },
+      orderBy: { startAt: 'asc' },
+    }),
+    db.vehicleValuation.findMany({
+      where: { vehicleId },
+      orderBy: { evaluatedAt: 'asc' },
+    }),
+    db.vehicleCost.findMany({
+      where: { vehicleId },
+      select: { amount: true, type: true, startDate: true, endDate: true, amortizationMonths: true },
+    }),
+  ]);
+
+  // caMensuelMoyen sur la fenêtre de mois complets
+  const rentalsCA = allRentals.filter(
+    (r) => r.endAt && new Date(r.endAt) >= debutFenetre && new Date(r.endAt) < debutMoisEnCours,
+  );
+  const totalCA = rentalsCA.reduce(
+    (sum, r) => sum + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)),
+    0,
   );
   const caMensuelMoyen = totalCA / nbMoisEffectifs;
 
-  // Coûts fixes mensuels
-  const fixedMonthly = fixedCosts.reduce((sum, c) => sum + c.amount, 0);
+  // Âge réel depuis l'année de fabrication À LA DATE D'ACHAT (base courbe)
+  const realAgeYears = vehicle.year ? Math.max(0, purchaseDate.getFullYear() - vehicle.year) : 0;
 
-  // Coûts variables mensuels (entretien, moyenne 12 mois)
-  const totalMaintCost = maintenances.reduce((sum, m) => sum + (m.cost ?? 0), 0);
-  const variableMonthly = maintenances.length > 0 ? totalMaintCost / 12 : 0;
-
-  const coutsMensuelsTotaux = fixedMonthly + variableMonthly;
-
-  const now = new Date();
-  const purchaseDate = new Date(vehicle.purchaseDate);
-  const currentAgeMonths = Math.max(1, Math.floor(
-    (now.getTime() - purchaseDate.getTime()) / (30.44 * 24 * 60 * 60 * 1000),
-  ));
-
-  // Âge réel depuis l'année de fabrication (pas depuis la date d'achat)
-  const realAgeYears = vehicle.year
-    ? Math.max(0, now.getFullYear() - vehicle.year)
-    : Math.floor((now.getTime() - purchaseDate.getTime()) / (365.25 * 86_400_000));
-
+  // loanElapsedBase = mois écoulés depuis loanStartDate JUSQU'À purchaseDate
+  // → loanElapsedBase + m donne le nb de mois de prêt écoulés au mois m (depuis purchaseDate)
   const loanStartDate = vehicle.loanStartDate ? new Date(vehicle.loanStartDate) : purchaseDate;
-  const loanElapsedBase = Math.floor(
-    (now.getTime() - loanStartDate.getTime()) / (30.44 * 24 * 60 * 60 * 1000),
+  const loanElapsedBase = Math.max(
+    0,
+    Math.floor((purchaseDate.getTime() - loanStartDate.getTime()) / (30.44 * 24 * 60 * 60 * 1000)),
   );
 
-  const avgMonthlyKm = vehicle.currentMileage > 0 ? vehicle.currentMileage / currentAgeMonths : 1000;
-  const baseMajorCount = Math.floor(vehicle.currentMileage / s.majorMaintenanceKm);
+  // Mensualité du prêt
+  const loanR = (vehicle.loanRate ?? 0) / 100 / 12;
+  const pmt =
+    vehicle.loanAmount && vehicle.loanDurationMonths
+      ? loanR > 0
+        ? (vehicle.loanAmount * (loanR * Math.pow(1 + loanR, vehicle.loanDurationMonths))) /
+          (Math.pow(1 + loanR, vehicle.loanDurationMonths) - 1)
+        : vehicle.loanAmount / vehicle.loanDurationMonths
+      : 0;
 
-  const courbe: RoiDataPoint[] = [];
-  let currentValue = vehicle.marketValue;
+  const TOTAL_MONTHS = 48;
+  const moisActuel = Math.min(
+    TOTAL_MONTHS,
+    Math.floor((now.getTime() - purchaseDate.getTime()) / (30.44 * 86_400_000)),
+  );
+
+  // Profil saisonnier 12 mois calendaires (depuis la fenêtre caMensuelMoyen)
+  const caParMoisCalendaire = new Array<number>(12).fill(0);
+  const countParMois = new Array<number>(12).fill(0);
+  for (const r of allRentals) {
+    if (!r.endAt) continue;
+    const endDate = new Date(r.endAt);
+    if (endDate >= debutMoisEnCours || endDate < debutFenetre) continue;
+    const idx = endDate.getMonth();
+    const ca = (r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0);
+    caParMoisCalendaire[idx] += ca;
+    countParMois[idx]++;
+  }
+  for (let i = 0; i < 12; i++) {
+    caParMoisCalendaire[i] =
+      countParMois[i] > 0 ? caParMoisCalendaire[i] / countParMois[i] : caMensuelMoyen;
+  }
+
+  // CA réel par mois depuis purchaseDate (m=0..moisActuel)
+  const caReelParMois = new Array<number>(TOTAL_MONTHS + 1).fill(0);
+  for (let m = 0; m <= moisActuel; m++) {
+    const mStart = new Date(purchaseDate);
+    mStart.setMonth(mStart.getMonth() + m);
+    mStart.setDate(1);
+    mStart.setHours(0, 0, 0, 0);
+    const mEnd = new Date(mStart);
+    mEnd.setMonth(mEnd.getMonth() + 1);
+    caReelParMois[m] = allRentals
+      .filter((r) => r.endAt && new Date(r.endAt) >= mStart && new Date(r.endAt) < mEnd)
+      .reduce(
+        (s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)),
+        0,
+      );
+  }
+
+  // Coûts réels par mois depuis purchaseDate (m=0..moisActuel)
+  const coutsReelParMois = new Array<number>(TOTAL_MONTHS + 1).fill(0);
+  for (let m = 0; m <= moisActuel; m++) {
+    const mDate = new Date(purchaseDate);
+    mDate.setMonth(mDate.getMonth() + m);
+    let c = 0;
+    for (const cost of allCosts) {
+      const start = new Date(cost.startDate);
+      const end = cost.endDate ? new Date(cost.endDate) : null;
+      if (mDate < start) continue;
+      if (end && mDate >= end) continue;
+      if (cost.type === 'fixed') {
+        c += cost.amount;
+      } else if (cost.type === 'onetime' && cost.amortizationMonths) {
+        c += cost.amount / cost.amortizationMonths;
+      }
+    }
+    coutsReelParMois[m] = c;
+  }
+
+  function calculerTRI(flux: number[]): number | null {
+    if (flux.length < 2) return null;
+    if (!flux.some((f) => f < 0) || !flux.some((f) => f > 0)) return null;
+    const npv = (r: number) => flux.reduce((s, f, i) => s + f / Math.pow(1 + r, i), 0);
+    let lo = -0.9999;
+    let hi = 10.0;
+    if (npv(lo) * npv(hi) > 0) return null;
+    for (let i = 0; i < 50; i++) {
+      const mid = (lo + hi) / 2;
+      if (npv(mid) > 0) lo = mid;
+      else hi = mid;
+    }
+    const triMensuel = (lo + hi) / 2;
+    return Math.round((Math.pow(1 + triMensuel, 12) - 1) * 10000) / 100;
+  }
+
+  // Courbe 48 mois depuis purchaseDate (m=0=purchaseDate, m=moisActuel=aujourd'hui)
+  const loanDeposit = vehicle.loanDeposit ?? 0;
+  let currentValue = vehicle.purchasePrice!;
+  let cashflowCumule = 0;
   let maxRoi = -Infinity;
   let moisOptimal = 0;
+  let maxTri: number | null = null;
+  let moisOptimalTri = 0;
+  let maxCoc: number | null = null;
+  const fluxTri: number[] = [loanDeposit > 0 ? -loanDeposit : -pmt];
+  const courbe: RoiDataPoint[] = [];
 
-  for (let m = 0; m <= 84; m++) {
-    if (m > 0) {
-      // Âge réel + projection mois par mois → la tranche évolue automatiquement
+  for (let m = 0; m <= TOTAL_MONTHS; m++) {
+    const mDate = new Date(purchaseDate);
+    mDate.setMonth(mDate.getMonth() + m);
+
+    // Valeur marchande : snapshot si disponible, sinon dépréciation mensuelle
+    const snapshot = valuations.find((v) => {
+      const diff = Math.abs(new Date(v.evaluatedAt).getTime() - mDate.getTime());
+      return diff < 15 * 86_400_000;
+    });
+    if (m === 0) {
+      currentValue = snapshot?.estimatedValue ?? vehicle.purchasePrice!;
+    } else if (snapshot) {
+      currentValue = snapshot.estimatedValue;
+    } else {
       const ageYears = realAgeYears + m / 12;
-      const annualRate = getAnnualDepreciationRate(ageYears, s);
-      currentValue = currentValue * (1 - annualRate / 12);
+      const rate = getAnnualDepreciationRate(ageYears, s);
+      currentValue = currentValue * (1 - rate / 12);
     }
 
+    // Capital restant du prêt (loanElapsedBase + m = mois de prêt écoulés à ce point)
     const loanElapsed = loanElapsedBase + m;
     const capitalRestant =
       vehicle.loanAmount && vehicle.loanRate !== null && vehicle.loanDurationMonths
         ? loanRemainingBalance(vehicle.loanAmount, vehicle.loanRate ?? 0, vehicle.loanDurationMonths, loanElapsed)
         : 0;
 
-    const caCumule = caMensuelMoyen * m;
+    // Mensualité active uniquement tant que le prêt court
+    const mensualite = loanElapsed < (vehicle.loanDurationMonths ?? 0) ? pmt : 0;
 
-    const kmAtM = vehicle.currentMileage + avgMonthlyKm * m;
-    const majorCount = Math.floor(kmAtM / s.majorMaintenanceKm) - baseMajorCount;
-    const coutsCumules = coutsMensuelsTotaux * m + Math.max(0, majorCount) * s.majorMaintenanceCost;
+    // CA et coûts : réels sur la période historique, projetés ensuite
+    const estHistorique = m <= moisActuel;
+    const moisCal = (purchaseDate.getMonth() + m) % 12;
+    const caM = estHistorique ? caReelParMois[m] : caParMoisCalendaire[moisCal];
+    const coutsM = estHistorique ? coutsReelParMois[m] : coutsMensuelsTotaux;
 
+    // Cashflow net du mois (pas cumulé)
+    const cashflow = caM - coutsM - mensualite;
+    if (m > 0) cashflowCumule += cashflow;
+
+    // Total sorti de poche depuis le début (apport + mensualités payées)
+    const totalSortiDePoche = loanDeposit + pmt * Math.min(loanElapsed, vehicle.loanDurationMonths ?? 0);
+
+    // Plus-value = valeur marchande − capital restant
     const plusValue = currentValue - capitalRestant;
-    const roi = ((caCumule - coutsCumules + plusValue) / vehicle.purchasePrice) * 100;
+
+    // CA et coûts cumulés sur m mois
+    let caCumule = 0;
+    let coutsCumules = 0;
+    for (let i = 0; i <= m; i++) {
+      const ci = (purchaseDate.getMonth() + i) % 12;
+      caCumule += i <= moisActuel ? caReelParMois[i] : caParMoisCalendaire[ci];
+      coutsCumules += i <= moisActuel ? coutsReelParMois[i] : coutsMensuelsTotaux;
+    }
+
+    const roi = ((caCumule - coutsCumules + plusValue) / vehicle.purchasePrice!) * 100;
+
+    const cocReturn =
+      totalSortiDePoche > 0
+        ? Math.round(((cashflowCumule + plusValue - totalSortiDePoche) / totalSortiDePoche) * 10000) / 100
+        : null;
+
+    // TRI si vendu ce mois (m=0 exclut : pas de revente le jour de l'achat)
+    let tri: number | null = null;
+    if (m > 0) {
+      const fluxRevente = [...fluxTri, cashflow + plusValue];
+      tri = calculerTRI(fluxRevente);
+    }
+    if (m > 0) fluxTri.push(cashflow);
+
+    const dateLabel = mDate.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
 
     courbe.push({
       mois: m,
@@ -221,46 +391,74 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
       couts: Math.round(coutsCumules),
       capitalRestant: Math.round(capitalRestant),
       caCumule: Math.round(caCumule),
+      dateLabel,
+      estHistorique,
+      estAujourdhui: m === moisActuel,
+      hasSnapshot: Boolean(snapshot),
+      cashflow: Math.round(cashflow),
+      cashflowCumule: Math.round(cashflowCumule),
+      mensualite: Math.round(mensualite),
+      totalSortiDePoche: Math.round(totalSortiDePoche),
+      cocReturn,
+      tri,
+      caReel: Math.round(caM),
     });
 
-    if (roi > maxRoi) {
-      maxRoi = roi;
-      moisOptimal = m;
-    }
+    if (roi > maxRoi) { maxRoi = roi; moisOptimal = m; }
+    if (tri !== null && (maxTri === null || tri > maxTri)) { maxTri = tri; moisOptimalTri = m; }
+    if (cocReturn !== null && (maxCoc === null || cocReturn > maxCoc)) maxCoc = cocReturn;
   }
 
-  // Prêt encore en cours sur la fenêtre 84 mois ?
+  // Signal basé sur le TRI en priorité, puis ROI
+  const moisOptimalFinal = maxTri !== null ? moisOptimalTri : moisOptimal;
+  const moisRestants = Math.max(0, moisOptimalFinal - moisActuel);
+
+  // pretEncoreEnCours basé sur le prêt restant depuis aujourd'hui
+  const loanElapsedNow = loanElapsedBase + moisActuel;
   const moisFinPret = vehicle.loanDurationMonths
-    ? Math.max(0, vehicle.loanDurationMonths - loanElapsedBase)
+    ? Math.max(0, vehicle.loanDurationMonths - loanElapsedNow)
     : 0;
-  const pretEncoreEnCours = moisFinPret > 0 && moisFinPret <= 84;
+  const pretEncoreEnCours = moisFinPret > 0 && moisFinPret <= TOTAL_MONTHS;
 
   let signal: RoiAnalysis['signal'];
-  if (moisOptimal === 0 && !pretEncoreEnCours) {
-    // ROI ne remonte jamais ET prêt déjà soldé → vendre maintenant
+  if (moisRestants === 0 && !pretEncoreEnCours) {
     signal = 'vendre_maintenant';
-  } else if (moisOptimal > 0 && moisOptimal <= s.roiAlertMonthsBefore) {
+  } else if (moisRestants > 0 && moisRestants <= s.roiAlertMonthsBefore) {
     signal = 'bientot';
-  } else if (moisOptimal > 0 && moisOptimal <= 24) {
+  } else if (moisRestants > 0 && moisRestants <= 24) {
     signal = 'optimal';
   } else {
     signal = 'attendre';
   }
 
-  const dateOptimale = new Date();
-  dateOptimale.setMonth(dateOptimale.getMonth() + moisOptimal);
-  const dateStr = `${dateOptimale.getFullYear()}-${String(dateOptimale.getMonth() + 1).padStart(2, '0')}`;
+  // dateOptimale = purchaseDate + moisOptimalFinal mois
+  const dateOpt = new Date(purchaseDate);
+  dateOpt.setMonth(dateOpt.getMonth() + moisOptimalFinal);
+  const dateStr = `${dateOpt.getFullYear()}-${String(dateOpt.getMonth() + 1).padStart(2, '0')}`;
+
+  const actuPoint = courbe[moisActuel];
 
   return {
-    roiActuel: courbe[0].roi,
+    roiActuel: actuPoint?.roi ?? courbe[0].roi,
     roiMax: Math.round(maxRoi * 100) / 100,
-    moisOptimal,
+    moisOptimal: moisOptimalFinal,
+    moisRestants,
     dateOptimale: dateStr,
-    plusValueNette: courbe[0].plusValue,
-    capitalRestantDu: courbe[0].capitalRestant,
+    plusValueNette: actuPoint?.plusValue ?? courbe[0].plusValue,
+    capitalRestantDu: actuPoint?.capitalRestant ?? courbe[0].capitalRestant,
     signal,
     courbe,
     caMensuelMoyen: Math.round(caMensuelMoyen),
     coutsMensuelsTotaux: Math.round(coutsMensuelsTotaux),
+    mensualitePret: Math.round(pmt),
+    loanDeposit,
+    caMensuelNormalise: Math.round(caMensuelMoyen),
+    caParMoisCalendaire: caParMoisCalendaire.map((v) => Math.round(v)),
+    triActuel: actuPoint?.tri ?? null,
+    triMax: maxTri !== null ? Math.round(maxTri * 100) / 100 : null,
+    moisOptimalTri,
+    cocActuel: actuPoint?.cocReturn ?? null,
+    cocMax: maxCoc !== null ? Math.round(maxCoc * 100) / 100 : null,
+    cashflowMensuelNet: Math.round(caMensuelMoyen - coutsMensuelsTotaux - pmt),
   };
 }

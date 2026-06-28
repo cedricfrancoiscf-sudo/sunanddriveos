@@ -72,6 +72,53 @@ test('43-05 Ratings EZ480LT — mai 2026 keywords contient "voiture propre"', as
   expect(mai!.keywords).toContain('voiture propre');
 });
 
+// ─── ROI TRI + CoC + courbe 48 mois ────────────────────────────────────────
+test('43-08 ROI FC275PK — courbe 49 points (48 mois depuis purchaseDate)', async ({ page }) => {
+  const resp = await apiGet(page, `/api/v1/vehicles/${FC275PK}/roi-analysis`);
+  expect(resp.status()).toBe(200);
+  const body = await resp.json() as { analysis: { courbe: unknown[] } | null };
+  expect(body.analysis).not.toBeNull();
+  expect(body.analysis!.courbe).toHaveLength(49);
+});
+
+test('43-09 ROI FC275PK — exactement 1 point estAujourdhui', async ({ page }) => {
+  const resp = await apiGet(page, `/api/v1/vehicles/${FC275PK}/roi-analysis`);
+  const body = await resp.json() as { analysis: { courbe: Array<{ estAujourdhui: boolean }> } | null };
+  const todayPts = (body.analysis?.courbe ?? []).filter(d => d.estAujourdhui);
+  expect(todayPts).toHaveLength(1);
+});
+
+test('43-10 ROI FC275PK — champs TRI, mensualitePret, caParMoisCalendaire présents', async ({ page }) => {
+  const resp = await apiGet(page, `/api/v1/vehicles/${FC275PK}/roi-analysis`);
+  const body = await resp.json() as {
+    analysis: {
+      triActuel: number | null;
+      mensualitePret: number;
+      caMensuelNormalise: number;
+      caParMoisCalendaire: unknown[];
+    } | null;
+  };
+  expect(body.analysis).not.toBeNull();
+  expect(body.analysis!.mensualitePret).toBeGreaterThanOrEqual(0);
+  expect(body.analysis!.caMensuelNormalise).toBeGreaterThanOrEqual(700);
+  expect(body.analysis!.caParMoisCalendaire).toHaveLength(12);
+});
+
+test('43-11 ROI FC275PK — cashflowMensuelNet cohérent (±1 €)', async ({ page }) => {
+  const resp = await apiGet(page, `/api/v1/vehicles/${FC275PK}/roi-analysis`);
+  const body = await resp.json() as {
+    analysis: {
+      cashflowMensuelNet: number;
+      caMensuelNormalise: number;
+      coutsMensuelsTotaux: number;
+      mensualitePret: number;
+    } | null;
+  };
+  const a = body.analysis!;
+  const expected = a.caMensuelNormalise - a.coutsMensuelsTotaux - a.mensualitePret;
+  expect(Math.abs(a.cashflowMensuelNet - expected)).toBeLessThanOrEqual(1);
+});
+
 // ─── loanDeposit champ formulaire ───────────────────────────────────────────
 test('43-06 Formulaire véhicule — champ "Apport personnel" présent', async ({ page }) => {
   await page.goto(`${BASE}/vehicles/${FC275PK}/edit`, { waitUntil: 'domcontentloaded' });
@@ -90,4 +137,25 @@ test('43-07 Paramètres — champ "Mois d\'historique CA moyen" visible', async 
   const section = page.getByTestId('revente-decote-section');
   await expect(section).toBeVisible({ timeout: 10_000 });
   await expect(section.getByText(/Mois d'historique CA moyen/i)).toBeVisible({ timeout: 5_000 });
+});
+
+// ─── SettingsPage : labels révision majeure ─────────────────────────────────
+test('43-12 Paramètres — libellés "Coût révision majeure" et "Kilométrage déclencheur" visibles', async ({ page }) => {
+  await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+  const section = page.getByTestId('revente-decote-section');
+  await expect(section).toBeVisible({ timeout: 10_000 });
+  await expect(section.getByText(/Coût révision majeure estimée/i)).toBeVisible({ timeout: 5_000 });
+  await expect(section.getByText(/Kilométrage déclencheur révision majeure/i)).toBeVisible({ timeout: 5_000 });
+});
+
+// ─── VehicleDetailPage : KPIs TRI et Cashflow ────────────────────────────────
+test('43-13 VehicleDetailPage FC275PK — KPIs "Mensualité prêt" et "TRI actuel" affichés', async ({ page }) => {
+  await page.goto(`${BASE}/vehicles/${FC275PK}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2000);
+  const section = page.getByTestId('roi-analysis-section');
+  await expect(section).toBeVisible({ timeout: 10_000 });
+  await expect(section.getByText(/Mensualité prêt/i)).toBeVisible({ timeout: 8_000 });
+  await expect(section.getByText(/TRI actuel/i)).toBeVisible({ timeout: 5_000 });
+  await expect(section.getByText(/Cashflow net/i)).toBeVisible({ timeout: 5_000 });
 });

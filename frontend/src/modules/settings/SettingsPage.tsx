@@ -1561,11 +1561,15 @@ function ReventeDecoteSection(): React.JSX.Element {
       </div>
 
       <div>
-        <p className="mb-3 text-xs font-semibold text-gray-700">Entretien majeur</p>
+        <p className="mb-3 text-xs font-semibold text-gray-700">Révision majeure (projection coûts)</p>
         <div className="grid gap-3 sm:grid-cols-2">
-          {numField('majorMaintenanceCost', 'Coût entretien majeur estimé', '€')}
-          {numField('majorMaintenanceKm', 'Kilométrage déclencheur', 'km')}
+          {numField('majorMaintenanceCost', 'Coût révision majeure estimée', '€ — ex : 1 500 € courroie + freins + pneus')}
+          {numField('majorMaintenanceKm', 'Kilométrage déclencheur révision majeure', 'km — ex : 30 000 km')}
         </div>
+        <p className="mt-2 text-[11px] text-gray-400 leading-relaxed">
+          Ces valeurs anticipent les grandes révisions sur la projection ROI.
+          Elles n'affectent pas l'historique réel — seuls les coûts saisis dans les fiches véhicules comptent pour la période passée.
+        </p>
       </div>
 
       {numField('roiAlertMonthsBefore', 'Seuil alerte "Revendre bientôt"', 'mois avant optimal')}

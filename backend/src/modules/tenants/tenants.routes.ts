@@ -1201,10 +1201,27 @@ router.post('/tenants/:slug/cleanup-test-data', async (req: Request, res: Respon
       where: { lastNotes: testPattern },
     });
 
-    // 5. VehicleRatings avec notes playwright
+    // 5. VehicleRatings parasites :
+    //    A) notes contient "playwright"
+    //    B) keywords contient 'playwright' (insensible casse)
+    //    C) period > mois actuel ET reviewCount <= 10 (futur improbable)
+    const now = new Date();
+    const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const ratingsResult = await db.vehicleRating.deleteMany({
-      where: { notes: testPattern },
+      where: {
+        OR: [
+          { notes: testPattern },
+          { keywords: { has: 'playwright' } },
+          {
+            AND: [
+              { period: { gt: currentPeriod } },
+              { reviewCount: { lte: 10 } },
+            ],
+          },
+        ],
+      },
     });
+    console.log(`[Cleanup] ${ratingsResult.count} VehicleRating parasite(s) supprimé(s)`);
 
     // 6. Messages dont le contenu contient "playwright"
     const messagesResult = await db.message.deleteMany({
@@ -1229,6 +1246,62 @@ router.post('/tenants/:slug/cleanup-test-data', async (req: Request, res: Respon
       messagesDeleted: messagesResult.count,
       npsDeleted: npsResult.count,
     });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/superadmin/tenants/:slug/audit-test-data
+// Rapport audit des données potentiellement créées par Playwright (createdAt autour d'une date)
+router.get('/tenants/:slug/audit-test-data', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { slug } = req.params as { slug: string };
+    const master = getMasterClient();
+    const company = await master.company.findUnique({ where: { slug }, select: { tenantDbUrl: true } });
+    if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
+
+    const db = getTenantClient(company.tenantDbUrl);
+
+    // Fenêtre temporelle configurable via query (défaut : 14 juin 2026 ± 2 jours)
+    const center = req.query.date ? new Date(req.query.date as string) : new Date('2026-06-14T00:00:00Z');
+    const windowDays = req.query.days ? parseInt(req.query.days as string) : 2;
+    const from = new Date(center.getTime() - windowDays * 86_400_000);
+    const to   = new Date(center.getTime() + windowDays * 86_400_000);
+    const where = { createdAt: { gte: from, lte: to } };
+
+    const [
+      ratings, maintenanceTasks, maintenances, rentals, vehicleCosts,
+      incidents, blockings, messages, notifications,
+    ] = await Promise.all([
+      db.vehicleRating.findMany({ where, select: { id: true, vehicleId: true, period: true, rating: true, reviewCount: true, keywords: true, notes: true, createdAt: true } }),
+      db.maintenanceTask.findMany({ where, select: { id: true, vehicleId: true, type: true, lastNotes: true, createdAt: true } }),
+      db.maintenance.findMany({ where, select: { id: true, vehicleId: true, type: true, notes: true, provider: true, createdAt: true } }),
+      db.rental.findMany({ where, select: { id: true, vehicleId: true, driverName: true, status: true, createdAt: true } }),
+      db.vehicleCost.findMany({ where, select: { id: true, vehicleId: true, label: true, amount: true, createdAt: true } }),
+      db.incident.findMany({ where, select: { id: true, vehicleId: true, description: true, createdAt: true } }),
+      db.blocking.findMany({ where, select: { id: true, vehicleId: true, reason: true, type: true, createdAt: true } }),
+      db.message.findMany({ where, select: { id: true, rentalId: true, content: true, direction: true, createdAt: true } }),
+      db.notification.findMany({ where, select: { id: true, userId: true, type: true, title: true, createdAt: true } }),
+    ]);
+
+    const report = {
+      auditWindow: { from, to, centerDate: center },
+      counts: {
+        vehicleRatings: ratings.length,
+        maintenanceTasks: maintenanceTasks.length,
+        maintenances: maintenances.length,
+        rentals: rentals.length,
+        vehicleCosts: vehicleCosts.length,
+        incidents: incidents.length,
+        blockings: blockings.length,
+        messages: messages.length,
+        notifications: notifications.length,
+      },
+      data: { ratings, maintenanceTasks, maintenances, rentals, vehicleCosts, incidents, blockings, messages, notifications },
+    };
+
+    console.log(`[Audit] ${slug} — fenêtre ${from.toISOString().slice(0,10)} → ${to.toISOString().slice(0,10)}`);
+    console.log('[Audit] Comptes :', report.counts);
+
+    res.json(report);
   } catch (err: unknown) { next(err); }
 });
 

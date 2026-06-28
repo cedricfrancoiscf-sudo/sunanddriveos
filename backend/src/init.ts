@@ -139,6 +139,25 @@ async function init(): Promise<void> {
     } catch (err: unknown) {
       console.error(`[Init] WARN seed ${c.slug} :`, (err as Error).message);
     }
+
+    // One-shot : suppression des ratings de test Playwright par ID connu
+    if (c.slug === 'sun-and-drive') {
+      try {
+        const db = getTenantClient(c.tenantDbUrl);
+        const TEST_RATING_IDS = [
+          'cmqe1cjtc000d9e7i3yzayoxl', // FC275PK 5/5 août 2026 - test Playwright
+          'cmqe1cqf3000f9e7i5b7qay3q', // FC275PK 3/5 juillet 2026 - test Playwright
+        ];
+        const result = await db.vehicleRating.deleteMany({
+          where: { id: { in: TEST_RATING_IDS } },
+        });
+        if (result.count > 0) {
+          console.log(`[Init] ${result.count} rating(s) de test supprimé(s) pour sun-and-drive`);
+        }
+      } catch (err: unknown) {
+        console.error('[Init] WARN nettoyage ratings test :', (err as Error).message);
+      }
+    }
   }
 
   console.log('[Init] ============================================');

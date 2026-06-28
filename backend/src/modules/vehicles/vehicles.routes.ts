@@ -307,6 +307,22 @@ router.post('/:id/ratings', async (req: Request, res: Response, next: NextFuncti
   } catch (err: unknown) { next(err); }
 });
 
+// DELETE /api/v1/vehicles/:id/ratings/:ratingId
+router.delete('/:id/ratings/:ratingId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const vehicleId = req.params.id as string;
+    const ratingId = req.params.ratingId as string;
+
+    // Vérifie que le rating appartient bien à ce vehicleId (isolation tenant implicite)
+    const rating = await db.vehicleRating.findFirst({ where: { id: ratingId, vehicleId } });
+    if (!rating) { res.status(404).json({ error: 'Note introuvable' }); return; }
+
+    await db.vehicleRating.delete({ where: { id: ratingId } });
+    res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
 // ─── Carkeepers par véhicule ─────────────────────────────────────────────────
 
 // GET /api/v1/vehicles/:id/carkeepers

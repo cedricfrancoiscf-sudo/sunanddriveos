@@ -40,8 +40,8 @@ const DEFAULT_SETTINGS: RoiSettings = {
   depreciationRateYear1: 0.20,
   depreciationRateYear2: 0.15,
   depreciationRateYear3: 0.12,
-  depreciationRateYears4to6: 0.08,
-  depreciationRateAfter6: 0.05,
+  depreciationRateYears4to6: 0.10,
+  depreciationRateAfter6: 0.08,
   majorMaintenanceCost: 1500,
   majorMaintenanceKm: 30000,
   roiAlertMonthsBefore: 6,
@@ -78,6 +78,7 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
         loanStartDate: true,
         marketValue: true,
         currentMileage: true,
+        year: true,
       },
     }),
     db.companySettings.findFirst({
@@ -146,6 +147,11 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     (now.getTime() - purchaseDate.getTime()) / (30.44 * 24 * 60 * 60 * 1000),
   ));
 
+  // Âge réel depuis l'année de fabrication (pas depuis la date d'achat)
+  const realAgeYears = vehicle.year
+    ? Math.max(0, now.getFullYear() - vehicle.year)
+    : Math.floor((now.getTime() - purchaseDate.getTime()) / (365.25 * 86_400_000));
+
   const loanStartDate = vehicle.loanStartDate ? new Date(vehicle.loanStartDate) : purchaseDate;
   const loanElapsedBase = Math.floor(
     (now.getTime() - loanStartDate.getTime()) / (30.44 * 24 * 60 * 60 * 1000),
@@ -161,7 +167,8 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
 
   for (let m = 0; m <= 84; m++) {
     if (m > 0) {
-      const ageYears = (currentAgeMonths + m) / 12;
+      // Âge réel + projection mois par mois → la tranche évolue automatiquement
+      const ageYears = realAgeYears + m / 12;
       const annualRate = getAnnualDepreciationRate(ageYears, s);
       currentValue = currentValue * (1 - annualRate / 12);
     }

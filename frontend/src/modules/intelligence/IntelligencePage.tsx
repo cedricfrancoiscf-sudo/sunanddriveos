@@ -178,7 +178,7 @@ export default function IntelligencePage(): React.JSX.Element {
   const { data: suggestionsData, isLoading: suggestionsLoading, isFetching: suggestionsFetching } = useQuery<{ suggestions: AiSuggestion[] }>({
     queryKey: ['intelligence-suggestions'],
     queryFn: () => api.get<{ suggestions: AiSuggestion[] }>('/intelligence/suggestions').then(r => r.data),
-    staleTime: 24 * 3_600_000,
+    staleTime: 3_600_000,
     retry: false,
   });
 

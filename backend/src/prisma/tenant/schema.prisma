@@ -719,11 +719,12 @@ model CompanySettings {
   depreciationRateYear1     Float    @default(0.20) // Taux décote annuel année 1
   depreciationRateYear2     Float    @default(0.15) // Taux décote annuel année 2
   depreciationRateYear3     Float    @default(0.12) // Taux décote annuel année 3
-  depreciationRateYears4to6 Float    @default(0.08) // Taux décote annuel années 4-6
-  depreciationRateAfter6    Float    @default(0.05) // Taux décote annuel après 6 ans
+  depreciationRateYears4to6 Float    @default(0.10) // Taux décote annuel années 4-6
+  depreciationRateAfter6    Float    @default(0.08) // Taux décote annuel après 6 ans (occasion)
   majorMaintenanceCost      Float    @default(1500) // Coût entretien majeur estimé (€)
   majorMaintenanceKm        Int      @default(30000) // Kilométrage déclencheur entretien majeur
   roiAlertMonthsBefore      Int      @default(6)    // Seuil alerte "Revendre bientôt" (mois avant optimal)
+  suggestionsCacheTtlHours  Int      @default(1)    // Durée cache suggestions IA (heures)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

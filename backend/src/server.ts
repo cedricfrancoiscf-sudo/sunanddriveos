@@ -188,33 +188,34 @@ async function runRecentWindowSyncForAllTenants(): Promise<void> {
       where: { isActive: true },
       select: { tenantDbUrl: true, slug: true },
     });
-    for (const company of companies) {
+
+    // BLOC 3D — tous les tenants en parallèle
+    await Promise.allSettled(companies.map(async company => {
       const db = getTenantClient(company.tenantDbUrl);
       const accounts = await db.getaroundAccount.findMany({
         where: { isActive: true },
         select: { id: true },
       });
-      for (const account of accounts) {
-        try {
-          await syncRecentWindowForAccount(db, account.id, company.slug);
-        } catch (err: unknown) {
-          console.error(`[RecentSync] ${company.slug} compte ${account.id} :`, err instanceof Error ? err.message : err);
-        }
-      }
-      // Rattrapage : active dont endAt est passé
-      try {
-        const expired = await db.rental.updateMany({
-          where: { status: 'active', endAt: { lt: new Date() } },
-          data: { status: 'completed' },
-        });
-        if (expired.count > 0) console.log(`[RecentSync] ${company.slug} : ${expired.count} expirée(s) → completed`);
-      } catch (e) { console.error(`[RecentSync] Rattrapage ${company.slug}:`, e); }
+
+      // BLOC 3A — tous les comptes du tenant en parallèle
+      await Promise.allSettled(accounts.map(account =>
+        syncRecentWindowForAccount(db, account.id, company.slug)
+          .catch(err => console.error(`[RecentSync] ${company.slug} compte ${account.id} :`, err instanceof Error ? err.message : err)),
+      ));
+
+      // Rattrapage + unavailabilities en parallèle (indépendants l'un de l'autre)
+      await Promise.allSettled([
+        db.rental.updateMany({ where: { status: 'active', endAt: { lt: new Date() } }, data: { status: 'completed' } })
+          .then(r => { if (r.count > 0) console.log(`[RecentSync] ${company.slug} : ${r.count} expirée(s) → completed`); })
+          .catch(e => console.error(`[RecentSync] Rattrapage ${company.slug}:`, e)),
+        syncUnavailabilitiesForTenant(db, company.slug)
+          .catch(e => console.error(`[RecentSync] Unavailabilities ${company.slug}:`, e)),
+      ]);
+
       void cleanupObsoleteSequences(db).catch(e => console.error('[RecentSync] cleanup séquences:', e));
-      try {
-        await syncUnavailabilitiesForTenant(db, company.slug);
-      } catch (e) { console.error(`[RecentSync] Unavailabilities ${company.slug}:`, e); }
-    }
-    // Exécution séquences après sync (toutes tenants)
+    }));
+
+    // Exécution séquences après sync (tous tenants)
     void runSequenceScheduler().catch(e => console.error('[RecentSync] Erreur séquences post-sync:', e));
   } catch (err: unknown) {
     console.error('[RecentSync] Erreur générale :', err);
@@ -1284,20 +1285,27 @@ async function runDocumentExpiryAlerts(): Promise<void> {
         });
         if (expiring.length === 0) continue;
 
-        const chatId = await getTelegramChatId(db as never);
-        for (const ct of expiring) {
+        // Fetch admins + chatId en parallèle (commun à tous les CT)
+        const [chatId, admins] = await Promise.all([
+          getTelegramChatId(db as never),
+          db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+        ]);
+
+        // BLOC 3C — traiter chaque CT en parallèle
+        await Promise.allSettled(expiring.map(async ct => {
           const days = Math.ceil((new Date(ct.nextDueDate!).getTime() - Date.now()) / 86_400_000);
           const label = `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`;
 
-          // Admins + carkeepers assignés à ce véhicule
-          const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
+          // Admins + carkeepers assignés en parallèle
           const carkeepersRows = await db.vehicleCarkeeper.findMany({ where: { vehicleId: ct.vehicleId }, select: { userId: true } });
           const allRecipientIds = [...new Set([...admins.map(a => a.id), ...carkeepersRows.map(c => c.userId)])];
-          for (const userId of allRecipientIds) {
+
+          // Notifications — dedup par userId+type+relatedEntityId
+          await Promise.allSettled(allRecipientIds.map(async userId => {
             const existing = await db.notification.findFirst({
               where: { userId, type: 'ct_expiry_30d', relatedEntityId: ct.id },
             });
-            if (existing) continue;
+            if (existing) return;
             await db.notification.create({
               data: {
                 userId,
@@ -1308,14 +1316,14 @@ async function runDocumentExpiryAlerts(): Promise<void> {
                 relatedEntityId: ct.vehicleId,
               },
             });
-          }
+          }));
 
           if (chatId) {
             await sendTelegramMessage(chatId,
               `🔧 <b>CT expire dans ${days} jour${days > 1 ? 's' : ''}</b>\n${label}\nExpiration : ${new Date(ct.nextDueDate!).toLocaleDateString('fr-FR')}`,
             );
           }
-        }
+        }));
       } catch (err: unknown) { console.error(`[CTExpiry] Erreur tenant ${company.slug}:`, err); }
     }
   } catch (err: unknown) { console.error('[CTExpiry] Erreur:', err); }

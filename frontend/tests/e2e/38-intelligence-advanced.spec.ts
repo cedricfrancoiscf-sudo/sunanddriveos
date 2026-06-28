@@ -121,3 +121,60 @@ test('38-09 Paramètres — sauvegarde section Intelligence', async ({ page }) =
   await field.fill('4');
   await page.getByTestId('intelligence-settings-section').getByRole('button', { name: /Enregistrer/i }).click();
 });
+
+test('38-10 Intelligence — taux corrigé visible dans la table de performance', async ({ page }) => {
+  await page.goto(`${BASE}/intelligence`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2500);
+  await page.keyboard.press('Escape').catch(() => {});
+
+  // Le header "Occupation corrigée" doit être visible dans la table
+  await expect(page.locator('text=Occupation corrigée').first()).toBeVisible({ timeout: 5000 });
+});
+
+test('38-11 ROI flotte — API répond en moins de 5s', async ({ page }) => {
+  const ctx = page.context();
+  const storageState = await ctx.storageState();
+  const token = storageState.origins
+    .flatMap(o => o.localStorage)
+    .find(e => e.name === 'auth_token')?.value;
+
+  const apiBase = `${BASE}/api/v1`;
+  const start = Date.now();
+  const res = await page.request.get(`${apiBase}/vehicles/roi-fleet`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    timeout: 10_000,
+  });
+  const elapsed = Date.now() - start;
+  expect([200, 401]).toContain(res.status());
+  if (res.status() === 200) {
+    expect(elapsed).toBeLessThan(5_000);
+  }
+});
+
+test('38-12 Ratings juin 2026 — EZ480LT enregistré', async ({ page }) => {
+  const ctx = page.context();
+  const storageState = await ctx.storageState();
+  const token = storageState.origins
+    .flatMap(o => o.localStorage)
+    .find(e => e.name === 'auth_token')?.value;
+  if (!token) { test.skip(); return; }
+
+  const apiBase = `${BASE}/api/v1`;
+  // Chercher l'id du véhicule EZ480LT
+  const vehiclesRes = await page.request.get(`${apiBase}/vehicles`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!vehiclesRes.ok()) { test.skip(); return; }
+  const { vehicles } = await vehiclesRes.json() as { vehicles: Array<{ id: string; licensePlate: string }> };
+  const vehicle = vehicles.find(v => v.licensePlate === 'EZ480LT');
+  if (!vehicle) { test.skip(); return; }
+
+  const ratingsRes = await page.request.get(`${apiBase}/vehicles/${vehicle.id}/ratings`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(ratingsRes.ok()).toBe(true);
+  const { ratings } = await ratingsRes.json() as { ratings: Array<{ period: string; rating: number }> };
+  const juneRating = ratings.find(r => r.period === '2026-06');
+  expect(juneRating).toBeDefined();
+  expect(juneRating?.rating).toBeCloseTo(4.82, 1);
+});

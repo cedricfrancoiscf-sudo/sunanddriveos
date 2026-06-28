@@ -876,12 +876,19 @@ router.get('/suggestions', async (req: Request, res: Response, next: NextFunctio
     const force = req.query.force === '1';
     const cacheKey = `suggestions:${tenantSlug}`;
     const cached = suggestionsCache.get(cacheKey);
-    if (!force && cached && Date.now() - cached.ts < 24 * 3_600_000) {
-      res.json({ suggestions: cached.data });
-      return;
-    }
 
     const db = getTenantClient(req.tenantDbUrl!);
+
+    // TTL configurable (défaut 1h)
+    if (!force && cached) {
+      const settings = await db.companySettings.findFirst({ select: { suggestionsCacheTtlHours: true } });
+      const ttlMs = (settings?.suggestionsCacheTtlHours ?? 1) * 3_600_000;
+      if (Date.now() - cached.ts < ttlMs) {
+        res.json({ suggestions: cached.data });
+        return;
+      }
+    }
+
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const sixMonthsAgo = new Date(Date.now() - 180 * 86_400_000);

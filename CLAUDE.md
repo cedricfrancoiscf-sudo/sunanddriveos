@@ -72,3 +72,83 @@ Key routes and their pages:
 - Tenant slug: `sun-and-drive`; base URL: `https://appli.sunanddrive.com`
 - Seed/cleanup helpers in `tests/e2e/helpers/auth.ts`
 - Spec numbering: 00-setup → 28-monkey-admin (exhaustive UI monkey test)
+
+---
+
+## État du projet & règles immuables
+
+### Règles absolues
+- Zéro valeur codée en dur — tout paramètre configurable
+  passe par CompanySettings ou les variables d'environnement
+- Zéro suppression physique de données — déactivation
+  uniquement (isActive=false) pour tous les modèles métier
+- Zéro modification des calculs validés sans décision
+  explicite de Cédric François (fondateur, seul décideur)
+- Avant tout prompt de modification : lire les fichiers
+  concernés et faire un audit si le contenu est incertain
+
+### Formules validées et figées
+
+**CA mensuel**
+Méthode : prorata jours sur chaque mois chevauché
+  caParMois[m] += ownerPayout × (joursChevauchemoisM / totalJours)
+Pour les locations booked : ownerPayout est null,
+  on utilise grossRevenue (fourni par l'API GA dès la résa,
+  valeur réelle non estimée).
+Cette méthode est différente des vues GA (Performance et
+Paiements) — l'écart est documenté dans /documentation
+onglet "Dossier technique" section 11.
+
+**Taux d'occupation**
+- Taux brut : joursLoués / joursCalendaires (méthode interne,
+  performance absolue)
+- Taux corrigé : joursLoués / (joursCalendaires - joursIndispo)
+  comparable à la méthode Getaround, affiché dans Intelligence
+Les alertes de sous-utilisation se basent sur le taux corrigé.
+
+**Signal de revente ROI (roi.service.ts)**
+- "vendre_maintenant" : moisOptimal === 0 ET prêt déjà soldé
+  (!pretEncoreEnCours)
+- declining3 supprimé (commit 6c790fa) — faux positif quand
+  marketValue < capitalRestant avec prêt en cours
+- Décote basée sur vehicle.year (âge réel), pas purchaseDate
+- Taux configurables dans CompanySettings (DEFAULT_SETTINGS
+  = valeurs par défaut uniquement)
+
+**Boîtier Connect**
+Montant configurable via CompanySettings.boitierConnectAmount
+(défaut 25€ si null). Jamais codé en dur.
+
+### Bugs résolus (ne pas réintroduire)
+- TechnicalControl table droppée → MaintenanceTask est
+  l'unique source de vérité pour les CT
+- Logo URL : utiliser PUBLIC_URL + normalizeLogoUrl,
+  jamais l'IP locale du NAS
+- requireActiveSubscription doit s'exécuter APRÈS requireAuth
+- Service Worker supprimé (VitePWA retiré, SW désenregistré
+  dans main.tsx)
+- Payouts GA : pas de per_page, fenêtres alignées au 1er
+  du mois, millisecondes strippées des timestamps
+- Rôle carkeeper : admin override carkeeper quand user
+  cumule les deux rôles (planning visibility)
+
+### État Playwright
+~295 tests passés. Échecs résiduels connus :
+- data-testid manquants dans VehicleDetailPage.tsx
+  (valeur-revente-section, garanties-section,
+  critair-section, btn-qr-code)
+- SuperAdmin strict mode selector issues
+
+### Déploiement NAS
+Git non installé sur le NAS. Workflow :
+  wget zip GitHub → python3 extract → cp files
+  → docker-compose up -d --build
+Service backend : "backend" (pas "sunanddriveos-backend")
+Auth tokens : localStorage auth_token (tenant),
+  superadmin_token (SuperAdmin)
+
+### Données de référence Sun and Drive (juin 2026)
+Notes Getaround par véhicule (saisies en base) :
+  EZ480LT 4.82/77 · FZ375EZ 4.91/69 · FZ671YT 4.71/56
+  EL113HY 4.76/117 · ET672TZ 4.59/62
+  FC275PK 4.55/64 · FY542RR 4.78/69

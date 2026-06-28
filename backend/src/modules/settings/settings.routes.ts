@@ -98,6 +98,7 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       majorMaintenanceKm: z.number().int().min(1000).max(200000).optional(),
       roiAlertMonthsBefore: z.number().int().min(1).max(24).optional(),
       roiCaMoyenMois: z.number().int().min(1).max(24).optional(),
+      messageUnansweredMinutes: z.number().int().min(5).max(240).nullable().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
 

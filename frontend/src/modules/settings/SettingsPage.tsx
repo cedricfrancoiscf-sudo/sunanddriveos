@@ -473,6 +473,7 @@ interface CompanySettings {
   majorMaintenanceKm: number;
   roiAlertMonthsBefore: number;
   roiCaMoyenMois: number;
+  messageUnansweredMinutes: number | null;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -1961,6 +1962,7 @@ export default function SettingsPage(): React.JSX.Element {
     aiModeGeneral: 'approval',
     aiTone: 'vouvoiement',
     aiName: 'Alex',
+    messageUnansweredMinutes: null as number | null,
   });
 
   const [saved, setSaved] = useState(false);
@@ -1980,6 +1982,7 @@ export default function SettingsPage(): React.JSX.Element {
         aiModeGeneral: settings.aiModeGeneral ?? 'approval',
         aiTone: settings.aiTone ?? 'vouvoiement',
         aiName: settings.aiName ?? 'Alex',
+        messageUnansweredMinutes: settings.messageUnansweredMinutes ?? null,
       });
       if (settings.logoUrl) setLogoPreview(settings.logoUrl);
     }
@@ -1997,6 +2000,7 @@ export default function SettingsPage(): React.JSX.Element {
       aiModeGeneral: data.aiModeGeneral as 'auto' | 'approval' | 'manual',
       aiTone: data.aiTone as 'vouvoiement' | 'tutoiement',
       aiName: data.aiName,
+      messageUnansweredMinutes: data.messageUnansweredMinutes,
     }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings'] });
@@ -2127,6 +2131,24 @@ export default function SettingsPage(): React.JSX.Element {
                 placeholder="Alex"
                 className="w-40 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
               />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-gray-700">Délai avant alerte message sans réponse</label>
+              <p className="mb-2 text-[11px] text-gray-400">Délai en minutes après lequel un message inbound sans réponse est signalé (défaut : 30 min)</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={5}
+                  max={240}
+                  step={5}
+                  value={form.messageUnansweredMinutes ?? ''}
+                  onChange={e => setForm(f => ({ ...f, messageUnansweredMinutes: e.target.value ? parseInt(e.target.value, 10) : null }))}
+                  placeholder="30"
+                  className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
+                />
+                <span className="text-xs text-gray-400">minutes (défaut : 30 min)</span>
+              </div>
             </div>
           </section>
 

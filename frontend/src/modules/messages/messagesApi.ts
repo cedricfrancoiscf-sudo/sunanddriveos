@@ -46,6 +46,7 @@ export interface Message {
 export interface InboxSummary {
   pendingCount: number;
   unansweredRentals: number;
+  unansweredDelayMs?: number;
 }
 
 export const messagesApi = {

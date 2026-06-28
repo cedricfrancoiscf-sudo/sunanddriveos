@@ -6,6 +6,7 @@ import { scheduleSequencesForRental } from '../sequences/sequences.service';
 import { analyzeMessage, suggestReply } from '../ai/ai.service';
 import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
 import { getMasterClient } from '../../prisma/client';
+import { sendAlertEmail } from '../../utils/mailer';
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -712,6 +713,7 @@ async function syncMessagesForWindow(
           void msgDbId; // utilisé dans les closures ci-dessous
 
           if (direction === 'inbound' && isNew) {
+            // Détection siège auto (fire-and-forget)
             void (async () => {
               try {
                 const analysis = await analyzeMessage(msg.content);
@@ -757,6 +759,20 @@ async function syncMessagesForWindow(
                 })();
               } catch (e) { console.error('[CarSeatDetect]', e); }
             })();
+            // Réponse IA automatique (fire-and-forget)
+            const fullRental = await db.rental.findUnique({
+              where: { id: rental.id },
+              include: {
+                vehicle: {
+                  select: { make: true, model: true, licensePlate: true, year: true, color: true, fuelType: true, parkingZone: true, pickupInstructions: true, returnInstructions: true },
+                },
+                messages: { orderBy: { sentAt: 'asc' }, select: { direction: true, content: true }, take: 10 },
+              },
+            });
+            if (fullRental) {
+              void autoReplyToMessage(db, ga, msg.content, fullRental, tenantSlug)
+                .catch(e => console.error('[IA] autoReply error syncMsg:', e));
+            }
           }
         } catch { /* ignorer erreurs message individuel */ }
       }
@@ -982,7 +998,7 @@ async function autoReplyToMessage(
   const settings = await db.companySettings.findFirst({
     select: {
       aiModeCarSeat: true, aiModeIncident: true, aiModeGeneral: true,
-      aiTone: true, aiName: true, senderName: true,
+      aiTone: true, aiName: true, senderName: true, alertEmails: true,
     },
   });
   if (!settings) return;
@@ -1140,6 +1156,41 @@ async function autoReplyToMessage(
       skipDuplicates: true,
     });
     console.log(`[IA][${tenantSlug}] Brouillon créé pour rental ${rental.id}`);
+
+    // Notification email brouillon IA aux alertEmails
+    void (async () => {
+      try {
+        const alertEmails = settings.alertEmails ?? [];
+        if (alertEmails.length === 0) return;
+        const vehicleLabel = `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`;
+        const appUrl = (process.env.FRONTEND_URL ?? 'https://appli.sunanddrive.com').replace(/\/$/, '');
+        await sendAlertEmail({
+          alertEmails,
+          subject: `✍️ Brouillon IA à valider — ${rental.driverName}`,
+          senderName: settings.senderName ?? undefined,
+          html: `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#f8fafc">
+<div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
+  <div style="background:#01696e;padding:16px 24px">
+    <h1 style="color:#fff;font-size:16px;margin:0">✍️ Brouillon IA à valider</h1>
+  </div>
+  <div style="padding:20px 24px">
+    <p style="margin:0 0 8px;color:#374151;font-size:14px"><b>Conducteur :</b> ${rental.driverName}</p>
+    <p style="margin:0 0 16px;color:#374151;font-size:14px"><b>Véhicule :</b> ${vehicleLabel}</p>
+    <div style="background:#f8fafc;border-left:3px solid #94a3b8;padding:12px 16px;margin:12px 0;border-radius:4px">
+      <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Message reçu</p>
+      <p style="margin:0;color:#374151;font-size:13px">${messageContent.slice(0, 300)}${messageContent.length > 300 ? '…' : ''}</p>
+    </div>
+    <div style="background:#f0fdf4;border-left:3px solid #01696e;padding:12px 16px;margin:12px 0;border-radius:4px">
+      <p style="margin:0 0 4px;font-size:11px;color:#01696e;text-transform:uppercase;letter-spacing:.05em">Réponse suggérée par l'IA</p>
+      <p style="margin:0;color:#374151;font-size:13px">${reply.slice(0, 500)}${reply.length > 500 ? '…' : ''}</p>
+    </div>
+    <a href="${appUrl}/messages" style="display:inline-block;margin-top:16px;background:#01696e;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">Voir et valider dans l'app →</a>
+  </div>
+  <div style="background:#f1f5f9;padding:10px 24px;font-size:11px;color:#94a3b8">SunanddriveOS — notification automatique</div>
+</div></body></html>`,
+        });
+      } catch (e) { console.error('[IA] Email brouillon:', e); }
+    })();
   }
 }
 

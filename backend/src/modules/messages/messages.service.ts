@@ -165,7 +165,9 @@ export async function cancelMessage(db: PrismaClient, id: string) {
 }
 
 export async function getInboxSummary(db: PrismaClient) {
-  const cutoff2h = new Date(Date.now() - 2 * 3_600_000);
+  const settings = await db.companySettings.findFirst({ select: { messageUnansweredMinutes: true } });
+  const delayMin = settings?.messageUnansweredMinutes ?? 30;
+  const cutoff = new Date(Date.now() - delayMin * 60_000);
 
   const [pendingCount, unansweredRentals, unansweredRentalIds] = await Promise.all([
     db.message.count({ where: { status: 'pending_approval' } }),
@@ -183,7 +185,7 @@ export async function getInboxSummary(db: PrismaClient) {
       where: {
         status: { in: ['booked', 'active'] },
         messages: {
-          some: { direction: 'inbound', createdAt: { lt: cutoff2h } },
+          some: { direction: 'inbound', createdAt: { lt: cutoff } },
           none: { direction: 'outbound', status: { in: ['approved', 'sent'] } },
         },
       },
@@ -193,7 +195,7 @@ export async function getInboxSummary(db: PrismaClient) {
 
   const unansweredMessages = unansweredRentalIds.length > 0
     ? await db.message.findMany({
-        where: { direction: 'inbound', createdAt: { lt: cutoff2h }, rentalId: { in: unansweredRentalIds } },
+        where: { direction: 'inbound', createdAt: { lt: cutoff }, rentalId: { in: unansweredRentalIds } },
         select: {
           id: true, content: true, createdAt: true,
           rental: {
@@ -254,5 +256,6 @@ export async function getInboxSummary(db: PrismaClient) {
     pendingCount, unansweredRentals,
     unansweredMessages: unansweredDetails,
     pendingApprovalMessages: pendingApprovalDetails,
+    unansweredDelayMs: delayMin * 60_000,
   };
 }

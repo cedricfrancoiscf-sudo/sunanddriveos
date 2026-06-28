@@ -29,7 +29,6 @@ const app = createApp();
 // Verrous anti-chevauchement des crons
 let isSequenceRunning = false;
 let isSyncRunning = false;
-let isMorningSummaryRunning = false;
 let isMileageRunning = false;
 let isUnresponsiveRunning = false;
 let isProactiveMessagingRunning = false;
@@ -252,7 +251,7 @@ async function runProactiveMessaging(): Promise<void> {
         const newInbound = await db.message.findMany({
           where: {
             direction: 'inbound',
-            status: 'pending_approval',
+            status: 'sent',
             aiSuggestion: null,
             rental: {
               status: { in: ['booked', 'active'] },
@@ -399,7 +398,6 @@ async function runMorningRebalayage(): Promise<void> {
           },
         });
 
-        const reviewResults: import('./modules/messages/messaging.service').MorningReviewResult[] = [];
         for (const rental of ongoingRentals) {
           try {
             const rentalData: RentalForMessaging = {
@@ -408,84 +406,11 @@ async function runMorningRebalayage(): Promise<void> {
               startAt: rental.startAt, endAt: rental.endAt, status: rental.status,
               vehicle: { make: rental.vehicle.make, model: rental.vehicle.model, licensePlate: rental.vehicle.licensePlate, parkingZone: rental.vehicle.parkingZone, deliveryPointName: rental.vehicle.deliveryPointName },
             };
-            const result = await morningConversationReview(rentalData, rental.messages, db);
-            reviewResults.push(result);
+            await morningConversationReview(rentalData, rental.messages, db);
           } catch (e) { console.error(`[MorningReview] Erreur rental ${rental.id}:`, e); }
         }
 
-        const siegesRows = reviewResults.filter(r => r.carSeatCaught);
-        const questionsRows = reviewResults.filter(r => r.unansweredQuestion);
-        const incidentsRows = reviewResults.filter(r => r.incidentReported);
-
-        // ── 2) Génération du rapport relecture ────────────────────────────────
-        const dateLabel7h = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-        const rowHtml = (label: string, sub: string) =>
-          `<li style="margin:2px 0"><b>${label}</b>${sub ? ` — ${sub}` : ''}</li>`;
-        const section7h = (icon: string, title: string, rows: string[], emptyMsg = 'Rien à signaler') =>
-          `<div style="margin:16px 0"><h3 style="font-size:14px;font-weight:bold;margin:0 0 8px;color:#1e293b">${icon} ${title}</h3>${rows.length > 0 ? `<ul style="margin:0;padding-left:20px;color:#374151;font-size:13px">${rows.join('')}</ul>` : `<p style="color:#94a3b8;font-size:13px;margin:0">${emptyMsg}</p>`}</div>`;
-
-        const buildHtml = (sieges: typeof siegesRows, questions: typeof questionsRows, incidents: typeof incidentsRows) =>
-          `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:640px;margin:0 auto;padding:20px;background:#f8fafc">
-<div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
-  <div style="background:#01696e;padding:20px 24px">
-    <h1 style="color:#fff;font-size:18px;margin:0">🔍 Relecture matinale — ${company.name}</h1>
-    <p style="color:#a7f3d0;font-size:12px;margin:4px 0 0">${dateLabel7h} — ${ongoingRentals.length} location(s) analysée(s)</p>
-  </div>
-  <div style="padding:20px 24px">
-    ${section7h('🪑', `Sièges auto rattrapés (${sieges.length})`,
-      sieges.map(r => rowHtml(r.driverName, r.vehicleLabel)),
-      'Aucun siège manquant détecté')}
-    ${section7h('❓', `Questions sans réponse (${questions.length})`,
-      questions.map(r => rowHtml(r.driverName, r.vehicleLabel)),
-      'Toutes les questions ont reçu une réponse')}
-    ${section7h('⚠️', `Incidents signalés (${incidents.length})`,
-      incidents.map(r => rowHtml(r.driverName, r.vehicleLabel)),
-      'Aucun incident détecté')}
-  </div>
-  <div style="background:#f1f5f9;padding:12px 24px;font-size:11px;color:#94a3b8">SunanddriveOS — relecture automatique des conversations — 7h</div>
-</div></body></html>`;
-
-        // ── 3) Envoi emails ───────────────────────────────────────────────────
-        const [adminRecipients, carkeepers] = await Promise.all([
-          db.user.findMany({
-            where: { isActive: true, OR: [{ role: { in: ['admin', 'exploitation'] as never[] } }, { roles: { hasSome: ['admin', 'exploitation'] } }] },
-            select: { email: true, name: true },
-          }),
-          db.user.findMany({
-            where: { isActive: true, OR: [{ role: 'carkeeper' as never }, { roles: { has: 'carkeeper' } }] },
-            select: { id: true, email: true, name: true, vehicleCarkeepers: { select: { vehicleId: true } } },
-          }),
-        ]);
-
-        const fullHtml = buildHtml(siegesRows, questionsRows, incidentsRows);
-        let emailsSent = 0;
-
-        if (process.env.RESEND_API_KEY) {
-          for (const r of adminRecipients) {
-            await sendEmail({
-              from: 'appli@sunanddrive.com',
-              to: r.email,
-              subject: `🔍 Relecture matinale — ${company.name} — ${now.toLocaleDateString('fr-FR')}`,
-              html: fullHtml,
-            });
-            emailsSent++;
-          }
-          for (const ck of carkeepers) {
-            const ckVehicleIds = new Set(ck.vehicleCarkeepers.map((vc: { vehicleId: string }) => vc.vehicleId));
-            const ckSieges = siegesRows.filter(r => ckVehicleIds.has(r.vehicleId));
-            const ckIncidents = incidentsRows.filter(r => ckVehicleIds.has(r.vehicleId));
-            if (ckSieges.length === 0 && ckIncidents.length === 0) continue;
-            await sendEmail({
-              from: 'appli@sunanddrive.com',
-              to: ck.email,
-              subject: `🪑 Relecture — vos véhicules — ${now.toLocaleDateString('fr-FR')}`,
-              html: buildHtml(ckSieges, [], ckIncidents),
-            });
-            emailsSent++;
-          }
-        }
-
-        console.log(`[Cron 7h] ${company.slug} Relecture matinale : ${ongoingRentals.length} locations analysées, ${siegesRows.length} sièges rattrapés, ${questionsRows.length} questions sans réponse, ${incidentsRows.length} incidents, rapport envoyé à ${emailsSent} destinataire(s)`);
+        console.log(`[Cron 7h] ${company.slug} Rebalayage + relecture : ${ongoingRentals.length} location(s) analysée(s)`);
 
         // ─── Valuation mensuelle Autobiz (si clé configurée et pas déjà faite ce mois) ───
         await updateVehicleValuationsIfNeeded(db, company.slug);
@@ -772,13 +697,11 @@ async function runRoiAlerts(db: ReturnType<typeof getTenantClient>, slug: string
   } catch (e) { console.error(`[ROI] Erreur alertes ${slug}:`, e); }
 }
 
-cron.schedule('0 7 * * *', () => void runMorningRebalayage());
+cron.schedule('0 7 * * *', () => void (async () => { await runMorningRebalayage(); await runMorningBriefing(); })());
 
-// ─── Résumé matinal enrichi (8h chaque jour) ─────────────────────────────────
+// ─── Briefing opérationnel 7h (remplace résumé 7h et résumé 8h) ─────────────
 
-async function runMorningSummary(): Promise<void> {
-  if (isMorningSummaryRunning) { console.log('[MorningSummary] Déjà en cours, skip'); return; }
-  isMorningSummaryRunning = true;
+async function runMorningBriefing(): Promise<void> {
   try {
     const master = getMasterClient();
     const companies = await master.company.findMany({
@@ -792,22 +715,22 @@ async function runMorningSummary(): Promise<void> {
         const now = new Date();
         const in24h = new Date(now.getTime() + 86_400_000);
         const in30d = new Date(now.getTime() + 30 * 86_400_000);
-        const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
-        const cutoff12h = new Date(now.getTime() - 12 * 3_600_000);
         const cutoff2h = new Date(now.getTime() - 2 * 3_600_000);
         const dateLabel = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
         const [
           departures, returns, carSeatRequests,
           expiringCT, expiringMaint,
-          recipients,
+          pendingDrafts,
           anomalies,
+          adminUsers,
+          allCarkeepers,
         ] = await Promise.all([
           db.rental.findMany({
             where: { startAt: { gte: now, lte: in24h }, status: { in: ['booked', 'active'] } },
             select: {
               driverName: true, startAt: true,
-              vehicle: { select: { make: true, model: true, licensePlate: true, parkingZone: true } },
+              vehicle: { select: { id: true, make: true, model: true, licensePlate: true, parkingZone: true } },
             },
             orderBy: { startAt: 'asc' },
           }),
@@ -815,71 +738,93 @@ async function runMorningSummary(): Promise<void> {
             where: { endAt: { gte: now, lte: in24h }, status: { in: ['active', 'completed'] } },
             select: {
               driverName: true, endAt: true,
-              vehicle: { select: { make: true, model: true, licensePlate: true, parkingZone: true } },
+              vehicle: { select: { id: true, make: true, model: true, licensePlate: true, parkingZone: true } },
             },
             orderBy: { endAt: 'asc' },
           }),
           db.carSeatRequest.findMany({
-            where: {
-              rental: { status: { in: ['booked', 'active'] } },
-            },
+            where: { rental: { status: { in: ['booked', 'active'] } } },
             select: {
-              id: true,
               rental: {
                 select: {
                   driverName: true, startAt: true,
-                  vehicle: { select: { make: true, model: true, licensePlate: true, parkingZone: true } },
+                  vehicle: { select: { id: true, make: true, model: true, licensePlate: true, parkingZone: true } },
                 },
               },
             },
           }),
           db.maintenanceTask.findMany({
             where: { type: 'ct', nextDueDate: { gte: now, lte: in30d }, vehicle: { isActive: true } },
-            select: { nextDueDate: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
+            select: { nextDueDate: true, vehicle: { select: { id: true, make: true, model: true, licensePlate: true } } },
             orderBy: { nextDueDate: 'asc' },
           }),
           getUpcomingMaintenances(db),
-          db.user.findMany({
-            where: { role: { in: ['admin', 'exploitation'] }, isActive: true },
-            select: { email: true, name: true },
+          db.message.findMany({
+            where: {
+              direction: 'outbound', status: 'pending_approval',
+              aiSuggestion: { not: null },
+              rental: { status: { in: ['booked', 'active'] } },
+            },
+            select: {
+              rental: { select: { driverName: true, vehicle: { select: { make: true, model: true, licensePlate: true } } } },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+            distinct: ['rentalId'],
           }),
-          // Locations booked dont le startAt est dépassé > 2h (sans check-in)
           db.rental.findMany({
             where: { status: 'booked', startAt: { lt: cutoff2h } },
             select: {
               driverName: true, startAt: true,
-              vehicle: { select: { make: true, model: true, licensePlate: true } },
+              vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
             },
+          }),
+          db.user.findMany({
+            where: {
+              isActive: true,
+              OR: [{ role: { in: ['admin', 'exploitation'] as never[] } }, { roles: { hasSome: ['admin', 'exploitation'] } }],
+            },
+            select: { email: true, name: true },
+          }),
+          db.user.findMany({
+            where: { isActive: true, OR: [{ role: 'carkeeper' as never }, { roles: { has: 'carkeeper' } }] },
+            select: { email: true, name: true, role: true, roles: true, vehicleCarkeepers: { select: { vehicleId: true } } },
           }),
         ]);
 
-        // CA du jour
-        const todayRentals = await db.rental.findMany({
+        // CA du mois
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        const monthRentals = await db.rental.findMany({
           where: {
-            status: { in: ['active', 'completed'] },
-            OR: [{ startAt: { lte: in24h, gte: now } }, { endAt: { lte: in24h, gte: now } }],
+            status: { in: ['active', 'completed', 'booked'] },
+            OR: [
+              { startAt: { gte: startOfMonth, lte: endOfMonth } },
+              { endAt: { gte: startOfMonth, lte: endOfMonth } },
+            ],
           },
-          select: { ownerPayout: true, grossRevenue: true, status: true },
+          select: { ownerPayout: true, grossRevenue: true },
         });
-        const caEncaisse = todayRentals.filter(r => r.ownerPayout != null).reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
-        const caPrevisionnel = todayRentals.filter(r => r.ownerPayout == null).reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
+        const caMoisEncaisse = monthRentals.filter(r => r.ownerPayout != null).reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
+        const caMoisPrevisionnel = monthRentals.filter(r => r.ownerPayout == null).reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
 
-        // Messages en attente > 12h
+        // Messages sans réponse > 2h
         const unansweredRentalIds = (await db.rental.findMany({
           where: {
             status: { in: ['booked', 'active'] },
             messages: {
-              some: { direction: 'inbound', createdAt: { lt: cutoff12h } },
+              some: { direction: 'inbound', createdAt: { lt: cutoff2h } },
               none: { direction: 'outbound', status: { in: ['approved', 'sent'] } },
             },
           },
           select: { id: true },
         })).map(r => r.id);
+
         const unansweredMessages = unansweredRentalIds.length > 0
           ? await db.message.findMany({
-              where: { direction: 'inbound', createdAt: { lt: cutoff12h }, rentalId: { in: unansweredRentalIds } },
+              where: { direction: 'inbound', createdAt: { lt: cutoff2h }, rentalId: { in: unansweredRentalIds } },
               select: {
-                content: true, createdAt: true,
+                content: true,
                 rental: { select: { driverName: true, vehicle: { select: { make: true, model: true, licensePlate: true } } } },
               },
               orderBy: { createdAt: 'asc' },
@@ -893,69 +838,115 @@ async function runMorningSummary(): Promise<void> {
         const section = (icon: string, title: string, rows: string[], emptyMsg = 'Rien à signaler') =>
           `<div style="margin:16px 0"><h3 style="font-size:14px;font-weight:bold;margin:0 0 8px;color:#1e293b">${icon} ${title}</h3>${rows.length > 0 ? `<ul style="margin:0;padding-left:20px;color:#374151;font-size:13px">${rows.map(r => `<li style="margin:2px 0">${r}</li>`).join('')}</ul>` : `<p style="color:#94a3b8;font-size:13px;margin:0">${emptyMsg}</p>`}</div>`;
 
-        const html = `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:640px;margin:0 auto;padding:20px;background:#f8fafc">
+        const maintenanceRows = [
+          ...expiringCT.map(c => `CT — ${c.vehicle.make} ${c.vehicle.model} (${c.vehicle.licensePlate}) — expire le ${new Date(c.nextDueDate!).toLocaleDateString('fr-FR')}`),
+          ...expiringMaint.map(m => {
+            const parts: string[] = [`${m.type} — ${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`];
+            if (m.nextServiceDate) {
+              const d = Math.ceil((new Date(m.nextServiceDate).getTime() - now.getTime()) / 86_400_000);
+              parts.push(d <= 0 ? `date dépassée` : `dans ${d} j`);
+            }
+            if (m.nextServiceMileage != null && m.vehicle.currentMileage != null) {
+              parts.push(`dans ${(m.nextServiceMileage - m.vehicle.currentMileage).toLocaleString('fr-FR')} km`);
+            }
+            return parts.join(' — ');
+          }),
+        ];
+
+        // Email complet admin/exploitation
+        function buildAdminHtml(): string {
+          return `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:640px;margin:0 auto;padding:20px;background:#f8fafc">
 <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
   <div style="background:#01696e;padding:20px 24px">
-    <h1 style="color:#fff;font-size:18px;margin:0">☀️ Résumé du jour — ${company.name}</h1>
+    <h1 style="color:#fff;font-size:18px;margin:0">☀️ Briefing opérationnel — ${company.name}</h1>
     <p style="color:#a7f3d0;font-size:12px;margin:4px 0 0">${dateLabel}</p>
   </div>
   <div style="padding:20px 24px">
     ${section('🚗', `Départs du jour (${departures.length})`, departures.map(r => `<b>${fmt(new Date(r.startAt))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
-    ${section('🔄', `Retours du jour (${returns.length})`, returns.map(r => `<b>${fmt(new Date(r.endAt))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
+    ${section('🔄', `Retours du jour (${returns.length})`, returns.map(r => `<b>${fmt(new Date(r.endAt!))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
     ${section('🪑', `Sièges auto à préparer (${carSeatRequests.length})`, carSeatRequests.filter(r => r.rental).map(r => `${r.rental!.driverName} · ${r.rental!.vehicle.make} ${r.rental!.vehicle.model} (${r.rental!.vehicle.licensePlate}) — départ ${new Date(r.rental!.startAt).toLocaleDateString('fr-FR')}`))}
-    ${section('🔧', `CT / Entretiens dans 30 jours`, [
-      ...expiringCT.map(c => `CT — ${c.vehicle.make} ${c.vehicle.model} (${c.vehicle.licensePlate}) — expire le ${new Date(c.nextDueDate!).toLocaleDateString('fr-FR')}`),
-      ...expiringMaint.map(m => {
-        const parts: string[] = [`Entretien ${m.type} — ${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`];
-        if (m.nextServiceDate) {
-          const diffDays = Math.ceil((new Date(m.nextServiceDate).getTime() - now.getTime()) / 86_400_000);
-          parts.push(diffDays <= 0 ? `date dépassée (${new Date(m.nextServiceDate).toLocaleDateString('fr-FR')})` : `dans ${diffDays} j (${new Date(m.nextServiceDate).toLocaleDateString('fr-FR')})`);
-        }
-        if (m.nextServiceMileage != null && m.vehicle.currentMileage != null) {
-          const remaining = m.nextServiceMileage - m.vehicle.currentMileage;
-          parts.push(`dans ${remaining.toLocaleString('fr-FR')} km (actuel : ${m.vehicle.currentMileage.toLocaleString('fr-FR')} km)`);
-        }
-        return parts.join(' — ');
-      }),
-    ])}
-    ${section('💬', `Messages en attente > 12h (${unansweredMessages.length})`, unansweredMessages.map(m => `${m.rental?.driverName ?? '?'} · ${m.rental?.vehicle.make} ${m.rental?.vehicle.model} — <i>${m.content.slice(0, 60)}…</i>`))}
-    ${section('💶', 'CA du jour', [
-      ...(caEncaisse > 0 ? [`Encaissé : <b>${fmtEur(caEncaisse)}</b>`] : []),
-      ...(caPrevisionnel > 0 ? [`Prévisionnel : ${fmtEur(caPrevisionnel)}`] : []),
-    ], 'Aucune location encaissée aujourd\'hui')}
-    ${section('⚠️', `Anomalies (${anomalies.length})`, anomalies.map(r => `Départ prévu ${fmt(new Date(r.startAt))} non confirmé — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})`))}
+    ${section('🔧', `CT / Entretiens dans 30 j (${maintenanceRows.length})`, maintenanceRows)}
+    ${section('✍️', `Brouillons IA à valider (${pendingDrafts.length})`, pendingDrafts.map(m => `${m.rental?.driverName ?? '?'} · ${m.rental?.vehicle.make} ${m.rental?.vehicle.model} (${m.rental?.vehicle.licensePlate})`))}
+    ${section('💬', `Messages sans réponse > 2h (${unansweredMessages.length})`, unansweredMessages.map(m => `${m.rental?.driverName ?? '?'} · ${m.rental?.vehicle.make} ${m.rental?.vehicle.model} — <i>${m.content.slice(0, 60)}…</i>`))}
+    ${section('💶', 'CA du mois en cours', [
+      ...(caMoisEncaisse > 0 ? [`Encaissé : <b>${fmtEur(caMoisEncaisse)}</b>`] : []),
+      ...(caMoisPrevisionnel > 0 ? [`Prévisionnel : ${fmtEur(caMoisPrevisionnel)}`] : []),
+    ], 'Aucune location ce mois')}
+    ${section('⚠️', `Anomalies (${anomalies.length})`, anomalies.map(r => `Départ non confirmé — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})`))}
   </div>
-  <div style="background:#f1f5f9;padding:12px 24px;font-size:11px;color:#94a3b8">SunanddriveOS — rapport automatique quotidien</div>
+  <div style="background:#f1f5f9;padding:12px 24px;font-size:11px;color:#94a3b8">SunanddriveOS — briefing automatique 7h</div>
 </div></body></html>`;
+        }
 
-        if (recipients.length === 0) {
-          console.log(`[MorningSummary] ${company.slug} : aucun destinataire`);
+        // Email filtré pour un carkeeper pur (pas admin/exploitation)
+        function buildCarekeeperHtml(ckVehicleIds: Set<string>): string {
+          const ckDepartures = departures.filter(r => ckVehicleIds.has(r.vehicle.id));
+          const ckReturns = returns.filter(r => ckVehicleIds.has(r.vehicle.id));
+          const ckSeats = carSeatRequests.filter(r => r.rental && ckVehicleIds.has(r.rental.vehicle.id));
+          const ckMaint = [
+            ...expiringCT.filter(c => ckVehicleIds.has(c.vehicle.id)).map(c => `CT — ${c.vehicle.make} ${c.vehicle.model} (${c.vehicle.licensePlate}) — expire le ${new Date(c.nextDueDate!).toLocaleDateString('fr-FR')}`),
+            ...expiringMaint.filter(m => ckVehicleIds.has(m.vehicle.id)).map(m => {
+              const parts: string[] = [`${m.type} — ${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`];
+              if (m.nextServiceDate) {
+                const d = Math.ceil((new Date(m.nextServiceDate).getTime() - now.getTime()) / 86_400_000);
+                parts.push(d <= 0 ? `date dépassée` : `dans ${d} j`);
+              }
+              return parts.join(' — ');
+            }),
+          ];
+          return `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:640px;margin:0 auto;padding:20px;background:#f8fafc">
+<div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
+  <div style="background:#01696e;padding:20px 24px">
+    <h1 style="color:#fff;font-size:18px;margin:0">☀️ Vos véhicules du jour — ${company.name}</h1>
+    <p style="color:#a7f3d0;font-size:12px;margin:4px 0 0">${dateLabel}</p>
+  </div>
+  <div style="padding:20px 24px">
+    ${section('🚗', `Départs du jour (${ckDepartures.length})`, ckDepartures.map(r => `<b>${fmt(new Date(r.startAt))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
+    ${section('🔄', `Retours du jour (${ckReturns.length})`, ckReturns.map(r => `<b>${fmt(new Date(r.endAt!))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
+    ${section('🪑', `Sièges auto à préparer (${ckSeats.length})`, ckSeats.filter(r => r.rental).map(r => `${r.rental!.driverName} · ${r.rental!.vehicle.make} ${r.rental!.vehicle.model} (${r.rental!.vehicle.licensePlate}) — départ ${new Date(r.rental!.startAt).toLocaleDateString('fr-FR')}`))}
+    ${section('🔧', `CT / Entretiens (${ckMaint.length})`, ckMaint)}
+  </div>
+  <div style="background:#f1f5f9;padding:12px 24px;font-size:11px;color:#94a3b8">SunanddriveOS — briefing automatique 7h</div>
+</div></body></html>`;
+        }
+
+        if (adminUsers.length === 0 && allCarkeepers.length === 0) {
+          console.log(`[MorningBriefing] ${company.slug} : aucun destinataire`);
           continue;
         }
-        for (const r of recipients) {
-          if (process.env.RESEND_API_KEY) {
+
+        let emailsSent = 0;
+        if (process.env.RESEND_API_KEY) {
+          const adminHtml = buildAdminHtml();
+          for (const u of adminUsers) {
             await sendEmail({
-              from: 'appli@sunanddrive.com',
-              to: r.email,
-              subject: `☀️ Résumé du jour — Sun and Drive — ${now.toLocaleDateString('fr-FR')}`,
-              html,
+              to: u.email,
+              subject: `☀️ Briefing opérationnel — ${company.name} — ${now.toLocaleDateString('fr-FR')}`,
+              html: adminHtml,
             });
-          } else {
-            console.log(`[MorningSummary] ${company.slug} → ${r.email} : ${departures.length} départs, ${returns.length} retours`);
+            emailsSent++;
+          }
+          // Pure carkeepers = has carkeeper role but NOT admin or exploitation
+          for (const ck of allCarkeepers) {
+            const ckAllRoles = [...(Array.isArray(ck.roles) ? ck.roles as string[] : []), ck.role as string].filter(Boolean);
+            if (ckAllRoles.some(r => r === 'admin' || r === 'exploitation')) continue;
+            const ckVehicleIds = new Set((ck.vehicleCarkeepers as { vehicleId: string }[]).map(v => v.vehicleId));
+            if (ckVehicleIds.size === 0) continue;
+            const ckHtml = buildCarekeeperHtml(ckVehicleIds);
+            await sendEmail({
+              to: ck.email,
+              subject: `☀️ Vos véhicules du jour — ${now.toLocaleDateString('fr-FR')}`,
+              html: ckHtml,
+            });
+            emailsSent++;
           }
         }
-      } catch (err: unknown) {
-        console.error(`[MorningSummary] Erreur tenant ${company.slug} :`, err);
-      }
-    }
-  } catch (err: unknown) {
-    console.error('[MorningSummary] Erreur :', err);
-  } finally {
-    isMorningSummaryRunning = false;
-  }
-}
 
-cron.schedule('0 8 * * *', () => void runMorningSummary());
+        console.log(`[MorningBriefing] ${company.slug} : ${departures.length} départs, ${returns.length} retours, ${pendingDrafts.length} brouillons — ${emailsSent} email(s) envoyé(s)`);
+      } catch (e) { console.error(`[MorningBriefing] Erreur tenant ${company.slug}:`, e); }
+    }
+  } catch (e) { console.error('[MorningBriefing] Erreur générale:', e); }
+}
 
 // ─── 4.7 — Alerte locataire non répondant (dans le cron horaire) ──────────
 

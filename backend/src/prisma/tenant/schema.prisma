@@ -726,6 +726,7 @@ model CompanySettings {
   majorMaintenanceKm        Int      @default(30000) // Kilométrage déclencheur entretien majeur
   roiAlertMonthsBefore      Int      @default(6)    // Seuil alerte "Revendre bientôt" (mois avant optimal)
   roiCaMoyenMois            Int      @default(5)    // Nb de mois complets pour calcul CA moyen ROI
+  messageUnansweredMinutes  Int?                    // Délai avant alerte message sans réponse (null = 30 min)
   suggestionsCacheTtlHours  Int      @default(1)    // Durée cache suggestions IA (heures)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

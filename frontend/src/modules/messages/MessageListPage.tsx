@@ -103,12 +103,12 @@ export default function MessageListPage(): React.JSX.Element {
       }
     }
 
-    const TWO_HOURS = 2 * 3_600_000;
+    const delay = summary?.unansweredDelayMs ?? 30 * 60_000;
     for (const conv of map.values()) {
       const last = conv.lastMessage;
       conv.isUnanswered =
         last.direction === 'inbound' &&
-        Date.now() - new Date(last.createdAt).getTime() > TWO_HOURS;
+        Date.now() - new Date(last.createdAt).getTime() > delay;
     }
 
     // L'ordre vient du backend (groupBy _max createdAt desc)

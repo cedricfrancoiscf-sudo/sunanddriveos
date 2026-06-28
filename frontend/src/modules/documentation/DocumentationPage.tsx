@@ -735,6 +735,83 @@ pnpm test:e2e:ui`}</CodeBlock>
       <H2>10. Migration Hetzner</H2>
       <P>Un guide de migration depuis le NAS Synology vers un serveur Hetzner (Cloud VPS) est disponible dans <code className="bg-gray-100 px-1 text-xs rounded">scripts/migration-hetzner.md</code>. Il couvre : export PostgreSQL, transfer Docker Compose, DNS Cloudflare, et validation post-migration.</P>
 
+      <H2>11. Comprendre les écarts avec Getaround</H2>
+
+      <H3>Écart CA : Performance vs Paiements Getaround</H3>
+      <P>
+        Getaround expose deux vues du CA qui ne coïncident jamais :
+      </P>
+      <Ul>
+        <Li>
+          <strong>Onglet Performance GA</strong> : CA estimé basé
+          sur le basePrice des locations, attribué au mois de la
+          location. GA clôture son compteur vers le 28 du mois et
+          bascule les locations en cours sur le mois suivant.
+          Vue indicative/prévisionnelle.
+        </Li>
+        <Li>
+          <strong>Onglet Paiements GA</strong> : vrais virements
+          reçus le 4 de chaque mois, couvrant les locations dont
+          endAt se situe entre ~28/M-1 et ~28/M. Inclut
+          dédommagements et autres revenus. Déduit l'abonnement
+          Getaround Connect (montant configurable dans Paramètres).
+        </Li>
+        <Li>
+          <strong>SunanddriveOS</strong> : utilise ownerPayout
+          synchronisé depuis l'API GA — c'est la référence
+          comptable réelle, alignée sur l'onglet Paiements.
+          Pour les locations futures (statut booked), ownerPayout
+          est null ; c'est grossRevenue (fourni par l'API GA dès
+          la réservation, non estimé) qui est utilisé comme
+          valeur prévisionnelle. La méthode de répartition du CA
+          sur les mois (prorata jours) a été choisie
+          délibérément pour sa justesse comptable — elle peut
+          donc différer des deux vues Getaround.
+        </Li>
+      </Ul>
+
+      <H3>Écart taux d'occupation</H3>
+      <Ul>
+        <Li>
+          <strong>Getaround</strong> : joursLoués / joursDisponibles
+          (exclut les jours bloqués/indisponibles du dénominateur).
+        </Li>
+        <Li>
+          <strong>SunanddriveOS taux brut</strong> :
+          joursLoués / joursCalendaires — méthode conservative,
+          performance absolue.
+        </Li>
+        <Li>
+          <strong>SunanddriveOS taux corrigé</strong> :
+          joursLoués / (joursCalendaires - joursIndisponibles) —
+          comparable à la méthode Getaround, affiché dans
+          l'onglet Intelligence.
+        </Li>
+        <Li>
+          L'écart constaté est de 10 à 20 points selon les mois.
+          Les deux méthodes sont justes selon leur objectif.
+        </Li>
+      </Ul>
+
+      <H3>Fenêtre de revente optimale</H3>
+      <Ul>
+        <Li>
+          La valeur marchande est saisie manuellement par
+          l'opérateur (source recommandée : vendezvotrevoiture.fr).
+        </Li>
+        <Li>
+          Les taux de décote sont configurables dans Paramètres
+          et calculés depuis l'âge réel du véhicule (vehicle.year),
+          pas depuis la date d'achat — adapté à une flotte
+          achetée d'occasion à 6-8 ans d'ancienneté.
+        </Li>
+        <Li>
+          Le ROI intègre : plus-value nette (valeurMarchande -
+          capitalRestant), CA cumulé (grossRevenue pour les
+          locations futures), coûts fixes et variables mensuels.
+        </Li>
+      </Ul>
+
       <InfoBox>
         <strong>Point d'entrée recommandé pour un nouveau développeur :</strong><br/>
         1. Cloner le repo — 2. Copier <code className="bg-gray-100 px-1 text-xs rounded">.env.example</code> en <code className="bg-gray-100 px-1 text-xs rounded">.env</code> — 3. <code className="bg-gray-100 px-1 text-xs rounded">pnpm generate</code> dans backend/ — 4. <code className="bg-gray-100 px-1 text-xs rounded">pnpm dev</code> dans les deux dossiers — 5. Lire CLAUDE.md à la racine.

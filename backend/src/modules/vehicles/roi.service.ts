@@ -204,18 +204,19 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     }
   }
 
-  const declining3 =
-    courbe.length >= 4 &&
-    courbe[1].roi < courbe[0].roi &&
-    courbe[2].roi < courbe[1].roi &&
-    courbe[3].roi < courbe[2].roi;
+  // Prêt encore en cours sur la fenêtre 84 mois ?
+  const moisFinPret = vehicle.loanDurationMonths
+    ? Math.max(0, vehicle.loanDurationMonths - loanElapsedBase)
+    : 0;
+  const pretEncoreEnCours = moisFinPret > 0 && moisFinPret <= 84;
 
   let signal: RoiAnalysis['signal'];
-  if (moisOptimal === 0 || declining3) {
+  if (moisOptimal === 0 && !pretEncoreEnCours) {
+    // ROI ne remonte jamais ET prêt déjà soldé → vendre maintenant
     signal = 'vendre_maintenant';
-  } else if (moisOptimal <= s.roiAlertMonthsBefore) {
+  } else if (moisOptimal > 0 && moisOptimal <= s.roiAlertMonthsBefore) {
     signal = 'bientot';
-  } else if (moisOptimal <= 24) {
+  } else if (moisOptimal > 0 && moisOptimal <= 24) {
     signal = 'optimal';
   } else {
     signal = 'attendre';

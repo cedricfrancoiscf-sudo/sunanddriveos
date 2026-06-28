@@ -73,7 +73,23 @@ export default function RatingPage(): React.JSX.Element {
     enabled: !!selectedVehicle,
     staleTime: 5 * 60_000,
   });
-  const ratings = ratingsData?.ratings ?? [];
+  const rawRatings = ratingsData?.ratings ?? [];
+  type RatingSortKey = 'period' | 'rating' | 'reviewCount';
+  const [ratingSortKey, setRatingSortKey] = useState<RatingSortKey>('period');
+  const [ratingSortDir, setRatingSortDir] = useState<'asc' | 'desc'>('desc');
+
+  function toggleRatingSort(k: RatingSortKey) {
+    if (ratingSortKey === k) setRatingSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setRatingSortKey(k); setRatingSortDir('desc'); }
+  }
+
+  const ratings = [...rawRatings].sort((a, b) => {
+    let cmp = 0;
+    if (ratingSortKey === 'period') cmp = a.period.localeCompare(b.period);
+    else if (ratingSortKey === 'rating') cmp = a.rating - b.rating;
+    else if (ratingSortKey === 'reviewCount') cmp = (a.reviewCount ?? 0) - (b.reviewCount ?? 0);
+    return ratingSortDir === 'desc' ? -cmp : cmp;
+  });
 
   const saveMut = useMutation({
     mutationFn: () => api.put(`/vehicles/${selectedVehicle}/ratings/${period}`, {
@@ -248,9 +264,13 @@ export default function RatingPage(): React.JSX.Element {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-400 uppercase tracking-wide">
-                <th className="px-5 py-2 text-left">Période</th>
-                <th className="px-4 py-2 text-center">Note</th>
-                <th className="px-4 py-2 text-center">Avis</th>
+                {(['period', 'rating', 'reviewCount'] as RatingSortKey[]).map((k, i) => (
+                  <th key={k} className={`${i === 0 ? 'px-5' : 'px-4'} py-2 ${i === 0 ? 'text-left' : 'text-center'} cursor-pointer select-none hover:text-gray-700 ${ratingSortKey === k ? 'text-[#01696e]' : ''}`}
+                    onClick={() => toggleRatingSort(k)}>
+                    {k === 'period' ? 'Période' : k === 'rating' ? 'Note' : 'Avis'}
+                    {ratingSortKey === k ? (ratingSortDir === 'desc' ? ' ↓' : ' ↑') : ' ↕'}
+                  </th>
+                ))}
                 <th className="px-4 py-2 text-left">Mots-clés</th>
                 <th className="px-4 py-2 text-left">Notes</th>
                 <th className="px-4 py-2" />

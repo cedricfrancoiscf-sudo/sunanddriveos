@@ -45,13 +45,42 @@ export default function CTPage(): React.JSX.Element {
     },
   });
 
+  type CTSortKey = 'licensePlate' | 'performedAt' | 'nextServiceDate' | 'cost';
+  const [ctSortKey, setCtSortKey] = useState<CTSortKey>('nextServiceDate');
+  const [ctSortDir, setCtSortDir] = useState<'asc' | 'desc'>('asc');
+
+  function toggleCtSort(k: CTSortKey) {
+    if (ctSortKey === k) setCtSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setCtSortKey(k); setCtSortDir('asc'); }
+  }
+
+  function CTSortTh({ k, label, right }: { k: CTSortKey; label: string; right?: boolean }): React.JSX.Element {
+    const active = ctSortKey === k;
+    return (
+      <th className={`px-4 py-2.5 text-xs font-medium cursor-pointer select-none hover:text-gray-800 transition-colors ${right ? 'text-right' : 'text-left'} ${active ? 'text-[#01696e]' : 'text-gray-500'}`}
+        onClick={() => toggleCtSort(k)}>
+        {label}{active ? (ctSortDir === 'desc' ? ' ↓' : ' ↑') : ' ↕'}
+      </th>
+    );
+  }
+
   // Tâches CT uniquement
   const ctTasks = allTasks.filter(t => t.type === 'ct');
 
-  // Historique CT : tous les Maintenance type="ct", tri date desc
+  // Historique CT : tous les Maintenance type="ct"
   const ctHistory = allMaintenances
     .filter(m => m.type === 'ct')
-    .sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime());
+    .sort((a, b) => {
+      let cmp = 0;
+      if (ctSortKey === 'licensePlate') cmp = a.vehicle.licensePlate.localeCompare(b.vehicle.licensePlate, 'fr');
+      else if (ctSortKey === 'performedAt') cmp = new Date(a.performedAt).getTime() - new Date(b.performedAt).getTime();
+      else if (ctSortKey === 'nextServiceDate') {
+        const aT = a.nextServiceDate ? new Date(a.nextServiceDate).getTime() : Infinity;
+        const bT = b.nextServiceDate ? new Date(b.nextServiceDate).getTime() : Infinity;
+        cmp = aT - bT;
+      } else if (ctSortKey === 'cost') cmp = (a.cost ?? 0) - (b.cost ?? 0);
+      return ctSortDir === 'desc' ? -cmp : cmp;
+    });
 
   const isLoading = tasksLoading || histLoading;
 
@@ -111,12 +140,12 @@ export default function CTPage(): React.JSX.Element {
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
-                  <th className="px-4 py-2.5 text-left font-medium">Véhicule</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Date</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Résultat</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Prochain</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Coût</th>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <CTSortTh k="licensePlate" label="Véhicule" />
+                  <CTSortTh k="performedAt" label="Date" />
+                  <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Résultat</th>
+                  <CTSortTh k="nextServiceDate" label="Prochain" />
+                  <CTSortTh k="cost" label="Coût" right />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">

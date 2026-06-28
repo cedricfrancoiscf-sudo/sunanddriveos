@@ -292,6 +292,13 @@ function RoiAnalysisDisplay({ analysis, mktDateStale }: {
             : {})} />
       </div>
 
+      {/* Hint apport personnel pour TRI */}
+      {analysis.triActuel === null && (analysis.loanDeposit === 0 || analysis.loanDeposit == null) && (
+        <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 border border-amber-100">
+          Renseignez votre apport personnel dans la fiche véhicule pour activer le calcul du TRI et du Cash-on-Cash.
+        </p>
+      )}
+
       {/* Signal */}
       <div className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${cfg.colorClass}`}>
         <span>{cfg.icon}</span>

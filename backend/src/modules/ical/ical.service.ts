@@ -81,6 +81,9 @@ function lastDigits(plate: string): string {
 export async function generateAccessoriesIcal(db: PrismaClient): Promise<string> {
   const now = new Date();
 
+  const settings = await db.companySettings.findFirst({ select: { senderName: true } });
+  const calName = settings?.senderName ?? 'votre flotte';
+
   // Demandes de sièges auto confirmées
   const seatRequests = await db.carSeatRequest.findMany({
     where: { status: 'confirmed' },
@@ -151,7 +154,7 @@ export async function generateAccessoriesIcal(db: PrismaClient): Promise<string>
     'PRODID:-//SunanddriveOS//Accessories//FR',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    'X-WR-CALNAME:Accessoires — Sun and Drive',
+    `X-WR-CALNAME:Accessoires — ${calName}`,
     'X-WR-CALDESC:Réservations accessoires et sièges auto',
     ...events,
     'END:VCALENDAR',

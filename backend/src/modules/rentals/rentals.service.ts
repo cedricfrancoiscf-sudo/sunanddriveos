@@ -43,7 +43,7 @@ export async function listRentals(db: PrismaClient, filters: RentalFilters = {})
       : {}),
   };
 
-  const [rentals, total] = await Promise.all([
+  const [rentals, total, settings] = await Promise.all([
     db.rental.findMany({
       where,
       include: {
@@ -54,12 +54,14 @@ export async function listRentals(db: PrismaClient, filters: RentalFilters = {})
       take: limit,
     }),
     db.rental.count({ where }),
+    db.companySettings.findFirst({ select: { platformCommissionRate: true } }),
   ]);
 
+  const commRate = settings?.platformCommissionRate ?? 1.2544;
   const rentalsWithEstimate = rentals.map(r => ({
     ...r,
     ownerPayoutEstimated: r.ownerPayout === null && (r.grossRevenue ?? 0) > 0
-      ? Math.round((r.grossRevenue ?? 0) / 1.2544 * 100) / 100
+      ? Math.round((r.grossRevenue ?? 0) / commRate * 100) / 100
       : null,
   }));
 

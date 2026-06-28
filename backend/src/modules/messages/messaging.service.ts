@@ -138,7 +138,8 @@ export async function analyzeAndProcessMessage(
   if (!settings) return;
 
   const tone = settings.aiTone === 'tutoiement' ? 'tutoiement' : 'vouvoiement';
-  const assistantName = settings.aiName ?? settings.senderName ?? 'Sun and Drive';
+  const assistantName = settings.aiName ?? settings.senderName ?? 'notre service';
+  const companyName = settings.senderName ?? '';
 
   // 1. Analyse Claude
   let analysis: ProactiveAnalysis;
@@ -146,7 +147,7 @@ export async function analyzeAndProcessMessage(
     const resp = await claude.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
-      system: `Tu es ${assistantName} de Sun and Drive. Tu analyses les messages de locataires Getaround.
+      system: `Tu es ${assistantName}${companyName ? ` de ${companyName}` : ''}. Tu analyses les messages de locataires.
 Réponds en JSON uniquement, sans markdown :
 {"type":"car_seat"|"remise"|"incident"|"general"|"remerciement","urgent":boolean,"details":{"childAge":number|null,"question":string|null,"incidentType":string|null},"suggestedReply":string}
 La réponse suggérée doit être en ${tone}, signée ${assistantName}.`,

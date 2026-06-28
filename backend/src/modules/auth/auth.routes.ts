@@ -88,12 +88,17 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const tenantClient = getTenantClient(req.tenantDbUrl!);
-      const [user, settings] = await Promise.all([
+      const master = getMasterClient();
+      const [user, settings, company] = await Promise.all([
         tenantClient.user.findUnique({
           where: { id: req.auth!.userId! },
           select: { id: true, name: true, email: true, role: true, roles: true, lastLoginAt: true, createdAt: true },
         }),
         tenantClient.companySettings.findFirst({ select: { logoUrl: true } }),
+        master.company.findUnique({
+          where: { slug: req.auth!.tenantSlug! },
+          select: { plan: true, isActive: true },
+        }),
       ]);
 
       if (!user) {
@@ -104,6 +109,8 @@ router.get(
       res.json({
         user: { ...user, logoUrl: normalizeLogoUrl(settings?.logoUrl, req) },
         tenantSlug: req.auth!.tenantSlug,
+        plan: company?.plan ?? 'starter',
+        hasActiveSubscription: company?.isActive ?? false,
       });
     } catch (err: unknown) {
       next(err);

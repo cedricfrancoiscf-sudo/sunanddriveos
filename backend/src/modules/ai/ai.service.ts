@@ -36,12 +36,12 @@ export interface RentalContext {
   aiName?: string;
 }
 
-export async function analyzeMessage(content: string): Promise<MessageAnalysis> {
+export async function analyzeMessage(content: string, platformName = 'Getaround'): Promise<MessageAnalysis> {
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 512,
     system:
-      'Tu es un assistant qui analyse les messages de locataires pour un service de location de voitures (Getaround). ' +
+      `Tu es un assistant qui analyse les messages de locataires pour un service de location de voitures (${platformName}). ` +
       'Réponds uniquement avec un objet JSON valide, sans markdown ni explication.',
     messages: [
       {
@@ -115,7 +115,7 @@ export async function suggestCarSeatReply(
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 512,
-    system: `Tu rédiges des messages professionnels et chaleureux pour Sun and Drive, service de location de voitures. Utilise le ${tone}. Réponds directement avec le texte du message, sans introduction ni titre.`,
+    system: `Tu rédiges des messages professionnels et chaleureux${context.companyName ? ` pour ${context.companyName}` : ''}. Utilise le ${tone}. Réponds directement avec le texte du message, sans introduction ni titre.`,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -338,6 +338,7 @@ export async function getQualityAlerts(db: PrismaClient): Promise<QualityAlert[]
 
 export interface MorningBriefingContext {
   companyName: string;
+  platformName?: string;
   date: string;
   departures: Array<{ driverName: string; vehicle: string }>;
   returns: Array<{ driverName: string; vehicle: string }>;
@@ -346,6 +347,7 @@ export interface MorningBriefingContext {
 }
 
 export async function generateMorningBriefing(context: MorningBriefingContext, aiName = 'Alex'): Promise<string> {
+  const platform = context.platformName ?? 'Getaround';
   const ratingsText = context.vehicleRatings.length > 0
     ? context.vehicleRatings.map(vr => {
         const trend = vr.previousRating !== null
@@ -354,7 +356,7 @@ export async function generateMorningBriefing(context: MorningBriefingContext, a
         const kw = vr.keywords.length > 0 ? ` — avis : ${vr.keywords.join(', ')}` : '';
         return `- ${vr.make} ${vr.model} (${vr.licensePlate}) : ${vr.rating}/5${trend}${kw}`;
       }).join('\n')
-    : 'Aucune note Getaround enregistrée ce mois.';
+    : 'Aucune note enregistrée ce mois.';
 
   const prompt = `Génère un briefing matinal concis pour ${context.companyName} — ${context.date}.
 
@@ -362,18 +364,18 @@ Départs : ${context.departures.map(d => `${d.driverName} (${d.vehicle})`).join(
 Retours : ${context.returns.map(r => `${r.driverName} (${r.vehicle})`).join(', ') || 'aucun'}
 Messages sans réponse depuis +12h : ${context.unansweredCount}
 
-Notes Getaround :
+Notes ${platform} :
 ${ratingsText}
 
 Règles strictes :
-- Ne jamais suggérer de modifier les prix. Getaround gère la tarification automatiquement.
+- Ne jamais suggérer de modifier les prix. ${platform} gère la tarification automatiquement.
 - Suggestions uniquement sur : propreté, réactivité, photos, description, entretien.
 - 5 à 8 lignes maximum, direct et actionnable.`;
 
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 512,
-    system: `Tu t'appelles ${aiName} et tu rédiges des briefings opérationnels pour des gestionnaires de flotte Getaround. Réponds directement sans introduction.`,
+    system: `Tu t'appelles ${aiName} et tu rédiges des briefings opérationnels pour des gestionnaires de flotte. Réponds directement sans introduction.`,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -399,7 +401,7 @@ export async function suggestReply(
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    system: `Tu es ${context.aiName ?? 'un assistant'} pour ${context.companyName ?? 'Sun and Drive'}.
+    system: `Tu es ${context.aiName ?? 'un assistant'} pour ${context.companyName ?? 'notre service'}.
 RÈGLES ABSOLUES :
 - Tu ne réponds QUE sur les informations fournies dans ce contexte
 - Si tu ne sais pas → réponds UNIQUEMENT "Je transmets votre question à notre équipe qui vous contactera très rapidement."
@@ -419,7 +421,7 @@ ${context.pickupInstructions ? `INSTRUCTIONS DE DÉPART :\n${context.pickupInstr
 ${context.returnInstructions ? `INSTRUCTIONS DE RETOUR :\n${context.returnInstructions}` : "INSTRUCTIONS DE RETOUR : Non renseignées — si question sur restitution → transférer à l'équipe"}
 ${historyBlock}
 
-Réponds en te présentant comme ${context.aiName ?? "l'équipe"} de ${context.companyName ?? 'Sun and Drive'}.
+Réponds en te présentant comme ${context.aiName ?? "l'équipe"} de ${context.companyName ?? 'notre service'}.
 Message du locataire : "${incomingMessage}"
 
 Réponse (directement le texte, sans formule d'appel) :`,

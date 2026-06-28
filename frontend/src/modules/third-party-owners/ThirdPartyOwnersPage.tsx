@@ -81,6 +81,9 @@ export default function ThirdPartyOwnersPage(): React.JSX.Element {
   const [form, setForm] = useState(EMPTY_FORM);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [statementMonth, setStatementMonth] = useState(() => format(new Date(), 'yyyy-MM'));
+  type StmtSortKey = 'startAt' | 'grossRevenue' | 'ownerPayout' | 'ownerShare';
+  const [stmtSortKey, setStmtSortKey] = useState<StmtSortKey>('startAt');
+  const [stmtSortDir, setStmtSortDir] = useState<'asc' | 'desc'>('desc');
 
   // ── Requêtes ────────────────────────────────────────────────────────────────
 
@@ -489,14 +492,27 @@ export default function ThirdPartyOwnersPage(): React.JSX.Element {
                             <tr className="border-b border-gray-100 text-left text-gray-400">
                               <th className="pb-2 pr-3 font-medium">Véhicule</th>
                               <th className="pb-2 pr-3 font-medium">Conducteur</th>
-                              <th className="pb-2 pr-3 font-medium">Période</th>
-                              <th className="pb-2 pr-3 font-medium text-right">CA brut</th>
-                              <th className="pb-2 pr-3 font-medium text-right">Virement</th>
-                              <th className="pb-2 font-medium text-right">Part proprio</th>
+                              {(['startAt', 'grossRevenue', 'ownerPayout', 'ownerShare'] as StmtSortKey[]).map((k, i) => (
+                                <th key={k} className={`pb-2 ${i < 3 ? 'pr-3' : ''} font-medium text-right cursor-pointer select-none hover:text-gray-700 ${stmtSortKey === k ? 'text-[#01696e]' : ''}`}
+                                  onClick={() => {
+                                    if (stmtSortKey === k) setStmtSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                                    else { setStmtSortKey(k); setStmtSortDir('desc'); }
+                                  }}>
+                                  {k === 'startAt' ? 'Période' : k === 'grossRevenue' ? 'CA brut' : k === 'ownerPayout' ? 'Virement' : 'Part proprio'}
+                                  {stmtSortKey === k ? (stmtSortDir === 'desc' ? ' ↓' : ' ↑') : ' ↕'}
+                                </th>
+                              ))}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {statement.lines.map(l => (
+                            {[...statement.lines].sort((a, b) => {
+                              let cmp = 0;
+                              if (stmtSortKey === 'startAt') cmp = new Date(a.startAt).getTime() - new Date(b.startAt).getTime();
+                              else if (stmtSortKey === 'grossRevenue') cmp = a.grossRevenue - b.grossRevenue;
+                              else if (stmtSortKey === 'ownerPayout') cmp = a.ownerPayout - b.ownerPayout;
+                              else if (stmtSortKey === 'ownerShare') cmp = a.ownerShare - b.ownerShare;
+                              return stmtSortDir === 'desc' ? -cmp : cmp;
+                            }).map(l => (
                               <tr key={l.rentalId} className="text-gray-700">
                                 <td className="py-2 pr-3">
                                   <p className="font-medium">{l.vehicle.make} {l.vehicle.model}</p>

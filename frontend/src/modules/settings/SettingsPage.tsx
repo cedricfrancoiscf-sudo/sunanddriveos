@@ -473,6 +473,10 @@ interface CompanySettings {
   majorMaintenanceKm: number;
   roiAlertMonthsBefore: number;
   roiCaMoyenMois: number;
+  roiHorizonMonths: number;
+  roiCoeffSaison: number[] | null;
+  platformName: string | null;
+  platformCommissionRate: number | null;
   messageUnansweredMinutes: number | null;
 }
 
@@ -1486,8 +1490,14 @@ function ReventeDecoteSection(): React.JSX.Element {
     majorMaintenanceKm: 30000,
     roiAlertMonthsBefore: 6,
     roiCaMoyenMois: 5,
+    roiHorizonMonths: 48,
+    platformCommissionRate: 1.2544,
   });
+  const [platformName, setPlatformName] = React.useState<string>('');
+  const [roiCoeffSaison, setRoiCoeffSaison] = React.useState<number[] | null>(null);
   const [saved, setSaved] = React.useState(false);
+
+  const MONTHS_FR = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
 
   React.useEffect(() => {
     if (settings) {
@@ -1501,12 +1511,20 @@ function ReventeDecoteSection(): React.JSX.Element {
         majorMaintenanceKm: settings.majorMaintenanceKm ?? 30000,
         roiAlertMonthsBefore: settings.roiAlertMonthsBefore ?? 6,
         roiCaMoyenMois: settings.roiCaMoyenMois ?? 5,
+        roiHorizonMonths: settings.roiHorizonMonths ?? 48,
+        platformCommissionRate: settings.platformCommissionRate ?? 1.2544,
       });
+      setPlatformName(settings.platformName ?? '');
+      setRoiCoeffSaison(settings.roiCoeffSaison ?? null);
     }
   }, [settings]);
 
   const saveMut = useMutation({
-    mutationFn: () => api.put('/settings', form),
+    mutationFn: () => api.put('/settings', {
+      ...form,
+      platformName: platformName.trim() || null,
+      roiCoeffSaison,
+    }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings'] });
       void qc.invalidateQueries({ queryKey: ['roi-analysis'] });
@@ -1573,8 +1591,68 @@ function ReventeDecoteSection(): React.JSX.Element {
         </p>
       </div>
 
-      {numField('roiAlertMonthsBefore', 'Seuil alerte "Revendre bientôt"', 'mois avant optimal')}
-      {numField('roiCaMoyenMois', 'Mois d\'historique CA moyen', 'mois (1-24, défaut 5)')}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {numField('roiAlertMonthsBefore', 'Seuil alerte "Revendre bientôt"', 'mois avant optimal')}
+        {numField('roiCaMoyenMois', 'Mois d\'historique CA moyen', 'mois (1-24, défaut 5)')}
+        {numField('roiHorizonMonths', 'Horizon courbe ROI', 'mois (12-120, défaut 48)')}
+      </div>
+
+      {/* Plateforme */}
+      <div>
+        <p className="mb-3 text-xs font-semibold text-gray-700">Plateforme</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Nom de la plateforme</label>
+            <input type="text" placeholder="Getaround"
+              value={platformName}
+              onChange={e => setPlatformName(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Taux commission plateforme (ex: 1.2544)</label>
+            <input type="number" min="1" max="2" step="0.0001"
+              value={form.platformCommissionRate}
+              onChange={e => setForm(f => ({ ...f, platformCommissionRate: parseFloat(e.target.value) || 1.2544 }))}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+            <p className="mt-1 text-[10px] text-gray-400">Divise le grossRevenue pour estimer l'ownerPayout. Défaut : 1.2544 (25,44 % Getaround).</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Profil saisonnier */}
+      <div>
+        <div className="flex items-center gap-3 mb-3">
+          <p className="text-xs font-semibold text-gray-700">Profil saisonnier</p>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={roiCoeffSaison !== null}
+              onChange={e => setRoiCoeffSaison(e.target.checked ? new Array(12).fill(1.0) : null)}
+              className="accent-[#01696e]" />
+            <span className="text-xs text-gray-500">Activer</span>
+          </label>
+        </div>
+        {roiCoeffSaison !== null && (
+          <>
+            <div className="grid grid-cols-6 gap-2">
+              {MONTHS_FR.map((month, i) => (
+                <div key={month}>
+                  <label className="mb-1 block text-[10px] font-medium text-gray-500 text-center">{month}</label>
+                  <input type="number" min="0.1" max="3" step="0.05"
+                    value={roiCoeffSaison[i] ?? 1.0}
+                    onChange={e => {
+                      const updated = [...roiCoeffSaison];
+                      updated[i] = parseFloat(e.target.value) || 1.0;
+                      setRoiCoeffSaison(updated);
+                    }}
+                    className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-center text-xs outline-none focus:border-[#01696e]" />
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-[10px] text-gray-400">
+              Coefficients appliqués aux mois sans données réelles (1.0 = normal, 1.5 = +50%, 0.7 = -30%).
+            </p>
+          </>
+        )}
+      </div>
 
       <div className="flex items-center gap-3 pt-1">
         <button type="button" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}

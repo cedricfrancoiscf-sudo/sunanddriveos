@@ -215,11 +215,30 @@ function VehicleTableRow({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
   );
 }
 
+type VehicleSortKey = 'licensePlate' | 'make' | 'year' | 'currentMileage';
+
 export default function VehicleListPage(): React.JSX.Element {
   const [showSync, setShowSync] = useState(false);
   const [search, setSearch] = useState('');
   const [fleetView, setFleetView] = useState<FleetViewMode>(getStoredViewMode);
+  const [sortKey, setSortKey] = useState<VehicleSortKey>('licensePlate');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   useEffect(() => { void trackEvent('vehicles', 'view'); }, []);
+
+  function toggleVehicleSort(k: VehicleSortKey) {
+    if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(k); setSortDir('asc'); }
+  }
+
+  function SortVehicleTh({ k, label }: { k: VehicleSortKey; label: string }): React.JSX.Element {
+    const active = sortKey === k;
+    return (
+      <th className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none hover:text-gray-800 transition-colors ${active ? 'text-[#01696e]' : 'text-gray-500'}`}
+        onClick={() => toggleVehicleSort(k)}>
+        {label}{active ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ' ↕'}
+      </th>
+    );
+  }
   function toggleView(mode: FleetViewMode): void {
     setFleetView(mode);
     localStorage.setItem('fleet_view_mode', mode);
@@ -231,14 +250,23 @@ export default function VehicleListPage(): React.JSX.Element {
     staleTime: 5 * 60_000,
   });
 
-  const filtered = vehicles.filter((v) => {
-    const q = search.toLowerCase();
-    return (
-      v.licensePlate.toLowerCase().includes(q) ||
-      v.make.toLowerCase().includes(q) ||
-      v.model.toLowerCase().includes(q)
-    );
-  });
+  const filtered = vehicles
+    .filter((v) => {
+      const q = search.toLowerCase();
+      return (
+        v.licensePlate.toLowerCase().includes(q) ||
+        v.make.toLowerCase().includes(q) ||
+        v.model.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'licensePlate') cmp = a.licensePlate.localeCompare(b.licensePlate, 'fr');
+      else if (sortKey === 'make') cmp = `${a.make} ${a.model}`.localeCompare(`${b.make} ${b.model}`, 'fr');
+      else if (sortKey === 'year') cmp = (a.year ?? 0) - (b.year ?? 0);
+      else if (sortKey === 'currentMileage') cmp = a.currentMileage - b.currentMileage;
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
 
   return (
     <div className="p-4 lg:p-6">
@@ -386,10 +414,10 @@ export default function VehicleListPage(): React.JSX.Element {
                   <table className="w-full text-left">
                     <thead className="border-b border-gray-200 bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Immatriculation</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Marque / Modèle</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Année</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Kilométrage</th>
+                        <SortVehicleTh k="licensePlate" label="Immatriculation" />
+                        <SortVehicleTh k="make" label="Marque / Modèle" />
+                        <SortVehicleTh k="year" label="Année" />
+                        <SortVehicleTh k="currentMileage" label="Kilométrage" />
                         <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Statut</th>
                         <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Actions</th>
                       </tr>

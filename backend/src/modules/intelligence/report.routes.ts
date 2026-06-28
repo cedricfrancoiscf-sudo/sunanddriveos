@@ -175,7 +175,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
 
   const internalContext = {
     periode: '12 derniers mois',
-    societe: settings?.senderName ?? 'Sun and Drive',
+    societe: settings?.senderName ?? 'notre service',
     flotte: vehicles.length,
     caNet: Math.round(totalCA * 100) / 100,
     caBrut: Math.round(totalGross * 100) / 100,
@@ -240,7 +240,7 @@ Tu bases ton analyse sur les données internes réelles fournies.
 IMPORTANT : retourne UNIQUEMENT du JSON valide, sans markdown, sans backticks.`,
       messages: [{
         role: 'user',
-        content: `Génère un rapport CEO complet pour ${settings?.senderName ?? 'Sun and Drive'}, service de location de voitures Getaround.
+        content: `Génère un rapport CEO complet pour ${settings?.senderName ?? 'notre service'}, service de location de voitures Getaround.
 
 DONNÉES INTERNES :
 ${JSON.stringify(internalContext, null, 2)}
@@ -313,7 +313,7 @@ Retourne exactement ce JSON (sans markdown, sans backticks) :
         primaryColor: settings?.primaryColor ?? '#01696e',
         fontFamily: settings?.fontFamily ?? 'Montserrat',
         logoUrl: settings?.logoUrl ?? null,
-        companyName: settings?.senderName ?? 'Sun and Drive',
+        companyName: settings?.senderName ?? 'notre service',
       },
       internalData: internalContext,
       vehicleStats,
@@ -429,7 +429,7 @@ async function collectMonthlyData(db: ReturnType<typeof getTenantClient>, monthS
 
   return {
     settings,
-    societe: settings?.senderName ?? 'Sun and Drive',
+    societe: settings?.senderName ?? 'notre service',
     mois_courant: { ...mStats, evolution_pct_m1: evolPct(mStats.ca, m1Stats.ca), evolution_pct_n1: evolPct(mStats.ca, n1Stats.ca) },
     m_moins_1: m1Stats,
     m_moins_2: m2Stats,
@@ -553,7 +553,7 @@ Retourne exactement ce JSON (sans markdown) :
         primaryColor: settings?.primaryColor ?? '#01696e',
         fontFamily: settings?.fontFamily ?? 'Montserrat',
         logoUrl: settings?.logoUrl ?? null,
-        companyName: settings?.senderName ?? 'Sun and Drive',
+        companyName: settings?.senderName ?? 'notre service',
       },
       resume_mensuel: aiData.resume_mensuel,
       comparaison: {

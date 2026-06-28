@@ -67,6 +67,24 @@ export default function RenterDetailPage(): React.JSX.Element {
   const { user } = useAuth();
   const [showBlacklistModal, setShowBlacklistModal] = useState(false);
   const [blacklistReason, setBlacklistReason] = useState('');
+  type RentalSortKey = 'startAt' | 'kmDriven' | 'ca' | 'evaluationRating';
+  const [rentalSortKey, setRentalSortKey] = useState<RentalSortKey>('startAt');
+  const [rentalSortDir, setRentalSortDir] = useState<'asc' | 'desc'>('desc');
+
+  function toggleRentalSort(k: RentalSortKey) {
+    if (rentalSortKey === k) setRentalSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setRentalSortKey(k); setRentalSortDir('desc'); }
+  }
+
+  function RentalSortTh({ k, label, align }: { k: RentalSortKey; label: string; align: 'left' | 'right' | 'center' }): React.JSX.Element {
+    const active = rentalSortKey === k;
+    return (
+      <th className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none hover:text-gray-600 transition-colors text-${align} ${active ? 'text-[#01696e]' : 'text-gray-400'}`}
+        onClick={() => toggleRentalSort(k)}>
+        {label}{active ? (rentalSortDir === 'desc' ? ' ↓' : ' ↑') : ' ↕'}
+      </th>
+    );
+  }
 
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const isCarkeeperOnly = userRoles.includes('carkeeper') && !userRoles.includes('admin') && !userRoles.includes('exploitation') && !user?.isSuperAdmin;
@@ -254,16 +272,23 @@ export default function RenterDetailPage(): React.JSX.Element {
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-400 uppercase tracking-wide">
                   <th className="px-5 py-2.5 text-left">Véhicule</th>
-                  <th className="px-4 py-2.5 text-left">Période</th>
-                  <th className="px-4 py-2.5 text-right">Km</th>
-                  <th className="px-4 py-2.5 text-right">CA</th>
-                  <th className="px-4 py-2.5 text-center">Note</th>
+                  <RentalSortTh k="startAt" label="Période" align="left" />
+                  <RentalSortTh k="kmDriven" label="Km" align="right" />
+                  <RentalSortTh k="ca" label="CA" align="right" />
+                  <RentalSortTh k="evaluationRating" label="Note" align="center" />
                   <th className="px-4 py-2.5 text-center">Statut</th>
                   <th className="px-4 py-2.5 text-center">Frais</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {data.rentals.map(r => {
+                {[...data.rentals].sort((a, b) => {
+                  let cmp = 0;
+                  if (rentalSortKey === 'startAt') cmp = new Date(a.startAt).getTime() - new Date(b.startAt).getTime();
+                  else if (rentalSortKey === 'kmDriven') cmp = (a.kmDriven ?? 0) - (b.kmDriven ?? 0);
+                  else if (rentalSortKey === 'ca') cmp = a.ca - b.ca;
+                  else if (rentalSortKey === 'evaluationRating') cmp = (a.evaluationRating ?? 0) - (b.evaluationRating ?? 0);
+                  return rentalSortDir === 'desc' ? -cmp : cmp;
+                }).map(r => {
                   const hasExtra = (r.lateReturnFee ?? 0) > 0 || (r.damageCompensation ?? 0) > 0 ||
                     (r.gasRefillFee ?? 0) > 0 || (r.driverMessFee ?? 0) > 0;
                   return (

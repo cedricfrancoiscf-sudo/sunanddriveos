@@ -108,10 +108,40 @@ export default function UsersPage(): React.JSX.Element {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
 
-  const { data: users = [], isLoading } = useQuery({
+  const { data: rawUsers = [], isLoading } = useQuery({
     queryKey: ['users'],
     queryFn: () => api.get<{ users: User[] }>('/users').then(r => r.data.users),
     staleTime: 5 * 60_000,
+  });
+
+  type UserSortKey = 'name' | 'lastLoginAt' | 'isActive';
+  const [userSortKey, setUserSortKey] = useState<UserSortKey>('name');
+  const [userSortDir, setUserSortDir] = useState<'asc' | 'desc'>('asc');
+
+  function toggleUserSort(k: UserSortKey) {
+    if (userSortKey === k) setUserSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setUserSortKey(k); setUserSortDir('asc'); }
+  }
+
+  function UserSortTh({ k, label }: { k: UserSortKey; label: string }): React.JSX.Element {
+    const active = userSortKey === k;
+    return (
+      <th className={`px-4 py-3 text-left text-xs font-semibold cursor-pointer select-none hover:text-gray-800 transition-colors ${active ? 'text-[#01696e]' : 'text-gray-500'}`}
+        onClick={() => toggleUserSort(k)}>
+        {label}{active ? (userSortDir === 'desc' ? ' ↓' : ' ↑') : ' ↕'}
+      </th>
+    );
+  }
+
+  const users = [...rawUsers].sort((a, b) => {
+    let cmp = 0;
+    if (userSortKey === 'name') cmp = a.name.localeCompare(b.name, 'fr');
+    else if (userSortKey === 'lastLoginAt') {
+      const aT = a.lastLoginAt ? new Date(a.lastLoginAt).getTime() : 0;
+      const bT = b.lastLoginAt ? new Date(b.lastLoginAt).getTime() : 0;
+      cmp = aT - bT;
+    } else if (userSortKey === 'isActive') cmp = (a.isActive ? 1 : 0) - (b.isActive ? 1 : 0);
+    return userSortDir === 'desc' ? -cmp : cmp;
   });
 
   const inviteMutation = useMutation({
@@ -265,10 +295,10 @@ export default function UsersPage(): React.JSX.Element {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Membre</th>
+                <UserSortTh k="name" label="Membre" />
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Rôles</th>
-                <th className="hidden px-4 py-3 text-left text-xs font-semibold text-gray-500 sm:table-cell">Dernière connexion</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Statut</th>
+                <th className="hidden px-4 py-3 text-left text-xs font-semibold cursor-pointer select-none sm:table-cell" onClick={() => toggleUserSort('lastLoginAt')} style={{ color: userSortKey === 'lastLoginAt' ? '#01696e' : '' }}>Dernière connexion{userSortKey === 'lastLoginAt' ? (userSortDir === 'desc' ? ' ↓' : ' ↑') : ' ↕'}</th>
+                <UserSortTh k="isActive" label="Statut" />
                 <th className="px-4 py-3" />
               </tr>
             </thead>

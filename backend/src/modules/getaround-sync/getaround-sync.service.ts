@@ -1019,7 +1019,7 @@ async function autoReplyToMessage(
     returnInstructions: rental.vehicle.returnInstructions ?? undefined,
     startDate: new Date(rental.startAt).toLocaleDateString('fr-FR'),
     endDate: new Date(rental.endAt).toLocaleDateString('fr-FR'),
-    companyName: settings.senderName ?? 'Sun and Drive',
+    companyName: settings.senderName ?? 'notre service',
     aiName: settings.aiName ?? undefined,
   };
 

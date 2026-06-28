@@ -726,6 +726,10 @@ model CompanySettings {
   majorMaintenanceKm        Int      @default(30000) // Kilométrage déclencheur entretien majeur
   roiAlertMonthsBefore      Int      @default(6)    // Seuil alerte "Revendre bientôt" (mois avant optimal)
   roiCaMoyenMois            Int      @default(5)    // Nb de mois complets pour calcul CA moyen ROI
+  roiHorizonMonths          Int      @default(48)   // Horizon courbe ROI en mois (12–120)
+  roiCoeffSaison            Json?                   // Profil saisonnier [jan..déc] (null = pas de profil)
+  platformName              String?                 // Nom de la plateforme (ex: Getaround)
+  platformCommissionRate    Float?                  // Taux commission plateforme (ex: 1.2544 = 25,44 %)
   messageUnansweredMinutes  Int?                    // Délai avant alerte message sans réponse (null = 30 min)
   suggestionsCacheTtlHours  Int      @default(1)    // Durée cache suggestions IA (heures)
   createdAt            DateTime @default(now())

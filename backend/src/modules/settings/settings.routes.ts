@@ -98,6 +98,10 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       majorMaintenanceKm: z.number().int().min(1000).max(200000).optional(),
       roiAlertMonthsBefore: z.number().int().min(1).max(24).optional(),
       roiCaMoyenMois: z.number().int().min(1).max(24).optional(),
+      roiHorizonMonths: z.number().int().min(12).max(120).optional(),
+      roiCoeffSaison: z.array(z.number().min(0.1).max(3.0)).length(12).nullable().optional(),
+      platformName: z.string().min(1).max(100).nullable().optional(),
+      platformCommissionRate: z.number().min(1.0).max(2.0).nullable().optional(),
       messageUnansweredMinutes: z.number().int().min(5).max(240).nullable().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }

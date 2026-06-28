@@ -27,7 +27,7 @@ function fmtDate(s: string): string {
 
 const PRIMARY = '#01696e';
 
-type SortKey = 'name' | 'rentalCount' | 'totalCA' | 'totalKm' | 'score' | 'lastRentalAt';
+type SortKey = 'name' | 'rentalCount' | 'totalCA' | 'totalKm' | 'score' | 'lastRentalAt' | 'isBlacklisted';
 type FilterKey = 'all' | 'vip' | 'blacklisted' | 'excellent' | 'good' | 'average' | 'poor';
 
 function ScoreBadge({ score, tier }: { score: number; tier: string }): React.JSX.Element {
@@ -76,6 +76,7 @@ export default function RentersPage(): React.JSX.Element {
       let cmp = 0;
       if (sortKey === 'name') cmp = a.name.localeCompare(b.name, 'fr');
       else if (sortKey === 'lastRentalAt') cmp = new Date(a.lastRentalAt).getTime() - new Date(b.lastRentalAt).getTime();
+      else if (sortKey === 'isBlacklisted') cmp = (a.isBlacklisted ? 1 : 0) - (b.isBlacklisted ? 1 : 0);
       else cmp = (a[sortKey] as number) - (b[sortKey] as number);
       return sortDir === 'desc' ? -cmp : cmp;
     });
@@ -190,7 +191,7 @@ export default function RentersPage(): React.JSX.Element {
                   <SortTh k="totalCA" label="CA total" right />
                   <SortTh k="totalKm" label="Km total" right />
                   <SortTh k="score" label="Score" right />
-                  <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500">Statut</th>
+                  <SortTh k="isBlacklisted" label="Statut" right />
                   <SortTh k="lastRentalAt" label="Dernière loc." right />
                 </tr>
               </thead>

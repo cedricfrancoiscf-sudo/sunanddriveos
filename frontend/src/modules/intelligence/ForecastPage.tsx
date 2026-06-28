@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { api } from '../../utils/api';
@@ -22,7 +22,21 @@ export default function ForecastPage(): React.JSX.Element {
     staleTime: 5 * 60_000,
   });
 
-  const forecasts = data?.forecasts ?? [];
+  type ForecastSortKey = 'label' | 'rentalCount' | 'encaisse' | 'previsionnel' | 'totalPayout';
+  const [fcSortKey, setFcSortKey] = useState<ForecastSortKey>('label');
+  const [fcSortDir, setFcSortDir] = useState<'asc' | 'desc'>('asc');
+
+  function toggleFcSort(k: ForecastSortKey) {
+    if (fcSortKey === k) setFcSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setFcSortKey(k); setFcSortDir('asc'); }
+  }
+
+  const forecasts = [...(data?.forecasts ?? [])].sort((a, b) => {
+    let cmp = 0;
+    if (fcSortKey === 'label') cmp = a.label.localeCompare(b.label);
+    else cmp = (a[fcSortKey] as number) - (b[fcSortKey] as number);
+    return fcSortDir === 'desc' ? -cmp : cmp;
+  });
   const totalEncaisse = forecasts.reduce((s, f) => s + f.encaisse, 0);
   const totalPrevisionnel = forecasts.reduce((s, f) => s + f.previsionnel, 0);
   const totalLocations = forecasts.reduce((s, f) => s + f.rentalCount, 0);
@@ -103,11 +117,13 @@ export default function ForecastPage(): React.JSX.Element {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs text-gray-500">
               <tr>
-                <th className="px-5 py-3 text-left font-medium">Semaine</th>
-                <th className="px-5 py-3 text-right font-medium">Locations</th>
-                <th className="px-5 py-3 text-right font-medium">Encaissé</th>
-                <th className="px-5 py-3 text-right font-medium">Prévisionnel</th>
-                <th className="px-5 py-3 text-right font-medium">Total</th>
+                {(['label', 'rentalCount', 'encaisse', 'previsionnel', 'totalPayout'] as ForecastSortKey[]).map(k => (
+                  <th key={k} onClick={() => toggleFcSort(k)}
+                    className={`px-5 py-3 font-medium cursor-pointer select-none hover:text-gray-800 transition-colors ${k === 'label' ? 'text-left' : 'text-right'} ${fcSortKey === k ? 'text-[#01696e]' : ''}`}>
+                    {k === 'label' ? 'Semaine' : k === 'rentalCount' ? 'Locations' : k === 'encaisse' ? 'Encaissé' : k === 'previsionnel' ? 'Prévisionnel' : 'Total'}
+                    {fcSortKey === k ? (fcSortDir === 'desc' ? ' ↓' : ' ↑') : ' ↕'}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>

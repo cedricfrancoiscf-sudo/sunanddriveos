@@ -95,9 +95,9 @@ router.get(
           select: { id: true, name: true, email: true, role: true, roles: true, lastLoginAt: true, createdAt: true },
         }),
         tenantClient.companySettings.findFirst({ select: { logoUrl: true } }),
-        master.company.findUnique({
+        master.company.findFirst({
           where: { slug: req.auth!.tenantSlug! },
-          select: { plan: true, isActive: true },
+          select: { plan: true, subscriptionStatus: true, trialEndsAt: true },
         }),
       ]);
 
@@ -106,11 +106,19 @@ router.get(
         return;
       }
 
+      const hasActiveSubscription =
+        company?.subscriptionStatus === 'active' ||
+        company?.subscriptionStatus === 'trialing';
+
       res.json({
-        user: { ...user, logoUrl: normalizeLogoUrl(settings?.logoUrl, req) },
+        user: {
+          ...user,
+          logoUrl: normalizeLogoUrl(settings?.logoUrl, req),
+          plan: company?.plan ?? 'starter',
+          trialEndsAt: company?.trialEndsAt?.toISOString() ?? null,
+          hasActiveSubscription,
+        },
         tenantSlug: req.auth!.tenantSlug,
-        plan: company?.plan ?? 'starter',
-        hasActiveSubscription: company?.isActive ?? false,
       });
     } catch (err: unknown) {
       next(err);

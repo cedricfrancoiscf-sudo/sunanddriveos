@@ -150,6 +150,28 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   } catch (err: unknown) { next(err); }
 });
 
+// Crée un snapshot VehicleValuation si marketValue est mis à jour (évite doublon même jour/valeur)
+async function maybeCreateValuationSnapshot(
+  db: ReturnType<typeof getTenantClient>,
+  vehicleId: string,
+  marketValue: number,
+  marketValueDate?: string | null,
+): Promise<void> {
+  const evalAt = marketValueDate ? new Date(marketValueDate) : new Date();
+  const startOfDay = new Date(evalAt);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(evalAt);
+  endOfDay.setHours(23, 59, 59, 999);
+  const existing = await db.vehicleValuation.findFirst({
+    where: { vehicleId, estimatedValue: marketValue, evaluatedAt: { gte: startOfDay, lte: endOfDay } },
+  });
+  if (!existing) {
+    await db.vehicleValuation.create({
+      data: { vehicleId, estimatedValue: marketValue, source: 'manual', evaluatedAt: evalAt },
+    });
+  }
+}
+
 // PUT /api/v1/vehicles/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -159,6 +181,9 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     console.log('[Vehicle] Après validation Zod:', JSON.stringify(body.data));
     const db = getTenantClient(req.tenantDbUrl!);
     const vehicle = await updateVehicle(db, (req.params.id as string), body.data);
+    if (body.data.marketValue != null) {
+      await maybeCreateValuationSnapshot(db, req.params.id as string, body.data.marketValue, body.data.marketValueDate);
+    }
     res.json({ vehicle });
   } catch (err: unknown) { next(err); }
 });
@@ -170,6 +195,9 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
     const db = getTenantClient(req.tenantDbUrl!);
     const vehicle = await updateVehicle(db, (req.params.id as string), body.data);
+    if (body.data.marketValue != null) {
+      await maybeCreateValuationSnapshot(db, req.params.id as string, body.data.marketValue, body.data.marketValueDate);
+    }
     res.json({ vehicle });
   } catch (err: unknown) { next(err); }
 });

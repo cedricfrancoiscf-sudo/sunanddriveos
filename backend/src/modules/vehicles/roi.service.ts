@@ -335,10 +335,10 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     const mDate = new Date(purchaseDate);
     mDate.setMonth(mDate.getMonth() + m);
 
-    const snapshot = valuations.find((v) => {
-      const diff = Math.abs(new Date(v.evaluatedAt).getTime() - mDate.getTime());
-      return diff < 15 * 86_400_000;
-    });
+    // Dernier snapshot connu à la date du point (propagé vers l'avenir jusqu'au prochain snapshot)
+    const snapshot = valuations
+      .filter((v) => new Date(v.evaluatedAt) <= mDate)
+      .sort((a, b) => new Date(b.evaluatedAt).getTime() - new Date(a.evaluatedAt).getTime())[0];
     if (m === 0) {
       currentValue = snapshot?.estimatedValue ?? vehicle.purchasePrice!;
     } else if (snapshot) {

@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
+import { computeUnavailableDaysSet } from '../../utils/availability';
 import Anthropic from '@anthropic-ai/sdk';
 
 const router: Router = Router();
@@ -35,7 +36,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
   const sixMonthsAgo = new Date(Date.now() - 180 * 86_400_000);
   const nextMonth = new Date(Date.now() + 30 * 86_400_000);
 
-  const [settings, vehicles, rentals, incidents, maintenances, technicalControls, carSeatRequests, vehicleCosts] = await Promise.all([
+  const [settings, vehicles, rentals, incidents, maintenances, technicalControls, carSeatRequests, vehicleCosts, reportBlockings] = await Promise.all([
     db.companySettings.findFirst({
       select: { primaryColor: true, fontFamily: true, logoUrl: true, senderName: true },
     }),
@@ -78,6 +79,10 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
                 vehicle: { select: { parkingZone: true, deliveryPointName: true } } },
     }),
     db.vehicleCost.findMany({ select: { vehicleId: true, amount: true, type: true } }),
+    db.blocking.findMany({
+      where: { startAt: { gte: oneYearAgo } },
+      select: { vehicleId: true, startAt: true, endAt: true, type: true, reason: true },
+    }),
   ]);
 
   const totalCA = rentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
@@ -130,6 +135,17 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     const vVariableMonthly = vVehicleCosts.filter(c => c.type !== 'fixed').reduce((s, c) => s + c.amount, 0);
     const vCostsAnnuels = vFixedMonthly * 12 + vVariableMonthly * 12;
     const vMargeAnnuelle = vCA - vCostsAnnuels;
+
+    // Jours d'indisponibilité sur l'année (blockings)
+    const vBlockings = reportBlockings.filter(b => b.vehicleId === v.id);
+    const indispoSet = computeUnavailableDaysSet(vBlockings, [], oneYearAgo, now);
+    const joursIndispo = indispoSet.size;
+    const indispoParType: Record<string, number> = {};
+    for (const b of vBlockings) {
+      const days = computeUnavailableDaysSet([b], [], oneYearAgo, now).size;
+      indispoParType[b.type] = (indispoParType[b.type] ?? 0) + days;
+    }
+
     return {
       vehicule: `${v.make} ${v.model} (${v.licensePlate})`,
       zone: v.deliveryPointName ?? v.parkingZone ?? 'Non définie',
@@ -146,6 +162,8 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
       coutsMensuels: Math.round((vFixedMonthly + vVariableMonthly) * 100) / 100,
       coutsAnnuels: Math.round(vCostsAnnuels * 100) / 100,
       margeAnnuelle: Math.round(vMargeAnnuelle * 100) / 100,
+      joursIndispo,
+      indispoParType,
     };
   });
 
@@ -164,6 +182,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     tauxOccupation: occupancyRate,
     nbLocations: rentals.length,
     nbIncidents: incidents.length,
+    joursIndispoFlotte: vehicleStats.reduce((s, v) => s + v.joursIndispo, 0),
     finances: {
       coutsMensuelsTotal: Math.round(totalMonthlyCosts * 100) / 100,
       coutsFixesMensuels: Math.round(totalFixedCostsMonthly * 100) / 100,

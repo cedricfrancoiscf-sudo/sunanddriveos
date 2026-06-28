@@ -21,6 +21,7 @@ import { getUpcomingMaintenances } from './modules/maintenance/maintenance.servi
 import { sendEmail } from './utils/mailer';
 import { trialExpiryEmailHtml } from './modules/email/templates';
 import { sendTelegramMessage, getTelegramChatId } from './utils/telegram';
+import { computeUnavailableDaysSet } from './utils/availability';
 
 const PORT = parseInt(process.env.PORT ?? '4000', 10);
 const app = createApp();
@@ -629,6 +630,18 @@ async function runIntelligenceAlerts(db: ReturnType<typeof getTenantClient>, slu
 
     const periodDays = underutilizationWeeks * 7;
 
+    // Fetch blockings + unavailabilities for the whole period (all vehicles at once)
+    const [periodBlockings, periodUnavailabilities] = await Promise.all([
+      db.blocking.findMany({
+        where: { startAt: { lte: new Date() }, endAt: { gte: weeksAgo } },
+        select: { vehicleId: true, startAt: true, endAt: true, type: true },
+      }),
+      db.unavailability.findMany({
+        where: { startsAt: { lte: new Date() }, endsAt: { gte: weeksAgo } },
+        select: { vehicleId: true, startsAt: true, endsAt: true },
+      }),
+    ]);
+
     for (const vehicle of activeVehicles) {
       const rentals = await db.rental.findMany({
         where: { vehicleId: vehicle.id, startAt: { gte: weeksAgo }, status: { in: ['active', 'completed'] } },
@@ -645,11 +658,31 @@ async function runIntelligenceAlerts(db: ReturnType<typeof getTenantClient>, slu
         }
       }
 
-      const occupancyRate = occupiedDays.size / periodDays;
-      if (occupancyRate >= underutilizationThreshold) continue;
+      // Calcul du taux brut
+      const occupancyRateRaw = occupiedDays.size / periodDays;
+
+      // Calcul du taux corrigé (hors jours d'indisponibilité)
+      const vBlockings    = periodBlockings.filter(b => b.vehicleId === vehicle.id);
+      const vUnavailables = periodUnavailabilities.filter(u => u.vehicleId === vehicle.id);
+      const indispoSet = computeUnavailableDaysSet(
+        vBlockings,
+        vUnavailables.map(u => ({ startsAt: u.startsAt, endsAt: u.endsAt })),
+        weeksAgo,
+        now2,
+      );
+      const unavailableDays = indispoSet.size;
+      const adjustedDays = Math.max(1, periodDays - unavailableDays);
+      const occupancyRateCorrected = occupiedDays.size / adjustedDays;
+
+      // Alerte seulement si le taux CORRIGÉ est sous le seuil
+      if (occupancyRateCorrected >= underutilizationThreshold) continue;
 
       const label2 = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
-      const pct = Math.round(occupancyRate * 100);
+      const pctRaw = Math.round(occupancyRateRaw * 100);
+      const pctCorr = Math.round(occupancyRateCorrected * 100);
+      const indispoNote = unavailableDays > 0
+        ? ` (${unavailableDays} j indispo exclus)`
+        : '';
 
       for (const admin of adminUsers) {
         await db.notification.create({
@@ -657,7 +690,7 @@ async function runIntelligenceAlerts(db: ReturnType<typeof getTenantClient>, slu
             userId: admin.id,
             type: 'underutilization',
             title: `📉 Sous-utilisation véhicule — ${label2}`,
-            body: `Taux d'occupation : ${pct}% sur les ${underutilizationWeeks} dernières semaines (seuil : ${Math.round(underutilizationThreshold * 100)}%).`,
+            body: `Taux corrigé : ${pctCorr}%${indispoNote} · Taux brut : ${pctRaw}% · Seuil : ${Math.round(underutilizationThreshold * 100)}% · Période : ${underutilizationWeeks} semaines.`,
             relatedEntityType: 'vehicle',
             relatedEntityId: vehicle.id,
             targetUrl: `/vehicles/${vehicle.id}`,
@@ -668,7 +701,7 @@ async function runIntelligenceAlerts(db: ReturnType<typeof getTenantClient>, slu
       const chatId2 = await getTelegramChatId(db as never);
       if (chatId2) {
         await sendTelegramMessage(chatId2,
-          `📉 Sous-utilisation — ${slug}\n${label2} : ${pct}% d'occupation sur ${underutilizationWeeks} sem.\n💡 Actions : revoir le prix, améliorer les photos, vérifier la disponibilité, proposer des promotions.`);
+          `📉 Sous-utilisation — ${slug}\n${label2} : ${pctCorr}% corrigé${indispoNote} (brut ${pctRaw}%) sur ${underutilizationWeeks} sem.\n💡 Actions : revoir le prix, améliorer les photos, vérifier la disponibilité, proposer des promotions.`);
       }
     }
 

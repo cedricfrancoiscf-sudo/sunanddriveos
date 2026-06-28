@@ -53,7 +53,9 @@ interface VehiclePerf {
   totalPayout: number; totalEncaisse: number; totalPrevisionnel: number;
   totalGross: number; totalInsurance: number;
   rentalCount: number; avgDuration: number; avgKmPerRental: number;
-  occupancyRate: number; incidentCount: number; extraFeesRate: number;
+  occupancyRate: number; occupancyRateCorrected?: number; unavailableDays?: number;
+  indispoTypes?: string[];
+  incidentCount: number; extraFeesRate: number;
   healthScore: number; monthlyCA: MonthlyPerf[];
 }
 
@@ -462,7 +464,9 @@ export default function IntelligencePage(): React.JSX.Element {
                     <th className="pb-2 text-right"><SortBtn k="totalPrevisionnel" label="CA prév." /></th>
                     <th className="pb-2 text-right"><SortBtn k="totalPayout" label="Total CA" /></th>
                     <th className="pb-2 text-right"><SortBtn k="rentalCount" label="Locations" /></th>
-                    <th className="pb-2 text-right"><SortBtn k="occupancyRate" label="Occupation" /></th>
+                    <th className="pb-2 text-right"><SortBtn k="occupancyRate" label="Occupation brute" /></th>
+                    <th className="pb-2 text-right"><SortBtn k="occupancyRateCorrected" label="Occupation corrigée" /></th>
+                    <th className="pb-2 text-right text-xs font-semibold text-gray-500">Indispo</th>
                     <th className="pb-2 text-right"><SortBtn k="avgKmPerRental" label="Km moy" /></th>
                     <th className="pb-2 text-right"><SortBtn k="healthScore" label="Santé" /></th>
                   </tr>
@@ -482,7 +486,15 @@ export default function IntelligencePage(): React.JSX.Element {
                         </span>
                       </td>
                       <td className="py-2.5 text-right text-xs text-gray-600">{v.rentalCount}</td>
-                      <td className="py-2.5 text-right text-xs text-gray-600">{v.occupancyRate}%</td>
+                      <td className="py-2.5 text-right text-xs text-gray-400">{v.occupancyRate}%</td>
+                      <td className="py-2.5 text-right text-xs font-semibold text-gray-700">
+                        {v.occupancyRateCorrected != null ? `${v.occupancyRateCorrected}%` : `${v.occupancyRate}%`}
+                      </td>
+                      <td className="py-2.5 text-right text-xs text-gray-500">
+                        {(v.unavailableDays ?? 0) > 0
+                          ? <span className="text-amber-600 font-medium">{v.unavailableDays}j</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
                       <td className="py-2.5 text-right text-xs text-gray-600">{v.avgKmPerRental} km</td>
                       <td className="py-2.5 text-right"><HealthBar score={v.healthScore} /></td>
                     </tr>

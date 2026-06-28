@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
+import { computeUnavailableDaysSet } from '../../utils/availability';
 import reportRouter from './report.routes';
 
 const router: Router = Router();
@@ -30,7 +31,7 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
     const thirtyDaysFromNow = new Date(Date.now() + 30 * 86_400_000);
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-    const [currentRentals, prevRentals, vehicles, pendingMaints, expiringCTs] = await Promise.all([
+    const [currentRentals, prevRentals, vehicles, pendingMaints, expiringCTs, monthBlockings, monthUnavailabilities] = await Promise.all([
       db.rental.findMany({
         where: { startAt: { gte: monthStart }, status: { in: ['booked', 'active', 'completed'] } },
         select: {
@@ -55,6 +56,14 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
         },
       }),
       db.maintenanceTask.count({ where: { type: 'ct', vehicle: { isActive: true }, nextDueDate: { gte: now, lte: thirtyDaysFromNow } } }),
+      db.blocking.findMany({
+        where: { startAt: { lte: now }, endAt: { gte: monthStart } },
+        select: { vehicleId: true, startAt: true, endAt: true, type: true, reason: true },
+      }),
+      db.unavailability.findMany({
+        where: { startsAt: { lte: now }, endsAt: { gte: monthStart } },
+        select: { vehicleId: true, startsAt: true, endsAt: true },
+      }),
     ]);
 
     const safe = (v: number | null | undefined): number => Math.max(0, v ?? 0);
@@ -89,6 +98,37 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
     const occupancyRate = vehicleCount > 0 && daysInMonth > 0
       ? Math.min(100, Math.round((totalDistinctDaysKpis / (vehicleCount * daysInMonth)) * 100)) : 0;
 
+    // Taux d'occupation corrigé : exclure les jours d'indisponibilité par véhicule
+    const todayInMonth = Math.min(now.getDate(), daysInMonth);
+    let totalOccupiedAdj = 0;
+    let totalAvailableAdj = 0;
+    let totalUnavailableDays = 0;
+    const vehicleUnavailability: Array<{ vehicleId: string; unavailableDays: number; types: string[] }> = [];
+    for (const v of vehicles) {
+      const vBlockings = monthBlockings.filter(b => b.vehicleId === v.id);
+      const vUnavail   = monthUnavailabilities.filter(u => u.vehicleId === v.id);
+      const indispoSet = computeUnavailableDaysSet(
+        vBlockings,
+        vUnavail.map(u => ({ startsAt: u.startsAt, endsAt: u.endsAt })),
+        monthStart,
+        now,
+      );
+      const unavailableDays = indispoSet.size;
+      const adjustedDays = Math.max(0, todayInMonth - unavailableDays);
+      const occupiedDays = (vDaysKpis.get(v.id) ?? new Set<string>()).size;
+      totalOccupiedAdj  += occupiedDays;
+      totalAvailableAdj += adjustedDays;
+      totalUnavailableDays += unavailableDays;
+      vehicleUnavailability.push({
+        vehicleId: v.id,
+        unavailableDays,
+        types: [...new Set(vBlockings.map(b => b.type))],
+      });
+    }
+    const occupancyRateCorrected = totalAvailableAdj > 0
+      ? Math.min(100, Math.round((totalOccupiedAdj / totalAvailableAdj) * 100))
+      : occupancyRate;
+
     const avgDuration = rentalCount > 0
       ? currentRentals.reduce((s, r) =>
           s + (new Date(r.endAt).getTime() - new Date(r.startAt).getTime()) / 86_400_000, 0) / rentalCount : 0;
@@ -121,6 +161,9 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
         rentalCount: evo(rentalCount, prevCount),
       },
       occupancyRate,
+      occupancyRateCorrected,
+      unavailableDaysTotal: totalUnavailableDays,
+      vehicleUnavailability,
       avgDuration: Math.round(avgDuration * 10) / 10,
       avgKmPerRental: Math.round(avgKmPerRental),
       revpar: Math.round(revpar * 100) / 100,
@@ -300,7 +343,7 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
     const sixMonthsAgo = new Date(Date.now() - 180 * 86_400_000);
     const now = new Date();
 
-    const [vehicles, rentals, incidents] = await Promise.all([
+    const [vehicles, rentals, incidents, perfBlockings, perfUnavailabilities] = await Promise.all([
       db.vehicle.findMany({
         where: { isActive: true },
         select: { id: true, make: true, model: true, licensePlate: true, healthScore: true },
@@ -316,6 +359,14 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
       db.incident.findMany({
         where: { createdAt: { gte: sixMonthsAgo } },
         select: { vehicleId: true },
+      }),
+      db.blocking.findMany({
+        where: { startAt: { lte: now }, endAt: { gte: sixMonthsAgo } },
+        select: { vehicleId: true, startAt: true, endAt: true, type: true, reason: true },
+      }),
+      db.unavailability.findMany({
+        where: { startsAt: { lte: now }, endsAt: { gte: sixMonthsAgo } },
+        select: { vehicleId: true, startsAt: true, endsAt: true },
       }),
     ]);
 
@@ -353,6 +404,20 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
         while (od <= oe) { occSet.add(od.toISOString().slice(0,10)); od = new Date(od.getTime() + 86_400_000); }
       }
       const occupancyRate = Math.min(100, Math.round((occSet.size / 180) * 100));
+
+      // Taux corrigé par véhicule sur 6 mois
+      const vBlockingsPerf = perfBlockings.filter(b => b.vehicleId === v.id);
+      const vUnavailPerf   = perfUnavailabilities.filter(u => u.vehicleId === v.id);
+      const indispoSet6m = computeUnavailableDaysSet(
+        vBlockingsPerf,
+        vUnavailPerf.map(u => ({ startsAt: u.startsAt, endsAt: u.endsAt })),
+        sixMonthsAgo,
+        now,
+      );
+      const unavailableDays = indispoSet6m.size;
+      const adjustedDays6m = Math.max(1, 180 - unavailableDays);
+      const occupancyRateCorrected = Math.min(100, Math.round((occSet.size / adjustedDays6m) * 100));
+      const indispoTypes = [...new Set(vBlockingsPerf.map(b => b.type))];
 
       const withExtra = vRentals.filter(r =>
         (r.gasRefillFee ?? 0) > 0 || (r.lateReturnFee ?? 0) > 0 ||
@@ -418,6 +483,9 @@ router.get('/performance', async (req: Request, res: Response, next: NextFunctio
         avgDuration:        Math.round(avgDuration * 10) / 10,
         avgKmPerRental:     Math.round(avgKmPerRental),
         occupancyRate,
+        occupancyRateCorrected,
+        unavailableDays,
+        indispoTypes,
         incidentCount: incidents.filter(i => i.vehicleId === v.id).length,
         extraFeesRate,
         healthScore: v.healthScore ?? 100,

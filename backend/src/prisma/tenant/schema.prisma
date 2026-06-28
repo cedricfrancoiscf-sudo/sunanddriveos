@@ -147,6 +147,7 @@ model Vehicle {
   loanRate           Float?            // Taux annuel (%)
   loanDurationMonths Int?              // Durée du prêt (mois)
   loanStartDate      DateTime?         // Date de début du prêt
+  loanDeposit        Float?            // Apport personnel à l'achat (€) — null = 0
   marketValue        Float?            // Valeur de revente estimée (€) — saisie manuelle
   marketValueDate    DateTime?         // Date de la dernière estimation
   currentMileage     Int               @default(0)
@@ -724,6 +725,7 @@ model CompanySettings {
   majorMaintenanceCost      Float    @default(1500) // Coût entretien majeur estimé (€)
   majorMaintenanceKm        Int      @default(30000) // Kilométrage déclencheur entretien majeur
   roiAlertMonthsBefore      Int      @default(6)    // Seuil alerte "Revendre bientôt" (mois avant optimal)
+  roiCaMoyenMois            Int      @default(5)    // Nb de mois complets pour calcul CA moyen ROI
   suggestionsCacheTtlHours  Int      @default(1)    // Durée cache suggestions IA (heures)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

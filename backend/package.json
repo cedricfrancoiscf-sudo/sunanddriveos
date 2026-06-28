@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "migrate": "tsx src/prisma/migrate.ts",
     "seed": "tsx src/prisma/seed/master.ts",
+    "seed:ratings": "tsx src/prisma/seed/ratings-2026.ts",
     "init": "tsx src/init.ts",
     "generate:master": "prisma generate --schema=src/prisma/master/schema.prisma",
     "generate:tenant": "prisma generate --schema=src/prisma/tenant/schema.prisma",

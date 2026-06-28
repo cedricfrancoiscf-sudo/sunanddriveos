@@ -97,6 +97,7 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       majorMaintenanceCost: z.number().min(0).max(50000).optional(),
       majorMaintenanceKm: z.number().int().min(1000).max(200000).optional(),
       roiAlertMonthsBefore: z.number().int().min(1).max(24).optional(),
+      roiCaMoyenMois: z.number().int().min(1).max(24).optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
 

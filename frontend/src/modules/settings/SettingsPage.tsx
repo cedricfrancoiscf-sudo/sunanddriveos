@@ -472,6 +472,7 @@ interface CompanySettings {
   majorMaintenanceCost: number;
   majorMaintenanceKm: number;
   roiAlertMonthsBefore: number;
+  roiCaMoyenMois: number;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -1483,6 +1484,7 @@ function ReventeDecoteSection(): React.JSX.Element {
     majorMaintenanceCost: 1500,
     majorMaintenanceKm: 30000,
     roiAlertMonthsBefore: 6,
+    roiCaMoyenMois: 5,
   });
   const [saved, setSaved] = React.useState(false);
 
@@ -1497,6 +1499,7 @@ function ReventeDecoteSection(): React.JSX.Element {
         majorMaintenanceCost: settings.majorMaintenanceCost ?? 1500,
         majorMaintenanceKm: settings.majorMaintenanceKm ?? 30000,
         roiAlertMonthsBefore: settings.roiAlertMonthsBefore ?? 6,
+        roiCaMoyenMois: settings.roiCaMoyenMois ?? 5,
       });
     }
   }, [settings]);
@@ -1566,6 +1569,7 @@ function ReventeDecoteSection(): React.JSX.Element {
       </div>
 
       {numField('roiAlertMonthsBefore', 'Seuil alerte "Revendre bientôt"', 'mois avant optimal')}
+      {numField('roiCaMoyenMois', 'Mois d\'historique CA moyen', 'mois (1-24, défaut 5)')}
 
       <div className="flex items-center gap-3 pt-1">
         <button type="button" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}

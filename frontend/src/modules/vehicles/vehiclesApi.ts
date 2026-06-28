@@ -18,6 +18,7 @@ export interface Vehicle {
   loanRate: number | null;
   loanDurationMonths: number | null;
   loanStartDate: string | null;
+  loanDeposit: number | null;
   marketValue: number | null;
   marketValueDate: string | null;
   parkingZone: string | null;

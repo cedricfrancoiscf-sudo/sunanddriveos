@@ -74,6 +74,7 @@ const updateSchema = createSchema.partial().extend({
   loanRate: z.number().min(0).max(100).nullable().optional(),
   loanDurationMonths: z.number().int().min(1).max(360).nullable().optional(),
   loanStartDate: z.string().datetime().nullable().optional(),
+  loanDeposit: z.number().min(0).nullable().optional(),
   marketValue: z.number().min(0).nullable().optional(),
   marketValueDate: z.string().datetime().nullable().optional(),
 });

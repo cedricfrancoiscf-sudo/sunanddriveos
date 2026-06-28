@@ -32,6 +32,7 @@ const EMPTY_FORM = {
   critAir: null as string | null,
   purchasePrice: null as number | null,
   purchaseDate: '',
+  loanDeposit: null as number | null,
   loanAmount: null as number | null,
   loanRate: null as number | null,
   loanDurationMonths: null as number | null,
@@ -83,6 +84,7 @@ export default function VehicleFormPage(): React.JSX.Element {
         purchaseDate: (vehicle as { purchaseDate?: string | null }).purchaseDate
           ? new Date((vehicle as { purchaseDate: string }).purchaseDate).toISOString().slice(0, 10)
           : '',
+        loanDeposit: (vehicle as { loanDeposit?: number | null }).loanDeposit ?? null,
         loanAmount: (vehicle as { loanAmount?: number | null }).loanAmount ?? null,
         loanRate: (vehicle as { loanRate?: number | null }).loanRate ?? null,
         loanDurationMonths: (vehicle as { loanDurationMonths?: number | null }).loanDurationMonths ?? null,
@@ -341,6 +343,15 @@ export default function VehicleFormPage(): React.JSX.Element {
           <div>
             <p className="mb-2 text-xs font-semibold text-gray-600">Crédit / Prêt</p>
             <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Apport personnel (€)</label>
+                <input type="number" min="0" step="100"
+                  value={form.loanDeposit ?? ''}
+                  onChange={e => setForm(f => ({ ...f, loanDeposit: e.target.value ? parseFloat(e.target.value) : null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
+                  placeholder="ex : 2000" />
+                <p className="mt-1 text-[11px] text-gray-400">Somme versée de votre poche à l&apos;achat. 0 si financement bancaire à 100%.</p>
+              </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">Montant emprunté (€)</label>
                 <input type="number" min="0" step="100"

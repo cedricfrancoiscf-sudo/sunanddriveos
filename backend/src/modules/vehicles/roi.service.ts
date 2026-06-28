@@ -34,6 +34,7 @@ interface RoiSettings {
   majorMaintenanceCost: number;
   majorMaintenanceKm: number;
   roiAlertMonthsBefore: number;
+  roiCaMoyenMois: number;
 }
 
 const DEFAULT_SETTINGS: RoiSettings = {
@@ -45,6 +46,7 @@ const DEFAULT_SETTINGS: RoiSettings = {
   majorMaintenanceCost: 1500,
   majorMaintenanceKm: 30000,
   roiAlertMonthsBefore: 6,
+  roiCaMoyenMois: 5,
 };
 
 function getAnnualDepreciationRate(ageYears: number, s: RoiSettings): number {
@@ -91,6 +93,7 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
         majorMaintenanceCost: true,
         majorMaintenanceKm: true,
         roiAlertMonthsBefore: true,
+        roiCaMoyenMois: true,
       },
     }),
     db.vehicleCost.findMany({
@@ -119,18 +122,40 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
         majorMaintenanceCost: settings.majorMaintenanceCost,
         majorMaintenanceKm: settings.majorMaintenanceKm,
         roiAlertMonthsBefore: settings.roiAlertMonthsBefore,
+        roiCaMoyenMois: settings.roiCaMoyenMois ?? 5,
       }
     : DEFAULT_SETTINGS;
 
-  // CA mensuel moyen — somme des 6 derniers mois / 6 (mois sans location = 0)
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const rentals = await db.rental.findMany({
-    where: { vehicleId, startAt: { gte: sixMonthsAgo } },
-    select: { ownerPayout: true },
+  // Fenêtre de mois complets — exclure le mois en cours
+  const debutMoisEnCours = new Date(now.getFullYear(), now.getMonth(), 1);
+  const moisDepuisAchat = Math.floor(
+    (debutMoisEnCours.getTime() - purchaseDate.getTime())
+    / (30.44 * 86_400_000)
+  );
+  // Nb mois effectifs = min(config, historique dispo) — jamais < 1
+  const nbMoisEffectifs = Math.max(1, Math.min(s.roiCaMoyenMois, moisDepuisAchat));
+
+  const debutFenetre = new Date(debutMoisEnCours);
+  debutFenetre.setMonth(debutFenetre.getMonth() - nbMoisEffectifs);
+
+  // Filtre sur endAt (pas startAt) — completed + booked + active
+  const rentalsCA = await db.rental.findMany({
+    where: {
+      vehicleId,
+      endAt: { gte: debutFenetre, lt: debutMoisEnCours },
+      status: { in: ['completed', 'booked', 'active'] },
+    },
+    select: { ownerPayout: true, grossRevenue: true },
   });
-  const totalCa6 = rentals.reduce((sum, r) => sum + (r.ownerPayout ?? 0), 0);
-  const caMensuelMoyen = totalCa6 / 6;
+
+  // ownerPayout si > 0, sinon grossRevenue (locations fin de mois)
+  const totalCA = rentalsCA.reduce((sum, r) =>
+    sum + ((r.ownerPayout ?? 0) > 0
+      ? r.ownerPayout!
+      : Math.max(0, r.grossRevenue ?? 0)),
+    0
+  );
+  const caMensuelMoyen = totalCA / nbMoisEffectifs;
 
   // Coûts fixes mensuels
   const fixedMonthly = fixedCosts.reduce((sum, c) => sum + c.amount, 0);

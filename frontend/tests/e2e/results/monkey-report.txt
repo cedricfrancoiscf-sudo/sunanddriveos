@@ -1,0 +1,102 @@
+═══════════════════════════════════════════════════════════════
+   MONKEY REPORT — Admin Sun and Drive
+   Généré le : 22/06/2026 21:07:00
+═══════════════════════════════════════════════════════════════
+
+✅ PASS — Route Dashboard
+✅ PASS — Route Planning
+✅ PASS — Route Locations
+✅ PASS — Route Messages
+✅ PASS — Route Véhicules
+✅ PASS — Route Locataires
+✅ PASS — Route Accessoires
+✅ PASS — Route Entretiens
+✅ PASS — Route CT
+✅ PASS — Route Intelligence
+✅ PASS — Route Rentabilité
+✅ PASS — Route Rapport CEO
+✅ PASS — Route Paramètres
+✅ PASS — Flotte — 8 véhicule(s) listés
+⚠️ WARN — Flotte — toggle liste/grille — Boutons liste/grille non trouvés
+✅ PASS — Flotte — recherche "FZ671YT" retourne un résultat
+✅ PASS — Flotte — fiche véhicule ouverte
+✅ PASS — Flotte — fiche contient : immatriculation, statut/actif, point livraison, ID Getaround, bouton Modifier
+⚠️ WARN — Flotte — bouton Modifier — Bouton Modifier non trouvé sur la fiche
+⚠️ WARN — Flotte — Annuler — Bouton Modifier absent
+✅ PASS — Locations — filtre mensuel prev cliqué
+✅ PASS — Locations — filtre mensuel next cliqué
+✅ PASS — Locations — recherche par locataire saisie OK
+✅ PASS — Locations — clic ouvre fiche /rentals/…
+✅ PASS — Locations — fiche contient : locataire, véhicule, dates, montant, statut
+⚠️ WARN — Locations — Réactiver évaluation — Bouton absent (normal si déjà évalué)
+✅ PASS — Messages — 200 conversation(s) visible(s)
+✅ PASS — Messages — filtre véhicule fonctionne
+✅ PASS — Messages — conversation siège bébé ouverte
+✅ PASS — Messages — zone "Suggestion à approuver" présente
+✅ PASS — Messages — bouton Approuver présent
+✅ PASS — Messages — bouton Annuler suggestion présent
+✅ PASS — Messages — bouton Annuler suggestion cliqué sans erreur
+✅ PASS — Locataires — tri colonnes (4/4 en-têtes cliqués)
+✅ PASS — Locataires — filtres (4/4 ok)
+✅ PASS — Locataires — clic td → fiche /renters/…
+✅ PASS — Locataires — fiche KPIs locations visible
+✅ PASS — Locataires — fiche KPIs CA visible
+✅ PASS — Locataires — fiche historique locations visible
+✅ PASS — Locataires — badge ⛔ Blacklisté apparu
+✅ PASS — Locataires — badge ⛔ Blacklisté disparu après retrait
+✅ PASS — Accessoires — sièges avec stock visibles
+✅ PASS — Accessoires — bouton +1 stock cliqué sans erreur
+✅ PASS — Accessoires — bouton HS présent
+✅ PASS — Accessoires — bouton HS cliquable
+⚠️ WARN — Accessoires — bouton Modifier siège — Non trouvé
+⚠️ WARN — Accessoires — onglet Accessoires — Onglet non trouvé
+✅ PASS — Entretiens — formulaire Ajouter s'ouvre
+✅ PASS — Entretiens — formulaire contient : véhicule, type, date, coût
+✅ PASS — Entretiens — Annuler ferme le formulaire
+✅ PASS — CT — route /technical-controls accessible
+✅ PASS — CT — formulaire Ajouter s'ouvre
+⚠️ WARN — Documents — bouton upload — Non trouvé (structure peut être différente)
+✅ PASS — Planning — véhicules visibles dans la grille
+✅ PASS — Planning — navigation vues (3/3 boutons)
+✅ PASS — Planning — navigation prev/next (2 bouton(s))
+✅ PASS — Planning — filtre livraison fonctionne
+✅ PASS — Planning — modal +Blocage s'ouvre
+✅ PASS — Planning — modal +Blocage fermé via Annuler
+✅ PASS — Intelligence — histogramme CA visible (recharts/canvas)
+✅ PASS — Intelligence — section Suggestions IA visible
+✅ PASS — Intelligence — bouton Actualiser cliqué, page stable
+✅ PASS — Intelligence — question envoyée à l'assistant IA
+✅ PASS — Intelligence — assistant IA a répondu
+⚠️ WARN — Intelligence — notes Getaround — Champ notes non trouvé
+✅ PASS — Rentabilité — KPIs CA/Coûts/Marge tous visibles
+⚠️ WARN — Rentabilité — formulaire coût — Champ label non trouvé
+✅ PASS — Rapport CEO — 8/8 sections : Résumé, Performance, Flotte, SWOT, PESTEL, Zones, Veille, Recommandations
+⚠️ WARN — Rapport CEO — menu navigation — 1 items cliqués (total menu : 9)
+✅ PASS — Rapport CEO — toggle Annuel/Mensuel (2 bouton(s))
+⚠️ WARN — Rapport CEO — navigation mois — Boutons prev/next non trouvés
+⚠️ WARN — Rapport CEO — loading — Indicateur loading non détecté
+✅ PASS — Rapport CEO — contenu présent après Régénérer
+✅ PASS — Paramètres — section comptes Getaround visible
+⚠️ WARN — Paramètres — modal Inviter — Modal non apparu (bug connu possible)
+✅ PASS — Paramètres — section Utilisateurs & rôles présente
+✅ PASS — Paramètres — 4 ligne(s) utilisateur(s) visibles
+✅ PASS — Paramètres — bouton assignation carkeeper cliqué
+✅ PASS — Paramètres — section Messagerie automatique visible
+✅ PASS — Paramètres — toggle mode Automatique
+✅ PASS — Paramètres — toggle mode Approbation
+✅ PASS — Paramètres — toggle mode Manuel
+✅ PASS — Paramètres — section Notifications présente (Telegram / TV / webhook)
+✅ PASS — Paramètres — webhook URL visible
+✅ PASS — Paramètres — bouton Copier webhook URL présent
+✅ PASS — Documentation — 4 onglets présents (brochure, quickstart, manual, technical)
+✅ PASS — Documentation — onglet brochure contient du contenu (Getaround)
+⚠️ WARN — Documentation — onglet quickstart — Mot-clé "Prise en main" non trouvé dans le contenu
+✅ PASS — Documentation — onglet manual contient du contenu (Manuel)
+✅ PASS — Documentation — onglet technical contient du contenu (Architecture)
+
+───────────────────────────────────────────────────────────────
+Total       : 90 tests
+✅ Passés   : 76
+❌ Échoués  : 0
+⚠️ Warnings : 14
+───────────────────────────────────────────────────────────────

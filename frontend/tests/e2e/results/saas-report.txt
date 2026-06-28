@@ -1,0 +1,47 @@
+═══════════════════════════════════════════════════════════════
+   RAPPORT 31 — SuperAdmin + SaaS Features
+   Généré le : 22/06/2026 21:03:59
+═══════════════════════════════════════════════════════════════
+
+✅ PASS — Plans — card Starter visible
+✅ PASS — Plans — card Pro visible
+✅ PASS — Plans — card Enterprise visible
+✅ PASS — Plans — champs prix éditables présents (6 inputs)
+✅ PASS — SA nav — bouton "Plans & Tarifs" visible
+✅ PASS — SA nav — bouton Plans navigue vers /superadmin/plans
+✅ PASS — API Plans — 3 plan(s) retourné(s)
+✅ PASS — API tenants — 1 tenant(s) trouvé(s)
+✅ PASS — API notes — endpoint opérationnel (8 note(s))
+✅ PASS — API POST note — note créée avec succès
+⚠️ WARN — API subscription PATCH — Aucun tenant tiers trouvé
+✅ PASS — UI fiche tenant — section Abonnement visible
+✅ PASS — UI fiche tenant — section Notes commerciales visible
+✅ PASS — UI fiche tenant — section Envoyer un email visible
+⚠️ WARN — UI email — select template — 0 select(s) trouvé(s), aucun avec options Bienvenue
+✅ PASS — Sidebar — rendu sans erreur sur compte Enterprise
+✅ PASS — Padlock — Enterprise : /sequences accessible (pas de padlock)
+✅ PASS — Padlock — aucun module verrouillé pour compte Enterprise
+✅ PASS — /blocked — BlockedPage rendue avec texte suspension
+✅ PASS — Onboarding wizard — page charge
+✅ PASS — Wizard étape 1 — indicateur progression 1/5 visible
+✅ PASS — Wizard étape 1 — bouton "Commencer" visible
+✅ PASS — Wizard — navigation étape 1 → 2 (formulaire société visible)
+✅ PASS — Wizard étape 2 — bouton "Ignorer" présent
+✅ PASS — Wizard — étape 3 (API Getaround) visible après Ignorer étape 2
+✅ PASS — Wizard étape 3 — bouton "Ignorer →" présent
+✅ PASS — Wizard étape 4 — toggles ton (Vouvoiement/Tutoiement) visibles
+✅ PASS — Wizard étape 5 — bouton "Aller au tableau de bord" visible
+✅ PASS — Wizard étape 5 — checklist activation visible
+✅ PASS — Billing — page /billing charge
+✅ PASS — Billing — plan actuel visible
+⚠️ WARN — Billing — bouton portail — Bouton "Gérer mon abonnement" non trouvé
+✅ PASS — Billing — section historique paiements visible
+✅ PASS — Auto-slug — validation requise (tenantDbUrl manquant → 400 correct)
+✅ PASS — API payments — endpoint opérationnel (0 paiement(s))
+
+───────────────────────────────────────────────────────────────
+Total       : 35 tests
+✅ Passés   : 32
+❌ Échoués  : 0
+⚠️ Warnings : 3
+───────────────────────────────────────────────────────────────

@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test'
+import { cleanupPlaywrightData } from './helpers/auth'
 
 // Tests sur la vie du véhicule : entretiens, CT, documents — Peugeot 208
+
+test.afterAll(async () => { await cleanupPlaywrightData().catch(() => {}) })
 
 test.describe('Vie du véhicule — Peugeot 208', () => {
   test('Entretiens — créer un entretien Peugeot 208', async ({ page }) => {

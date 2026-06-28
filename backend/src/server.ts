@@ -799,14 +799,14 @@ async function runMorningSummary(): Promise<void> {
               },
             },
           }),
-          db.technicalControl.findMany({
-            where: { expiryAt: { gte: now, lte: in30d } },
-            select: { expiryAt: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
-            orderBy: { expiryAt: 'asc' },
+          db.maintenanceTask.findMany({
+            where: { type: 'ct', nextDueDate: { gte: now, lte: in30d }, vehicle: { isActive: true } },
+            select: { nextDueDate: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
+            orderBy: { nextDueDate: 'asc' },
           }),
           getUpcomingMaintenances(db),
           db.user.findMany({
-            where: { role: { in: ['admin', 'exploitant'] }, isActive: true },
+            where: { role: { in: ['admin', 'exploitation'] }, isActive: true },
             select: { email: true, name: true },
           }),
           // Locations booked dont le startAt est dépassé > 2h (sans check-in)
@@ -870,7 +870,7 @@ async function runMorningSummary(): Promise<void> {
     ${section('🔄', `Retours du jour (${returns.length})`, returns.map(r => `<b>${fmt(new Date(r.endAt))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
     ${section('🪑', `Sièges auto à préparer (${carSeatRequests.length})`, carSeatRequests.filter(r => r.rental).map(r => `${r.rental!.driverName} · ${r.rental!.vehicle.make} ${r.rental!.vehicle.model} (${r.rental!.vehicle.licensePlate}) — départ ${new Date(r.rental!.startAt).toLocaleDateString('fr-FR')}`))}
     ${section('🔧', `CT / Entretiens dans 30 jours`, [
-      ...expiringCT.map(c => `CT — ${c.vehicle.make} ${c.vehicle.model} (${c.vehicle.licensePlate}) — expire le ${new Date(c.expiryAt).toLocaleDateString('fr-FR')}`),
+      ...expiringCT.map(c => `CT — ${c.vehicle.make} ${c.vehicle.model} (${c.vehicle.licensePlate}) — expire le ${new Date(c.nextDueDate!).toLocaleDateString('fr-FR')}`),
       ...expiringMaint.map(m => {
         const parts: string[] = [`Entretien ${m.type} — ${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`];
         if (m.nextServiceDate) {
@@ -1245,15 +1245,15 @@ async function runDocumentExpiryAlerts(): Promise<void> {
     for (const company of companies) {
       try {
         const db = getTenantClient(company.tenantDbUrl);
-        const expiring = await db.technicalControl.findMany({
-          where: { expiryAt: { lte: in30d, gte: new Date() } },
-          include: { vehicle: { select: { make: true, model: true, licensePlate: true } } },
+        const expiring = await db.maintenanceTask.findMany({
+          where: { type: 'ct', nextDueDate: { gte: new Date(), lte: in30d }, vehicle: { isActive: true } },
+          select: { id: true, vehicleId: true, nextDueDate: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
         });
         if (expiring.length === 0) continue;
 
         const chatId = await getTelegramChatId(db as never);
         for (const ct of expiring) {
-          const days = Math.ceil((new Date(ct.expiryAt).getTime() - Date.now()) / 86_400_000);
+          const days = Math.ceil((new Date(ct.nextDueDate!).getTime() - Date.now()) / 86_400_000);
           const label = `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`;
 
           // Admins + carkeepers assignés à ce véhicule
@@ -1270,7 +1270,7 @@ async function runDocumentExpiryAlerts(): Promise<void> {
                 userId,
                 type: 'ct_expiry_30d',
                 title: `🔧 CT expire dans ${days} jour${days > 1 ? 's' : ''} — ${label}`,
-                body: `Expiration : ${new Date(ct.expiryAt).toLocaleDateString('fr-FR')}`,
+                body: `Expiration : ${new Date(ct.nextDueDate!).toLocaleDateString('fr-FR')}`,
                 relatedEntityType: 'vehicle',
                 relatedEntityId: ct.vehicleId,
               },
@@ -1279,7 +1279,7 @@ async function runDocumentExpiryAlerts(): Promise<void> {
 
           if (chatId) {
             await sendTelegramMessage(chatId,
-              `🔧 <b>CT expire dans ${days} jour${days > 1 ? 's' : ''}</b>\n${label}\nExpiration : ${new Date(ct.expiryAt).toLocaleDateString('fr-FR')}`,
+              `🔧 <b>CT expire dans ${days} jour${days > 1 ? 's' : ''}</b>\n${label}\nExpiration : ${new Date(ct.nextDueDate!).toLocaleDateString('fr-FR')}`,
             );
           }
         }

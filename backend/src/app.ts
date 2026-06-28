@@ -41,7 +41,6 @@ import messagesRoutes from './modules/messages/messages.routes';
 import aiRoutes from './modules/ai/ai.routes';
 import sequencesRoutes from './modules/sequences/sequences.routes';
 import maintenanceRoutes from './modules/maintenance/maintenance.routes';
-import technicalControlRoutes from './modules/technical-control/technical-control.routes';
 import vehicleChecksRoutes from './modules/vehicle-checks/vehicle-checks.routes';
 import documentsRoutes from './modules/documents/documents.routes';
 import planningRoutes from './modules/planning/planning.routes';
@@ -154,7 +153,6 @@ export function createApp(): Express {
   app.use('/api/v1/ai', aiRoutes);
   app.use('/api/v1/sequences', sequencesRoutes);
   app.use('/api/v1/maintenance', maintenanceRoutes);
-  app.use('/api/v1/technical-control', technicalControlRoutes);
   app.use('/api/v1/vehicle-checks', vehicleChecksRoutes);
   app.use('/api/v1/documents', documentsRoutes);
   app.use('/api/v1/planning', planningRoutes);

@@ -469,6 +469,10 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
       const vAnnualRentals = annualRentals.filter(r => r.vehicleId === v.id);
       const caAnnuel = vAnnualRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
       const annualMaintCosts = annualMaintenances.filter(m => m.vehicleId === v.id).reduce((s, m) => s + (m.cost ?? 0), 0);
+      const maintenanceMensuel = annualMaintCosts / 12;
+      const getaroundFees = vRentals.filter(r => (r.ownerPayout ?? 0) > 0).reduce((s, r) => s + Math.max(0, (r.grossRevenue ?? 0) - r.ownerPayout!), 0);
+      const totalCostsWithMaint = fixedCosts + variableCosts + maintenanceMensuel;
+      const marginWithMaint = caNet - totalCostsWithMaint;
       const costsAnnuels = fixedCosts * 12 + annualMaintCosts;
       const margeAnnuelle = caAnnuel - costsAnnuels;
 
@@ -481,11 +485,13 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
         caGross: Math.round(caGross * 100) / 100,
         fixedCosts: Math.round(fixedCosts * 100) / 100,
         variableCosts: Math.round(variableCosts * 100) / 100,
-        totalCosts: Math.round(totalCosts * 100) / 100,
-        breakEven: Math.round(breakEven * 100) / 100,
-        margin: Math.round(margin * 100) / 100,
-        isProfit: margin >= 0,
-        status: margin >= 0 ? 'rentable' : 'déficitaire',
+        maintenanceMensuel: Math.round(maintenanceMensuel * 100) / 100,
+        getaroundFees: Math.round(getaroundFees * 100) / 100,
+        totalCosts: Math.round(totalCostsWithMaint * 100) / 100,
+        breakEven: Math.round(totalCostsWithMaint * 100) / 100,
+        margin: Math.round(marginWithMaint * 100) / 100,
+        isProfit: marginWithMaint >= 0,
+        status: marginWithMaint >= 0 ? 'rentable' : 'déficitaire',
         caAnnuel: Math.round(caAnnuel * 100) / 100,
         costsAnnuels: Math.round(costsAnnuels * 100) / 100,
         margeAnnuelle: Math.round(margeAnnuelle * 100) / 100,

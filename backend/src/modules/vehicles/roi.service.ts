@@ -1,4 +1,4 @@
-import { type PrismaClient } from '@prisma/client';
+import { type PrismaClient } from '../../generated/tenant';
 
 export interface RoiDataPoint {
   mois: number;

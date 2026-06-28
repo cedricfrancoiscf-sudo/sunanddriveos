@@ -375,8 +375,22 @@ export default function ReportPage(): React.JSX.Element {
         }
 
         @media print {
+          /* Préserver toutes les couleurs */
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
           /* Police */
-          body { font-family: ${theme.fontFamily}, sans-serif !important; }
+          body { font-family: ${theme.fontFamily}, sans-serif !important; overflow: visible !important; }
+
+          /* Masquer sidebar, barres de navigation, boutons de contrôle */
+          aside, .print-hide, .no-print { display: none !important; }
+
+          /* Afficher l'en-tête d'impression */
+          .print-only { display: block !important; }
+
+          /* Le contenu principal prend toute la largeur */
+          .flex.h-screen { display: block !important; overflow: visible !important; }
+          .flex.flex-1.flex-col.overflow-hidden { display: block !important; overflow: visible !important; }
+          main, [role="main"] { max-width: 100% !important; overflow: visible !important; }
 
           /* Sections avec saut de page obligatoire */
           .page-break {
@@ -390,19 +404,13 @@ export default function ReportPage(): React.JSX.Element {
             page-break-before: auto !important;
           }
 
-          /* Fond coloré du résumé exécutif : forcer la couleur */
-          #resume, #resume * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
           /* ResponsiveContainer Recharts : fixer la largeur en impression */
           .recharts-responsive-container {
             width: 100% !important;
             height: 220px !important;
           }
 
-          /* Pas de shadow en impression (économie encre) */
+          /* Pas de shadow en impression */
           .shadow-sm, .shadow, .shadow-lg, .shadow-xl {
             box-shadow: none !important;
           }

@@ -162,6 +162,17 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   } catch (err: unknown) { next(err); }
 });
 
+// PATCH /api/v1/vehicles/:id — mise à jour partielle (ex: critAir)
+router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = updateSchema.safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const vehicle = await updateVehicle(db, (req.params.id as string), body.data);
+    res.json({ vehicle });
+  } catch (err: unknown) { next(err); }
+});
+
 // DELETE /api/v1/vehicles/:id — soft delete
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {

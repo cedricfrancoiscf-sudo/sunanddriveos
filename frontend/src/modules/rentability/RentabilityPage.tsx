@@ -12,6 +12,8 @@ interface RentabilityEntry {
   caGross: number;
   fixedCosts: number;
   variableCosts: number;
+  maintenanceMensuel: number;
+  getaroundFees: number;
   totalCosts: number;
   breakEven: number;
   margin: number;
@@ -764,7 +766,18 @@ export default function RentabilityPage(): React.JSX.Element {
                       Coût
                     </button>
                   </div>
-                  {expanded === e.vehicleId && <CostPanel vehicleId={e.vehicleId} breakEven={e.breakEven ?? e.totalCosts} />}
+                  {expanded === e.vehicleId && (
+                    <>
+                      {(e.maintenanceMensuel > 0 || e.getaroundFees > 0) && (
+                        <div className="flex gap-4 border-t border-gray-50 bg-gray-50/60 px-4 py-2 text-xs text-gray-500">
+                          <span>Charges fixes : <strong className="text-gray-700">{fmtEuro(e.fixedCosts + e.variableCosts)}</strong></span>
+                          {e.maintenanceMensuel > 0 && <span>Entretiens moy. / mois : <strong className="text-orange-600">{fmtEuro(e.maintenanceMensuel)}</strong></span>}
+                          {e.getaroundFees > 0 && <span>Commission Getaround : <strong className="text-gray-600">{fmtEuro(e.getaroundFees)}</strong> (info)</span>}
+                        </div>
+                      )}
+                      <CostPanel vehicleId={e.vehicleId} breakEven={e.breakEven ?? e.totalCosts} />
+                    </>
+                  )}
                 </div>
               ))
             )}

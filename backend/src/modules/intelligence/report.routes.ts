@@ -599,7 +599,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     if (existing?.status === 'generating') return res.json({ status: 'generating' });
     if (existing?.status === 'error')     return res.json({ status: 'error' });
     return res.json({ status: 'absent' });
-  } catch (err) { next(err); }
+  } catch (err) { next(err); return; }
 });
 
 // ── POST /intelligence/report/generate ───────────────────────────────────────
@@ -631,7 +631,7 @@ router.post('/generate', async (req: Request, res: Response, next: NextFunction)
       void generateCeoReportAsync(req.tenantDbUrl!, report.id, companyId, monthKey);
     }
     return res.json({ status: 'generating' });
-  } catch (err) { next(err); }
+  } catch (err) { next(err); return; }
 });
 
 export default router;

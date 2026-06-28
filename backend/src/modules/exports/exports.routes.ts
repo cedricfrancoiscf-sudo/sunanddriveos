@@ -281,7 +281,7 @@ router.get('/vehicles', async (req: Request, res: Response, next: NextFunction) 
     const vehicles = await db.vehicle.findMany({
       where: { isActive: true },
       include: {
-        technicalControls: { orderBy: { expiryAt: 'desc' }, take: 1 },
+        maintenanceTasks: { where: { type: 'ct' }, orderBy: { nextDueDate: 'desc' }, take: 1 },
         maintenances: { orderBy: { performedAt: 'desc' }, take: 1 },
       },
       orderBy: { make: 'asc' },
@@ -296,7 +296,7 @@ router.get('/vehicles', async (req: Request, res: Response, next: NextFunction) 
     const rows = vehicles.map(v => [
       v.make, v.model, v.year, v.licensePlate, v.color,
       v.currentMileage, v.healthScore,
-      v.technicalControls[0] ? formatDate(v.technicalControls[0].expiryAt) : '',
+      v.maintenanceTasks[0]?.nextDueDate ? formatDate(v.maintenanceTasks[0].nextDueDate) : '',
       v.maintenances[0] ? formatDate(v.maintenances[0].performedAt) : '',
     ]);
 

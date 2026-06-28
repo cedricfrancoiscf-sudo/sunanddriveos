@@ -162,7 +162,6 @@ model Vehicle {
   rentals            Rental[]
   maintenances       Maintenance[]
   maintenanceTasks   MaintenanceTask[]
-  technicalControls  TechnicalControl[]
   vehicleChecks      VehicleCheck[]
   documents          VehicleDocument[]
   incidents          Incident[]
@@ -362,24 +361,6 @@ model MaintenanceTask {
 
   @@unique([vehicleId, type])
   @@map("maintenance_tasks")
-}
-
-model TechnicalControl {
-  id          String      @id @default(cuid())
-  vehicleId   String
-  vehicle     Vehicle     @relation(fields: [vehicleId], references: [id])
-  performedAt DateTime
-  expiryAt    DateTime    // Date d'expiration du CT
-  result      CheckResult
-  points      Json?       // Points de contrôle défavorables/majeurs
-  center      String?
-  cost        Float?
-  documentUrl String?
-  archived    Boolean     @default(false)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  @@map("technical_controls")
 }
 
 model VehicleCheck {

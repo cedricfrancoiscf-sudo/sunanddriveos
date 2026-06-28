@@ -1155,55 +1155,6 @@ router.post('/tenants/:slug/fix-cancelled-rentals', async (req: Request, res: Re
   } catch (err: unknown) { next(err); }
 });
 
-// POST /api/v1/superadmin/tenants/:slug/fix-ct-data — corrections CT post-tests
-router.post('/tenants/:slug/fix-ct-data', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const master = getMasterClient();
-    const company = await master.company.findUnique({
-      where: { slug: (req.params.slug as string) },
-      select: { tenantDbUrl: true, name: true },
-    });
-    if (!company) { res.status(404).json({ error: 'Tenant introuvable' }); return; }
-    const db = getTenantClient(company.tenantDbUrl);
-
-    const fixes: string[] = [];
-
-    // Fix 1 — Fiat 500 EZ480LT : corriger expiryAt incohérente
-    try {
-      const ct = await db.technicalControl.findUnique({ where: { id: 'cmpvuu4pm000epjs6u7vl0r9v' } });
-      if (ct) {
-        await db.technicalControl.update({
-          where: { id: 'cmpvuu4pm000epjs6u7vl0r9v' },
-          data: { expiryAt: new Date('2028-06-13T00:00:00.000Z') },
-        });
-        fixes.push('Fiat 500 EZ480LT CT expiryAt corrigée → 2028-06-13');
-      } else {
-        fixes.push('Fiat 500 EZ480LT CT introuvable (déjà supprimé ?)');
-      }
-    } catch (e) { fixes.push(`Fix 1 erreur : ${String(e)}`); }
-
-    // Fix 2 — C3 FC275PK : supprimer CTs archivés sauf cmqgh30dg04s76p3y0pb59c18
-    try {
-      const vehicle = await db.vehicle.findFirst({ where: { licensePlate: 'FC275PK' }, select: { id: true } });
-      if (vehicle) {
-        const result = await db.technicalControl.deleteMany({
-          where: {
-            vehicleId: vehicle.id,
-            archived: true,
-            id: { not: 'cmqgh30dg04s76p3y0pb59c18' },
-          },
-        });
-        fixes.push(`C3 FC275PK : ${result.count} CT archivé(s) supprimé(s)`);
-      } else {
-        fixes.push('C3 FC275PK : véhicule introuvable');
-      }
-    } catch (e) { fixes.push(`Fix 2 erreur : ${String(e)}`); }
-
-    console.log(`[FixCT] ${company.name} : ${fixes.join(' | ')}`);
-    res.json({ success: true, fixes });
-  } catch (err: unknown) { next(err); }
-});
-
 // POST /api/v1/superadmin/tenants/:slug/cleanup-test-data
 router.post('/tenants/:slug/cleanup-test-data', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -1245,17 +1196,22 @@ router.post('/tenants/:slug/cleanup-test-data', async (req: Request, res: Respon
       },
     });
 
-    // 4. Contrôles techniques dont le centre contient "playwright"
-    const ctResult = await db.technicalControl.deleteMany({
-      where: { center: testPattern },
+    // 4. MaintenanceTasks dont les notes contiennent "playwright"
+    const taskResult = await db.maintenanceTask.deleteMany({
+      where: { lastNotes: testPattern },
     });
 
-    // 5. Messages dont le contenu contient "playwright"
+    // 5. VehicleRatings avec notes playwright
+    const ratingsResult = await db.vehicleRating.deleteMany({
+      where: { notes: testPattern },
+    });
+
+    // 6. Messages dont le contenu contient "playwright"
     const messagesResult = await db.message.deleteMany({
       where: { content: testPattern },
     });
 
-    // 6. Notes NPS dans master DB avec comment playwright
+    // 7. Notes NPS dans master DB avec comment playwright
     const npsResult = await master.npsResponse.deleteMany({
       where: {
         companyId: company.id,
@@ -1268,7 +1224,8 @@ router.post('/tenants/:slug/cleanup-test-data', async (req: Request, res: Respon
       costsDeleted: costsResult.count,
       rentalsDeleted: rentalsResult.count,
       maintenanceDeleted: maintenanceResult.count,
-      ctDeleted: ctResult.count,
+      tasksDeleted: taskResult.count,
+      ratingsDeleted: ratingsResult.count,
       messagesDeleted: messagesResult.count,
       npsDeleted: npsResult.count,
     });

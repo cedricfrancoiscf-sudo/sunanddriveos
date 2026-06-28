@@ -1,0 +1,15 @@
+═══════════════════════════════════════════════════════════════
+   RAPPORT 34 — Invoices Getaround + Frais supplémentaires
+   Généré le : 22/06/2026 21:03:51
+═══════════════════════════════════════════════════════════════
+
+✅ PASS — section Frais supplémentaires visible
+✅ PASS — champ invoiceSyncWindowDays modifiable
+✅ PASS — PUT /settings invoiceMalusConfig
+
+───────────────────────────────────────────────────────────────
+Total       : 3 tests
+✅ Passés   : 3
+❌ Échoués  : 0
+⚠️ Warnings : 0
+───────────────────────────────────────────────────────────────

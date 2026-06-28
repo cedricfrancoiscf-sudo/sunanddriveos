@@ -2209,10 +2209,10 @@ export default function SettingsPage(): React.JSX.Element {
                 <div key={key}>
                   <label className="mb-1.5 block text-xs font-medium text-gray-600">{label}</label>
                   <div className="flex items-center gap-2">
-                    <input type="color" value={(form as Record<string, string>)[key]}
+                    <input type="color" value={(form as unknown as Record<string, string>)[key]}
                       onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                       className="h-9 w-12 cursor-pointer rounded border border-gray-200 p-0.5" />
-                    <input type="text" value={(form as Record<string, string>)[key]}
+                    <input type="text" value={(form as unknown as Record<string, string>)[key]}
                       onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                       className="flex-1 rounded-lg border border-gray-200 px-2.5 py-2 font-mono text-xs outline-none focus:border-[#01696e]"
                       pattern="^#[0-9a-fA-F]{6}$" />

@@ -224,7 +224,7 @@ function RoiAnalysisDisplay({ analysis, mktDateStale }: {
 
   // Indice du mois actuel dans la courbe 48 mois
   const moisActuelIdx = analysis.courbe.findIndex(d => d.estAujourdhui);
-  const todayLabel = moisActuelIdx >= 0 ? analysis.courbe[moisActuelIdx].dateLabel : '';
+  const todayLabel = moisActuelIdx >= 0 ? analysis.courbe[moisActuelIdx]?.dateLabel ?? '' : '';
 
   // Courbe échantillonnée : toutes les 3 périodes + point optimal + aujourd'hui
   const chartData = analysis.courbe
@@ -279,13 +279,17 @@ function RoiAnalysisDisplay({ analysis, mktDateStale }: {
       <div className="grid grid-cols-3 gap-2">
         <RoiKpi label="TRI actuel"
           value={analysis.triActuel !== null ? `${analysis.triActuel.toFixed(1)}%/an` : '—'}
-          colorClass={analysis.triActuel !== null ? (analysis.triActuel >= 0 ? 'text-green-700' : 'text-red-600') : undefined} />
+          {...(analysis.triActuel !== null
+            ? { colorClass: analysis.triActuel >= 0 ? 'text-green-700' : 'text-red-600' }
+            : {})} />
         <RoiKpi label="TRI optimal"
           value={analysis.triMax !== null ? `${analysis.triMax.toFixed(1)}%/an` : '—'}
           colorClass="text-blue-700" />
         <RoiKpi label="Cash-on-Cash"
           value={analysis.cocActuel !== null ? `${analysis.cocActuel.toFixed(1)}%` : '—'}
-          colorClass={analysis.cocActuel !== null ? (analysis.cocActuel >= 0 ? 'text-green-700' : 'text-red-600') : undefined} />
+          {...(analysis.cocActuel !== null
+            ? { colorClass: analysis.cocActuel >= 0 ? 'text-green-700' : 'text-red-600' }
+            : {})} />
       </div>
 
       {/* Signal */}

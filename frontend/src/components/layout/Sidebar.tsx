@@ -72,12 +72,16 @@ function SoonItem({ label, icon, collapsed }: { label: string; icon: React.React
 }
 
 function SectionLabel({ label, collapsed }: { label: string; collapsed?: boolean }): React.JSX.Element | null {
+  if (label === 'Intelligence ✨') {
+    if (collapsed) return null;
+    return (
+      <li className="mb-1 mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+        {label}
+      </li>
+    );
+  }
   if (collapsed) return null;
-  return (
-    <li className="mb-1 mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-      {label}
-    </li>
-  );
+  return <li className="mx-3 my-1.5 border-t border-gray-100" />;
 }
 
 const VIE_VEHICULE_ITEMS = [

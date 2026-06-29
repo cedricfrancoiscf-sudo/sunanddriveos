@@ -1188,4 +1188,68 @@ router.get('/environment', async (req: Request, res: Response, next: NextFunctio
 // Rapport CEO — monté ici pour éviter le double plan-gating depuis app.ts
 router.use('/report', reportRouter);
 
+// GET /api/v1/intelligence/patterns — heatmap jours/heure + insights
+router.get('/patterns', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const since = new Date();
+    since.setMonth(since.getMonth() - 12);
+
+    const rentals = await db.rental.findMany({
+      where: {
+        startAt: { gte: since },
+        status: { in: ['completed', 'active', 'booked'] },
+      },
+      select: { startAt: true, endAt: true, grossRevenue: true, ownerPayout: true },
+    });
+
+    const FR_DAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+    const parJour: { day: string; count: number; ca: number }[] = FR_DAYS.map(day => ({ day, count: 0, ca: 0 }));
+    const parTranche: { heure: string; count: number }[] = Array.from({ length: 24 }, (_, h) => ({ heure: `${h}h`, count: 0 }));
+    const dureesParJour: Record<number, { total: number; count: number }> = {};
+
+    for (const r of rentals) {
+      const start = new Date(r.startAt);
+      const dayIdx = start.getDay();
+      const hour = start.getHours();
+      const payout = (r.ownerPayout ?? 0) > 0 ? (r.ownerPayout ?? 0) : Math.max(0, r.grossRevenue ?? 0);
+      parJour[dayIdx].count++;
+      parJour[dayIdx].ca += payout;
+      parTranche[hour].count++;
+      const dureeJours = r.endAt ? Math.max(0, (new Date(r.endAt).getTime() - start.getTime()) / 86_400_000) : 0;
+      if (!dureesParJour[dayIdx]) dureesParJour[dayIdx] = { total: 0, count: 0 };
+      dureesParJour[dayIdx].total += dureeJours;
+      dureesParJour[dayIdx].count++;
+    }
+
+    const dureeMoyParJour = FR_DAYS.map((day, i) => ({
+      day,
+      dureeMoy: dureesParJour[i] && dureesParJour[i].count > 0
+        ? Math.round((dureesParJour[i].total / dureesParJour[i].count) * 10) / 10
+        : 0,
+    }));
+
+    const topDay = [...parJour].sort((a, b) => b.count - a.count)[0];
+    const topHour = [...parTranche].sort((a, b) => b.count - a.count)[0];
+    const weekendTotal = parJour[0].count + parJour[6].count;
+    const tauxWeekend = rentals.length > 0 ? Math.round((weekendTotal / rentals.length) * 100) : 0;
+    const totalDays = Object.values(dureesParJour).reduce((s, v) => s + v.total, 0);
+    const avgDuree = rentals.length > 0 ? Math.round((totalDays / rentals.length) * 10) / 10 : 0;
+
+    const insights = [
+      { label: 'Jour préféré', value: `${topDay?.day ?? '—'} (${topDay?.count ?? 0} dép.)`, icon: '📅' },
+      { label: 'Heure de pointe', value: `${topHour?.heure ?? '—'} (${topHour?.count ?? 0})`, icon: '⏰' },
+      { label: 'Taux week-end', value: `${tauxWeekend}%`, icon: '🗓️' },
+      { label: 'Durée moyenne', value: `${avgDuree}j`, icon: '⏱️' },
+    ];
+
+    res.json({
+      parJour: parJour.map(d => ({ ...d, ca: Math.round(d.ca * 100) / 100 })),
+      parTranche,
+      dureeMoyParJour,
+      insights,
+    });
+  } catch (err) { next(err); }
+});
+
 export default router;

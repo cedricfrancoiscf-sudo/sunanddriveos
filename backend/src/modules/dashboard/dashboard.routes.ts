@@ -255,4 +255,142 @@ router.get('/n1', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// GET /api/v1/dashboard/today — bandeau quotidien
+router.get('/today', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
+
+    const [vehicleCount, departs, retours, actives, carSeatRequests] = await Promise.all([
+      db.vehicle.count({ where: { isActive: true } }),
+      db.rental.count({ where: { startAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['active', 'booked'] } } }),
+      db.rental.count({ where: { endAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['active', 'completed'] } } }),
+      db.rental.count({ where: { status: 'active' } }),
+      db.carSeatRequest.findMany({
+        where: {
+          status: { in: ['pending', 'confirmed'] },
+          rental: { startAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['active', 'booked'] } },
+        },
+        include: {
+          rental: {
+            select: { startAt: true, driverName: true, vehicle: { select: { licensePlate: true } } },
+          },
+        },
+      }),
+    ]);
+
+    const disponibles = Math.max(0, vehicleCount - actives);
+    const accessoiresJour = carSeatRequests.map(r => ({
+      type: 'car_seat',
+      locataire: r.rental.driverName,
+      plaque: r.rental.vehicle.licensePlate,
+      heure: new Date(r.rental.startAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }),
+    }));
+
+    res.json({ departs, retours, actives, disponibles, vehicleCount, accessoiresJour });
+  } catch (err) { next(err); }
+});
+
+// GET /api/v1/dashboard/pipeline — pipeline 28 jours glissants
+router.get('/pipeline', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const end28 = new Date(Date.now() + 28 * 86_400_000);
+
+    const [vehicles, rentals] = await Promise.all([
+      db.vehicle.count({ where: { isActive: true } }),
+      db.rental.findMany({
+        where: { status: 'booked', startAt: { lte: end28 }, endAt: { gte: now } },
+        select: { grossRevenue: true, ownerPayout: true, startAt: true, endAt: true },
+      }),
+    ]);
+
+    const caReserve = rentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? (r.ownerPayout ?? 0) : Math.max(0, r.grossRevenue ?? 0)), 0);
+
+    // Calcul jours réservés sur les 28j
+    let joursReserves = 0;
+    for (const r of rentals) {
+      const s = Math.max(now.getTime(), new Date(r.startAt).getTime());
+      const e = Math.min(end28.getTime(), new Date(r.endAt).getTime());
+      if (e > s) joursReserves += (e - s) / 86_400_000;
+    }
+    const occupationProjetee = vehicles > 0
+      ? Math.round((joursReserves / (vehicles * 28)) * 100)
+      : 0;
+
+    // 4 semaines
+    const parSemaine = [0, 1, 2, 3].map(w => {
+      const wStart = new Date(now.getTime() + w * 7 * 86_400_000);
+      const wEnd = new Date(wStart.getTime() + 7 * 86_400_000);
+      const wRentals = rentals.filter(r => {
+        const s = new Date(r.startAt);
+        return s >= wStart && s < wEnd;
+      });
+      return {
+        label: `Sem. ${w + 1}`,
+        rentalCount: wRentals.length,
+        caEstime: Math.round(wRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? (r.ownerPayout ?? 0) : Math.max(0, r.grossRevenue ?? 0)), 0) * 100) / 100,
+      };
+    });
+
+    res.json({
+      caReserve: Math.round(caReserve * 100) / 100,
+      nbLocations: rentals.length,
+      occupationProjetee,
+      parSemaine,
+    });
+  } catch (err) { next(err); }
+});
+
+// GET /api/v1/dashboard/underutilized — véhicules sous-utilisés
+router.get('/underutilized', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const past28Start = new Date(now.getTime() - 28 * 86_400_000);
+    const next28End = new Date(now.getTime() + 28 * 86_400_000);
+
+    const [vehicles, pastRentals, futureRentals] = await Promise.all([
+      db.vehicle.findMany({
+        where: { isActive: true },
+        select: { id: true, licensePlate: true, make: true, model: true, parkingZone: true },
+      }),
+      db.rental.findMany({
+        where: { startAt: { gte: past28Start, lt: now }, status: { in: ['completed', 'active'] } },
+        select: { vehicleId: true },
+      }),
+      db.rental.findMany({
+        where: { startAt: { gte: now, lt: next28End }, status: { in: ['booked', 'active'] } },
+        select: { vehicleId: true },
+      }),
+    ]);
+
+    const result = vehicles.map(v => {
+      const past28Count = pastRentals.filter(r => r.vehicleId === v.id).length;
+      const next28Count = futureRentals.filter(r => r.vehicleId === v.id).length;
+      const ecartPct = past28Count > 0 ? ((next28Count - past28Count) / past28Count) * 100 : (next28Count > 0 ? 100 : 0);
+      return {
+        vehicleId: v.id,
+        plate: v.licensePlate,
+        make: v.make,
+        model: v.model,
+        zone: v.parkingZone ?? 'Non définie',
+        next28Count,
+        past28Count,
+        ecartPct: Math.round(ecartPct),
+        isUnderUtilized: ecartPct < -40 && past28Count > 0,
+      };
+    });
+
+    const avgNext28 = result.length > 0 ? result.reduce((s, v) => s + v.next28Count, 0) / result.length : 0;
+    const sorted = [...result].sort((a, b) => b.next28Count - a.next28Count);
+    const bestPerformer = sorted[0] && sorted[0].next28Count > 0 ? { plate: sorted[0].plate, next28Count: sorted[0].next28Count } : null;
+
+    res.json({ vehicles: result, avgNext28: Math.round(avgNext28 * 10) / 10, bestPerformer });
+  } catch (err) { next(err); }
+});
+
 export default router;

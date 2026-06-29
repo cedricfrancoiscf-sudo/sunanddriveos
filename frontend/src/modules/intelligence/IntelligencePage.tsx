@@ -266,6 +266,10 @@ export default function IntelligencePage(): React.JSX.Element {
           className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-[#01696e] hover:text-[#01696e] shadow-sm transition">
           <span>📄</span> Rapport CEO
         </button>
+        <button type="button" onClick={() => navigate('/intelligence/patterns')}
+          className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-[#01696e] hover:text-[#01696e] shadow-sm transition">
+          <span>📊</span> Patterns &amp; Heatmap
+        </button>
       </div>
 
       {/* ── SECTION 1 : KPIs ANNUELS ──────────────────────────────────────── */}

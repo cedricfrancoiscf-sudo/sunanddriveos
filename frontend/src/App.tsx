@@ -86,6 +86,7 @@ const RentabilityPage = React.lazy(() => import('./modules/rentability/Rentabili
 const VehiclePublicPage = React.lazy(() => import('./modules/vehicles/VehiclePublicPage'));
 const RatingPage = React.lazy(() => import('./modules/intelligence/RatingPage'));
 const ForecastPage = React.lazy(() => import('./modules/intelligence/ForecastPage'));
+const PatternsPage = React.lazy(() => import('./modules/intelligence/PatternsPage'));
 const DocumentationPage = React.lazy(() => import('./modules/documentation/DocumentationPage'));
 
 function LoadingFallback(): React.JSX.Element {
@@ -183,6 +184,7 @@ export default function App(): React.JSX.Element {
               <Route path="/intelligence/report" element={<CarkeeperBlockedRoute><ReportPage /></CarkeeperBlockedRoute>} />
               <Route path="/intelligence/ratings" element={<CarkeeperBlockedRoute><RatingPage /></CarkeeperBlockedRoute>} />
               <Route path="/intelligence/forecast" element={<CarkeeperBlockedRoute><ForecastPage /></CarkeeperBlockedRoute>} />
+              <Route path="/intelligence/patterns" element={<CarkeeperBlockedRoute><PatternsPage /></CarkeeperBlockedRoute>} />
               <Route path="/renters" element={<RentersPage />} />
               <Route path="/renters/:id" element={<RenterDetailPage />} />
               <Route path="/rentability" element={<CarkeeperBlockedRoute><RentabilityPage /></CarkeeperBlockedRoute>} />

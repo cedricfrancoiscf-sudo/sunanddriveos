@@ -81,6 +81,7 @@ function RentalBar({ rental, periodStart, totalDays, onClick, isBlacklisted }: {
   const isShort = durationMin < 120; // moins de 2h — barre courte, pas de texte
   const isPast = parseISO(rental.endAt) < startOfDay(new Date());
 
+  const returnSoon = rental.status === 'active' && differenceInMinutes(parseISO(rental.endAt), new Date()) < 720 && differenceInMinutes(parseISO(rental.endAt), new Date()) > 0;
   return (
     <div
       className={`absolute top-1.5 h-7 rounded flex items-center overflow-hidden cursor-pointer group z-10 transition-opacity hover:opacity-90 ${isPast ? 'opacity-50' : ''}`}
@@ -89,16 +90,20 @@ function RentalBar({ rental, periodStart, totalDays, onClick, isBlacklisted }: {
         backgroundColor: hasCarSeat
           ? (rental.status === 'active' ? '#c2600a' : '#c2600aaa')
           : (rental.status === 'active' ? '#01696e' : '#01696eaa'),
+        boxShadow: isPast ? 'none' : '0 1px 4px rgba(0,0,0,0.15)',
       }}
       title={tooltip}
       onClick={onClick}
     >
       {!isShort && (
-        <span className="flex items-center gap-0.5 pl-1.5 text-[10px] text-white font-medium truncate min-w-0">
-          {isBlacklisted && <span className="shrink-0 text-[9px]">⛔</span>}
-          <span className="truncate">{formatHour(rental.startAt)} {rental.driverName}</span>
-          {hasCarSeat && <span className="shrink-0 text-[9px] ml-0.5 opacity-90">🪑</span>}
-          {hasAccessory && <span className="shrink-0 text-[9px] opacity-90">📦</span>}
+        <span className="flex flex-col justify-center pl-1.5 min-w-0 flex-1 overflow-hidden">
+          <span className="flex items-center gap-0.5 text-[10px] text-white font-medium truncate">
+            {isBlacklisted && <span className="shrink-0 text-[9px]">⛔</span>}
+            <span className="truncate">{formatHour(rental.startAt)} {rental.driverName}</span>
+            {hasCarSeat && <span className="shrink-0 text-[9px] ml-0.5 opacity-90">🪑</span>}
+            {hasAccessory && <span className="shrink-0 text-[9px] opacity-90">📦</span>}
+          </span>
+          <span className="text-[9px] text-white/70 truncate">→ {formatHour(rental.endAt)}</span>
         </span>
       )}
       {isShort && (hasCarSeat || hasAccessory) && (
@@ -106,6 +111,9 @@ function RentalBar({ rental, periodStart, totalDays, onClick, isBlacklisted }: {
           {hasCarSeat && <span>🪑</span>}
           {hasAccessory && <span>📦</span>}
         </span>
+      )}
+      {returnSoon && (
+        <span className="shrink-0 pr-0.5 text-[9px] text-orange-300" title="Retour imminent">◀</span>
       )}
       {/* Tooltip riche au survol */}
       <div className="absolute bottom-full left-0 z-50 mb-1 hidden group-hover:block pointer-events-none">
@@ -133,7 +141,7 @@ function BlockingBar({ blocking, onDelete, periodStart, totalDays }: {
 
   return (
     <div
-      className={`absolute bottom-1.5 h-5 rounded flex items-center overflow-hidden group z-10 ${colorClass}`}
+      className={`absolute top-1.5 h-7 rounded flex items-center overflow-hidden group z-10 ${colorClass}`}
       style={getBarStyle(blocking.startAt, blocking.endAt, periodStart, totalDays)}
       title={tooltip}
     >
@@ -163,7 +171,7 @@ function UnavailabilityBar({ unavailability, periodStart, totalDays }: {
   const tooltip = `Indisponible Getaround\n${format(parseISO(unavailability.startsAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(unavailability.endsAt), 'dd/MM HH:mm', { locale: fr })}`;
   return (
     <div
-      className="absolute bottom-1.5 h-5 rounded flex items-center overflow-hidden bg-gray-400 z-10 opacity-80"
+      className="absolute top-1.5 h-7 rounded flex items-center overflow-hidden bg-gray-400 z-10 opacity-80"
       style={getBarStyle(unavailability.startsAt, unavailability.endsAt, periodStart, totalDays)}
       title={tooltip}
     >
@@ -417,37 +425,34 @@ export default function PlanningPage(): React.JSX.Element {
       )}
 
       {/* Légende */}
-      <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+      <div className="mb-4 flex flex-wrap items-center gap-3 text-xs text-gray-400">
         <div className="flex items-center gap-1.5">
-          <div className="h-3 w-6 rounded-sm" style={{ backgroundColor: '#01696e' }} />
-          <span>Location active</span>
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: '#01696e' }} />
+          <span>Active</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-3 w-6 rounded-sm" style={{ backgroundColor: '#01696eaa' }} />
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: '#01696eaa' }} />
           <span>Réservée</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-3 w-6 rounded-sm" style={{ backgroundColor: '#c2600a' }} />
-          <span>🪑 Siège auto demandé</span>
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: '#c2600a' }} />
+          <span>🪑 Siège</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-3 w-6 rounded-sm bg-orange-400" />
+          <div className="h-2 w-2 rounded-full bg-orange-400" />
           <span>Maintenance</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-3 w-6 rounded-sm bg-red-500" />
+          <div className="h-2 w-2 rounded-full bg-red-500" />
           <span>Incident</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-3 w-6 rounded-sm opacity-50" style={{ backgroundColor: '#01696eaa' }} />
-          <span>Passée</span>
+          <div className="h-2 w-2 rounded-full bg-gray-400 opacity-80" />
+          <span>Indisponible</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-3 w-6 rounded-sm bg-gray-400 opacity-80" />
-          <span>Indisponible Getaround</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span>📦</span><span>Accessoire</span>
+          <span className="text-orange-300 font-bold text-[10px]">◀</span>
+          <span>Retour &lt;12h</span>
         </div>
       </div>
 

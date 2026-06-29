@@ -2,18 +2,22 @@ import React, { useEffect } from 'react';
 import { trackEvent } from '../../utils/tracking';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, differenceInDays, isPast } from 'date-fns';
+import { format, differenceInDays, isPast, addDays, startOfDay, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, Cell } from 'recharts';
 import { api } from '../../utils/api';
 
 const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
 import { useAuth } from '../../hooks/useAuth';
 
 interface RentalStats { totalRevenue: number; totalEncaisse: number; totalPrevisionnel: number; occupancyRate: number; rentalCount: number; countDone: number; countUpcoming: number; totalKm: number; vehicleCount: number; totalPayout: number; }
-interface ActiveRental { id: string; driverName: string; startAt: string; endAt: string; vehicle: { make: string; model: string; licensePlate: string }; }
+interface ActiveRental { id: string; driverName: string; startAt: string; endAt: string; vehicleId: string; vehicle: { make: string; model: string; licensePlate: string }; }
 interface Alert { id: string; type: string; label: string; severity: 'high' | 'medium'; link: string; }
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; lastSyncAt: string | null; lastSyncResult: { created: number; updated: number } | null; error: string | null; isTrialLimited: boolean; }
+interface TodayData { departs: number; retours: number; actives: number; disponibles: number; vehicleCount: number; accessoiresJour: { type: string; locataire: string; plaque: string; heure: string }[]; }
+interface PipelineData { caReserve: number; nbLocations: number; occupationProjetee: number; parSemaine: { label: string; rentalCount: number; caEstime: number }[]; }
+interface UnderutilizedVehicle { vehicleId: string; plate: string; make: string; model: string; zone: string; next28Count: number; past28Count: number; ecartPct: number; isUnderUtilized: boolean; }
+interface UnderutilizedData { vehicles: UnderutilizedVehicle[]; avgNext28: number; bestPerformer: { plate: string; next28Count: number } | null; }
 
 function formatWeekLabel(week: string): string {
   const [yearStr, weekStr] = week.split('-W');
@@ -27,24 +31,33 @@ function formatWeekLabel(week: string): string {
   const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
   return `S${weekNum} · ${fmt(startOfWeek)}→${fmt(endOfWeek)}`;
 }
+void formatWeekLabel; // used in chartData below via occupancyData
 
-function KpiCard({ label, value, sub, link }: { label: string; value: string; sub?: string | undefined; link?: string | undefined }): React.JSX.Element {
+function GaugeCard({ label, value, sub, gaugePct, gaugeColor, link }: {
+  label: string; value: string; sub?: string; gaugePct?: number; gaugeColor?: string; link?: string;
+}): React.JSX.Element {
   const inner = (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-      <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
-      {sub && <p className="mt-1 text-xs text-gray-400">{sub}</p>}
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm h-full flex flex-col">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="mt-1.5 text-2xl font-bold text-gray-900 leading-tight">{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
+      {gaugePct !== undefined && (
+        <div className="mt-auto pt-2">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+            <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, Math.max(0, gaugePct))}%`, backgroundColor: gaugeColor ?? '#01696e' }} />
+          </div>
+        </div>
+      )}
     </div>
   );
-  return link ? <Link to={link} className="block hover:opacity-90 transition">{inner}</Link> : <div>{inner}</div>;
+  return link ? <Link to={link} className="block hover:opacity-90 transition h-full">{inner}</Link> : <div className="h-full">{inner}</div>;
 }
 
 function AlertCard({ alert }: { alert: Alert }): React.JSX.Element {
   return (
     <Link to={alert.link}
-      className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition hover:shadow-md ${alert.severity === 'high' ? 'border-red-200 bg-red-50' : 'border-orange-200 bg-orange-50'}`}>
-      <div className={`h-2 w-2 shrink-0 rounded-full ${alert.severity === 'high' ? 'bg-red-500' : 'bg-orange-400'}`} />
-      <p className={`text-sm font-medium ${alert.severity === 'high' ? 'text-red-800' : 'text-orange-800'}`}>{alert.label}</p>
+      className={`flex items-center gap-3 rounded-xl border-l-4 bg-white px-4 py-3 shadow-sm transition hover:shadow-md ${alert.severity === 'high' ? 'border-red-500' : 'border-orange-400'}`}>
+      <p className={`flex-1 text-sm font-medium ${alert.severity === 'high' ? 'text-red-800' : 'text-orange-800'}`}>{alert.label}</p>
       <svg className="ml-auto h-4 w-4 shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
       </svg>
@@ -84,7 +97,7 @@ export default function DashboardPage(): React.JSX.Element {
 
   const { data: activeRentals = [] } = useQuery<ActiveRental[]>({
     queryKey: ['rentals', 'active'],
-    queryFn: () => api.get<{ rentals: ActiveRental[] }>('/rentals', { params: { status: 'active', limit: 5 } }).then(r => r.data.rentals),
+    queryFn: () => api.get<{ rentals: ActiveRental[] }>('/rentals', { params: { status: 'active', limit: 20 } }).then(r => r.data.rentals),
     staleTime: 2 * 60_000,
   });
 
@@ -119,6 +132,7 @@ export default function DashboardPage(): React.JSX.Element {
     staleTime: 5 * 60_000,
     enabled: user?.role !== 'carkeeper',
   });
+  void forecastData;
 
   const { data: occupancyData } = useQuery<OccupancyWeek[]>({
     queryKey: ['dashboard-occupancy'],
@@ -132,7 +146,6 @@ export default function DashboardPage(): React.JSX.Element {
     queryFn: () => api.get<{ maintenances: MaintenanceAlert[] }>('/dashboard/maintenances').then(r => r.data.maintenances),
     staleTime: 5 * 60_000,
   });
-
 
   const { data: copilotData, isLoading: copilotLoading } = useQuery<{ text: string }>({
     queryKey: ['dashboard-copilot'],
@@ -149,11 +162,24 @@ export default function DashboardPage(): React.JSX.Element {
     enabled: user?.role !== 'carkeeper',
   });
 
-  type N1Data = { caNet: number; tauxOccupation: number; nbLocations: number };
-  const { data: n1Data } = useQuery<N1Data>({
-    queryKey: ['dashboard-n1'],
-    queryFn: () => api.get<N1Data>('/dashboard/n1').then(r => r.data),
-    staleTime: 60 * 60_000,
+  const { data: todayData } = useQuery<TodayData>({
+    queryKey: ['dashboard-today'],
+    queryFn: () => api.get<TodayData>('/dashboard/today').then(r => r.data),
+    staleTime: 2 * 60_000,
+    refetchInterval: 5 * 60_000,
+  });
+
+  const { data: pipelineData } = useQuery<PipelineData>({
+    queryKey: ['dashboard-pipeline'],
+    queryFn: () => api.get<PipelineData>('/dashboard/pipeline').then(r => r.data),
+    staleTime: 5 * 60_000,
+    enabled: user?.role !== 'carkeeper',
+  });
+
+  const { data: underutilizedData } = useQuery<UnderutilizedData>({
+    queryKey: ['dashboard-underutilized'],
+    queryFn: () => api.get<UnderutilizedData>('/dashboard/underutilized').then(r => r.data),
+    staleTime: 10 * 60_000,
     enabled: user?.role !== 'carkeeper',
   });
 
@@ -234,6 +260,11 @@ export default function DashboardPage(): React.JSX.Element {
   });
   const showOnboardingBanner = onboarding && !onboarding.dismissed && !onboarding.allDone;
 
+  // Mini planning 7j — depuis activeRentals
+  const today = startOfDay(new Date());
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(today, i));
+  const miniPlanVehicles = occupancyData?.[0]?.vehicles ?? [];
+
   return (
     <div className="p-4 lg:p-6 space-y-6">
       {/* Bannière onboarding */}
@@ -313,7 +344,41 @@ export default function DashboardPage(): React.JSX.Element {
         </div>
       )}
 
-      {/* Accueil */}
+      {/* D2a — Bandeau quotidien */}
+      {todayData && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex flex-col">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Départs</span>
+            <span className="mt-1 text-2xl font-bold text-[#01696e]">{todayData.departs}</span>
+            <span className="text-xs text-gray-400">aujourd'hui</span>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex flex-col">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Retours</span>
+            <span className="mt-1 text-2xl font-bold text-blue-600">{todayData.retours}</span>
+            <span className="text-xs text-gray-400">aujourd'hui</span>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex flex-col">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">En cours</span>
+            <span className="mt-1 text-2xl font-bold text-gray-900">{todayData.actives}</span>
+            <span className="text-xs text-gray-400">locations actives</span>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex flex-col">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Disponibles</span>
+            <span className="mt-1 text-2xl font-bold text-gray-900">{todayData.disponibles}</span>
+            <span className="text-xs text-gray-400">sur {todayData.vehicleCount} véhicules</span>
+          </div>
+          {todayData.accessoiresJour.length > 0 && (
+            <div className="col-span-2 sm:col-span-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="text-xs font-semibold text-orange-700">🪑 Sièges auto aujourd'hui :</span>
+              {todayData.accessoiresJour.map((a, i) => (
+                <span key={i} className="text-xs text-orange-700">{a.plaque} · {a.locataire} à {a.heure}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* D2b — Accueil + Copilote */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">{greeting}, {user?.name?.split(' ')[0]} 👋</h1>
         <p className="text-sm text-gray-500">{format(new Date(), "EEEE d MMMM yyyy", { locale: fr })}</p>
@@ -330,94 +395,59 @@ export default function DashboardPage(): React.JSX.Element {
         ) : null}
       </div>
 
-      {/* KPIs du mois — masqués pour les carkeepers */}
+      {/* D2c — KPIs jauges du mois */}
       {user?.role !== 'carkeeper' && (
         <div>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Ce mois-ci</h2>
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-            {/* Carte CA : encaissé (vert) + prévisionnel (bleu) + total */}
+            {stats ? (() => {
+              const totalCA = stats.totalEncaisse + stats.totalPrevisionnel;
+              const pctEnc = totalCA > 0 ? (stats.totalEncaisse / totalCA) * 100 : 0;
+              return (
+                <Link to="/rentals" className="block hover:opacity-90 transition">
+                  <GaugeCard
+                    label="Chiffre d'affaires"
+                    value={totalCA.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                    sub={`${stats.totalEncaisse.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })} enc. · ${stats.totalPrevisionnel.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })} prévu`}
+                    gaugePct={pctEnc}
+                    gaugeColor="#16a34a"
+                  />
+                </Link>
+              );
+            })() : (
+              <GaugeCard label="Chiffre d'affaires" value="—" link="/rentals" />
+            )}
+            {stats ? (
+              <GaugeCard
+                label="Taux d'occupation"
+                value={`${stats.occupancyRate} %`}
+                sub={`${stats.vehicleCount} véhicule${stats.vehicleCount !== 1 ? 's' : ''}`}
+                gaugePct={stats.occupancyRate}
+                gaugeColor={stats.occupancyRate >= 70 ? '#01696e' : stats.occupancyRate >= 50 ? '#f59e0b' : '#ef4444'}
+                link="/vehicles"
+              />
+            ) : (
+              <GaugeCard label="Taux d'occupation" value="—" link="/vehicles" />
+            )}
             {stats ? (
               <Link to="/rentals" className="block hover:opacity-90 transition">
-                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Chiffre d'affaires</p>
-                  <p className="mt-2 text-2xl font-bold text-green-700">
-                    {stats.totalPrevisionnel.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-                  </p>
-                  {stats.totalEncaisse > 0 && (
-                    <p className="text-xs font-medium text-gray-500 mt-0.5">
-                      {stats.totalEncaisse.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} encaissé
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1 border-t border-gray-100 pt-1">
-                    Total : {(stats.totalEncaisse + stats.totalPrevisionnel).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-                  </p>
-                </div>
+                <GaugeCard
+                  label="Locations"
+                  value={`${stats.countDone + stats.countUpcoming}`}
+                  sub={`${stats.countDone} réalisées · ${stats.countUpcoming} à venir`}
+                  gaugePct={stats.countDone > 0 ? (stats.countDone / (stats.countDone + stats.countUpcoming)) * 100 : 0}
+                  gaugeColor="#3b82f6"
+                />
               </Link>
             ) : (
-              <KpiCard label="Chiffre d'affaires" value="—" link="/rentals" />
+              <GaugeCard label="Locations" value="—" link="/rentals" />
             )}
-            <KpiCard
-              label="Taux d'occupation"
-              value={stats ? `${stats.occupancyRate} %` : '—'}
-              sub={stats ? `${stats.vehicleCount} véhicule${stats.vehicleCount !== 1 ? 's' : ''}` : undefined}
-              link="/vehicles"
-            />
-            {stats ? (
-              <Link to="/rentals" className="block hover:opacity-90 transition">
-                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm h-full">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Locations</p>
-                  <p className="mt-2 text-2xl font-bold text-gray-900">{stats.countDone} réalisées</p>
-                  {stats.countUpcoming > 0 && (
-                    <p className="text-2xl font-bold text-blue-600">+ {stats.countUpcoming} à venir</p>
-                  )}
-                </div>
-              </Link>
-            ) : (
-              <KpiCard label="Locations" value="—" sub="ce mois" link="/rentals" />
-            )}
-            <KpiCard
+            <GaugeCard
               label="Km parcourus"
               value={stats ? stats.totalKm.toLocaleString('fr-FR') : '—'}
               sub="ce mois"
             />
           </div>
-
-          {/* Encart N-1 */}
-          {n1Data && stats && (
-            <div className="mt-3 rounded-xl bg-gray-50 border border-gray-100 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide shrink-0">Même période {new Date().getFullYear() - 1}</span>
-              <span className="text-xs text-gray-600">
-                <span className="font-semibold text-gray-800">{n1Data.caNet.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}</span>
-                {' '}
-                {stats.totalEncaisse > 0 && n1Data.caNet > 0 ? (
-                  <span style={{ color: stats.totalEncaisse >= n1Data.caNet ? '#16a34a' : '#dc2626' }}>
-                    {stats.totalEncaisse >= n1Data.caNet ? '↑' : '↓'} {Math.round(Math.abs((stats.totalEncaisse - n1Data.caNet) / n1Data.caNet) * 100)}%
-                  </span>
-                ) : null}
-              </span>
-              <span className="text-xs text-gray-400">·</span>
-              <span className="text-xs text-gray-600">
-                <span className="font-semibold text-gray-800">{n1Data.tauxOccupation}% occupation</span>
-                {' '}
-                {stats.occupancyRate > 0 && n1Data.tauxOccupation > 0 ? (
-                  <span style={{ color: stats.occupancyRate >= n1Data.tauxOccupation ? '#16a34a' : '#dc2626' }}>
-                    {stats.occupancyRate >= n1Data.tauxOccupation ? '↑' : '↓'} {Math.abs(stats.occupancyRate - n1Data.tauxOccupation)}pt
-                  </span>
-                ) : null}
-              </span>
-              <span className="text-xs text-gray-400">·</span>
-              <span className="text-xs text-gray-600">
-                <span className="font-semibold text-gray-800">{n1Data.nbLocations} location{n1Data.nbLocations !== 1 ? 's' : ''}</span>
-                {' '}
-                {stats.rentalCount > 0 && n1Data.nbLocations > 0 ? (
-                  <span style={{ color: stats.rentalCount >= n1Data.nbLocations ? '#16a34a' : '#dc2626' }}>
-                    {stats.rentalCount >= n1Data.nbLocations ? '↑' : '↓'} {Math.abs(stats.rentalCount - n1Data.nbLocations)}
-                  </span>
-                ) : null}
-              </span>
-            </div>
-          )}
-
         </div>
       )}
 
@@ -437,7 +467,7 @@ export default function DashboardPage(): React.JSX.Element {
             <div className="rounded-xl border border-gray-200 bg-white p-5">
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <CartesianGrid stroke="#e5e7eb" />
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]} />
                   <Tooltip formatter={(v: number, name: string) => [`${v}%`, name]} />
@@ -452,7 +482,131 @@ export default function DashboardPage(): React.JSX.Element {
         );
       })()}
 
+      {/* D2d — Pipeline 28 jours */}
+      {user?.role !== 'carkeeper' && pipelineData && (
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Pipeline 28 jours</h2>
+            <span className="text-xs text-gray-400">{pipelineData.occupationProjetee}% occupation projetée</span>
+          </div>
+          <div className="grid gap-3 grid-cols-3 mb-3">
+            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">CA réservé</p>
+              <p className="mt-1 text-xl font-bold text-[#01696e]">{pipelineData.caReserve.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Locations</p>
+              <p className="mt-1 text-xl font-bold text-gray-900">{pipelineData.nbLocations}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Occupation</p>
+              <p className="mt-1 text-xl font-bold text-gray-900">{pipelineData.occupationProjetee}%</p>
+            </div>
+          </div>
+          {pipelineData.parSemaine.length > 0 && (
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <ResponsiveContainer width="100%" height={120}>
+                <BarChart data={pipelineData.parSemaine} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                  <CartesianGrid stroke="#e5e7eb" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v: number) => [v, 'locations']} />
+                  <Bar dataKey="rentalCount" name="Locations" radius={[3, 3, 0, 0]}>
+                    {pipelineData.parSemaine.map((_, i) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* D2f — Mini planning 7j */}
+      {user?.role !== 'carkeeper' && miniPlanVehicles.length > 0 && (
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Planning 7 jours</h2>
+            <Link to="/planning" className="text-xs text-[#01696e] hover:underline">Planning complet →</Link>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            {/* En-tête jours */}
+            <div className="flex border-b border-gray-100">
+              <div className="w-32 shrink-0 border-r border-gray-100 px-3 py-2 text-[10px] font-semibold text-gray-400">Véhicule</div>
+              {weekDays.map(d => (
+                <div key={d.toISOString()} className={`flex-1 border-r border-gray-100 last:border-r-0 py-2 text-center text-[10px] font-medium ${isSameDay(d, today) ? 'bg-[#01696e]/5 text-[#01696e] font-bold' : 'text-gray-400'}`}>
+                  <div>{format(d, 'EEE', { locale: fr })}</div>
+                  <div>{format(d, 'd')}</div>
+                </div>
+              ))}
+            </div>
+            {miniPlanVehicles.slice(0, 8).map(v => (
+              <div key={v.id} className="flex border-b border-gray-50 last:border-b-0">
+                <div className="w-32 shrink-0 border-r border-gray-100 px-3 py-2 text-xs text-gray-600 truncate">{v.name}</div>
+                {weekDays.map(d => {
+                  const hasRental = activeRentals.some(r =>
+                    r.vehicleId === v.id &&
+                    new Date(r.startAt) <= addDays(d, 1) &&
+                    new Date(r.endAt) >= d
+                  );
+                  return (
+                    <div key={d.toISOString()} className={`flex-1 border-r border-gray-50 last:border-r-0 py-2 flex items-center justify-center ${isSameDay(d, today) ? 'bg-[#01696e]/5' : ''}`}>
+                      {hasRental && (
+                        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#01696e' }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
+        {/* D2e — Sous-utilisation + alertes */}
+        <div className="space-y-6">
+          {user?.role !== 'carkeeper' && underutilizedData && underutilizedData.vehicles.filter(v => v.isUnderUtilized).length > 0 && (
+            <div>
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Sous-utilisation proactive
+              </h2>
+              <div className="space-y-2">
+                {underutilizedData.vehicles.filter(v => v.isUnderUtilized).map(v => (
+                  <div key={v.vehicleId} className="flex items-center gap-3 rounded-xl border-l-4 border-amber-400 bg-white px-4 py-3 shadow-sm">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{v.make} {v.model} <span className="font-mono text-xs text-gray-400">{v.plate}</span></p>
+                      <p className="text-xs text-gray-500">{v.next28Count} loc. prévues vs {v.past28Count} les 28j passés</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                      {v.ecartPct}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Alertes */}
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Alertes {alerts.length > 0 && <span className="ml-1 rounded-full bg-red-100 px-1.5 text-xs font-bold text-red-600">{alerts.length}</span>}
+              </h2>
+            </div>
+            {alerts.length === 0 ? (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-center text-sm font-medium text-green-700">
+                Tout est en ordre ✓
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {alerts.map(a => <AlertCard key={a.id} alert={a} />)}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Locations en cours */}
         <div>
           <div className="mb-3 flex items-center justify-between">
@@ -463,7 +617,7 @@ export default function DashboardPage(): React.JSX.Element {
             <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400 text-center">Aucune location active</div>
           ) : (
             <div className="space-y-2">
-              {activeRentals.map(r => {
+              {activeRentals.slice(0, 5).map(r => {
                 const daysLeft = differenceInDays(new Date(r.endAt), new Date());
                 return (
                   <Link key={r.id} to={`/rentals/${r.id}`}
@@ -480,24 +634,6 @@ export default function DashboardPage(): React.JSX.Element {
                   </Link>
                 );
               })}
-            </div>
-          )}
-        </div>
-
-        {/* Alertes */}
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-              Alertes {alerts.length > 0 && <span className="ml-1 rounded-full bg-red-100 px-1.5 text-xs font-bold text-red-600">{alerts.length}</span>}
-            </h2>
-          </div>
-          {alerts.length === 0 ? (
-            <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-center text-sm font-medium text-green-700">
-              Tout est en ordre ✓
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {alerts.map(a => <AlertCard key={a.id} alert={a} />)}
             </div>
           )}
         </div>

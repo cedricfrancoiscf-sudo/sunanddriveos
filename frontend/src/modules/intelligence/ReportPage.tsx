@@ -86,6 +86,7 @@ interface MonthlyReportData {
   alertes_operationnelles: Array<{ type: 'ct' | 'siege_auto' | 'message' | 'anomalie'; priorite: 'haute' | 'moyenne' | 'basse'; titre: string; detail: string }>;
   previsionnel_mois_suivant: { ca_estime: number; nb_reservations_confirmees: number; commentaire: string };
   recommandations: Array<{ priorite: 'haute' | 'moyenne' | 'basse'; titre: string; detail: string; echeance: string }>;
+  plan_action_mensuel?: Array<{ priorite: 'haute' | 'moyenne' | 'basse'; action: string; detail: string; echeance: string; impact_euros: number }>;
 }
 
 type StatusResponse = { status: 'generating' | 'error' | 'absent' };
@@ -170,7 +171,7 @@ function ComparaisonRow({ label, metric, unit = '€', isPoints = false }: {
 }
 
 function MonthlyReportView({ data, theme }: { data: MonthlyReportData; theme: { primaryColor: string } }) {
-  const { resume_mensuel, comparaison, analyse_vehicules, alertes_operationnelles, previsionnel_mois_suivant, recommandations } = data;
+  const { resume_mensuel, comparaison, analyse_vehicules, alertes_operationnelles, previsionnel_mois_suivant, recommandations, plan_action_mensuel } = data;
   const col = comparaison.ca;
 
   return (
@@ -330,6 +331,44 @@ function MonthlyReportView({ data, theme }: { data: MonthlyReportData; theme: { 
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* PLAN D'ACTION MENSUEL */}
+      {plan_action_mensuel && plan_action_mensuel.length > 0 && (
+        <section>
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Plan d'action du mois</h2>
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-gray-100 bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Action</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Priorité</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Échéance</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Impact</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {plan_action_mensuel.map((item, i) => (
+                  <tr key={i} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900">{item.action}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{item.detail}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_COLOR(item.priorite)}`}>
+                        {item.priorite}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{item.echeance}</td>
+                    <td className="px-4 py-3 text-right text-xs font-semibold text-green-700">
+                      {item.impact_euros > 0 ? `+${item.impact_euros.toLocaleString('fr-FR')} €` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       )}

@@ -187,10 +187,13 @@ export default function RenterDetailPage(): React.JSX.Element {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-bold text-gray-900">{data.driverName}</h1>
             {data.isVip && (
-              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">★ VIP</span>
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">⭐ VIP</span>
+            )}
+            {!data.isVip && (data.totalRentals >= 3 || data.totalRevenue >= 500) && (
+              <span className="rounded-full border border-amber-100 bg-amber-50/50 px-2.5 py-0.5 text-xs font-medium text-amber-500">Potentiellement VIP 🌟</span>
             )}
             {data.isBlacklisted && (
-              <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">⛔ Blacklisté</span>
+              <span className="rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700">🚫 Blacklisté</span>
             )}
           </div>
           <p className="text-xs text-gray-400 mt-1">ID Getaround : {data.driverGetaroundId}</p>

@@ -140,10 +140,11 @@ router.get('/copilot', async (req: Request, res: Response, next: NextFunction) =
     const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
 
     const master = getMasterClient();
-    const company = await master.company.findUnique({
-      where: { slug: tenantSlug },
-      select: { name: true },
-    });
+    const [company, settings] = await Promise.all([
+      master.company.findUnique({ where: { slug: tenantSlug }, select: { name: true } }),
+      db.companySettings.findFirst({ select: { messageUnansweredMinutes: true } }),
+    ]);
+    const unansweredMinutes = settings?.messageUnansweredMinutes ?? 30;
 
     const [stats, activeCount, todayDepartCount, todayReturnCount, taskAlerts, unansweredCount] = await Promise.all([
       getRentalStats(db, startOfMonth, endOfMonth),
@@ -152,7 +153,7 @@ router.get('/copilot', async (req: Request, res: Response, next: NextFunction) =
       db.rental.count({ where: { endAt: { gte: startOfDay, lt: endOfDay }, status: { in: ['active', 'completed'] } } }),
       getTaskAlerts(db),
       db.message.count({
-        where: { direction: 'inbound', createdAt: { lt: new Date(Date.now() - 12 * 3_600_000) }, rental: { status: { in: ['active', 'booked'] } } },
+        where: { direction: 'inbound', createdAt: { lt: new Date(Date.now() - unansweredMinutes * 60_000) }, rental: { status: { in: ['active', 'booked'] } } },
       }),
     ]);
 
@@ -282,11 +283,11 @@ router.get('/today', async (req: Request, res: Response, next: NextFunction) => 
     ]);
 
     const disponibles = Math.max(0, vehicleCount - actives);
-    const accessoiresJour = carSeatRequests.map(r => ({
+    const accessoiresJour = carSeatRequests.filter(r => r.rental !== null).map(r => ({
       type: 'car_seat',
-      locataire: r.rental.driverName,
-      plaque: r.rental.vehicle.licensePlate,
-      heure: new Date(r.rental.startAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }),
+      locataire: r.rental!.driverName,
+      plaque: r.rental!.vehicle.licensePlate,
+      heure: new Date(r.rental!.startAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }),
     }));
 
     res.json({ departs, retours, actives, disponibles, vehicleCount, accessoiresJour });

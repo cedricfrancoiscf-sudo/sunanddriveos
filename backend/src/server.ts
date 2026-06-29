@@ -1257,6 +1257,80 @@ cron.schedule('0 6 6 * *', () => {
   })();
 });
 
+// ─── Récapitulatif mensuel email (1er du mois, 8h) ───────────────────────────
+
+cron.schedule('0 8 1 * *', () => {
+  void (async () => {
+    try {
+      const master = getMasterClient();
+      const companies = await master.company.findMany({
+        where: { isActive: true },
+        select: { name: true, slug: true, tenantDbUrl: true },
+      });
+      for (const company of companies) {
+        try {
+          const db = getTenantClient(company.tenantDbUrl);
+          const now = new Date();
+          const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          const prevMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 1);
+          const monthLabel = prevMonthStart.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+          const [settings, rentals, vehicleCount] = await Promise.all([
+            db.companySettings.findFirst({ select: { alertEmails: true, senderName: true } }),
+            db.rental.findMany({
+              where: { status: { notIn: ['cancelled'] }, startAt: { gte: prevMonthStart, lt: prevMonthEnd } },
+              select: { ownerPayout: true, grossRevenue: true, vehicleId: true, kmDriven: true },
+            }),
+            db.vehicle.count({ where: { isActive: true } }),
+          ]);
+
+          const admins = await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { email: true } });
+          const alertEmails: string[] = Array.isArray(settings?.alertEmails) ? (settings.alertEmails as string[]) : [];
+          const recipients = [...new Set([...admins.map(a => a.email), ...alertEmails])];
+          if (recipients.length === 0) continue;
+
+          const caTotal = rentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
+          const kmTotal = rentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
+          const nbLocations = rentals.length;
+          const fmtEur = (v: number) => v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+
+          const html = `
+<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px">
+  <h2 style="color:#01696e;margin-bottom:4px">Récapitulatif ${monthLabel}</h2>
+  <p style="color:#6b7280;font-size:14px;margin-top:0">${settings?.senderName ?? company.name}</p>
+  <table style="width:100%;border-collapse:collapse;margin-top:20px">
+    <tr style="background:#f9fafb">
+      <td style="padding:12px;font-size:13px;color:#374151">CA net</td>
+      <td style="padding:12px;font-size:16px;font-weight:bold;color:#01696e;text-align:right">${fmtEur(caTotal)}</td>
+    </tr>
+    <tr>
+      <td style="padding:12px;font-size:13px;color:#374151">Locations</td>
+      <td style="padding:12px;font-size:16px;font-weight:bold;text-align:right">${nbLocations}</td>
+    </tr>
+    <tr style="background:#f9fafb">
+      <td style="padding:12px;font-size:13px;color:#374151">Km total</td>
+      <td style="padding:12px;font-size:16px;font-weight:bold;text-align:right">${kmTotal.toLocaleString('fr-FR')} km</td>
+    </tr>
+    <tr>
+      <td style="padding:12px;font-size:13px;color:#374151">Véhicules actifs</td>
+      <td style="padding:12px;font-size:16px;font-weight:bold;text-align:right">${vehicleCount}</td>
+    </tr>
+  </table>
+  <p style="margin-top:24px;font-size:13px;color:#6b7280">
+    Pour le détail complet, consultez le <a href="${process.env.APP_URL ?? 'https://appli.sunanddrive.com'}/intelligence/report" style="color:#01696e">Rapport CEO</a>.
+  </p>
+</div>`;
+
+          for (const to of recipients) {
+            await sendEmail({ to, subject: `Récapitulatif ${monthLabel} — ${settings?.senderName ?? company.name}`, html });
+          }
+          console.log(`[MonthlyEmail] ${company.slug} → ${recipients.length} destinataire(s)`);
+        } catch (err) { console.error(`[MonthlyEmail] Erreur tenant ${company.slug}:`, err); }
+      }
+    } catch (err) { console.error('[MonthlyEmail] Erreur cron:', err); }
+  })();
+});
+
 // ─── CT / Révision — alerte Telegram J-30 (quotidien 9h) ────────────────────
 
 async function runDocumentExpiryAlerts(): Promise<void> {

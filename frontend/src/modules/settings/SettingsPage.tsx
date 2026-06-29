@@ -2087,6 +2087,7 @@ export default function SettingsPage(): React.JSX.Element {
   const [saved, setSaved] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'getaround' | 'equipe' | 'notifications' | 'messagerie' | 'vehicules' | 'comptabilite' | 'apparence'>('getaround');
 
   useEffect(() => {
     if (settings) {
@@ -2152,57 +2153,96 @@ export default function SettingsPage(): React.JSX.Element {
     saveMutation.mutate(form);
   }
 
+  const TABS: { id: typeof activeTab; label: string }[] = [
+    { id: 'getaround',     label: 'Getaround' },
+    { id: 'equipe',        label: 'Équipe' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'messagerie',    label: 'Messagerie IA' },
+    { id: 'vehicules',     label: 'Véhicules & ROI' },
+    { id: 'comptabilite',  label: 'Comptabilité' },
+    { id: 'apparence',     label: 'Apparence' },
+  ];
+
+  const SaveBtn = () => (
+    <div className="flex items-center gap-3">
+      <button type="submit" disabled={saveMutation.isPending}
+        className="rounded-xl px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-60 transition"
+        style={{ backgroundColor: '#01696e' }}>
+        {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+      </button>
+      {saved && <p className="text-sm font-medium text-green-600">Paramètres sauvegardés ✓</p>}
+      {saveMutation.isError && <p className="text-sm text-red-600">Erreur lors de la sauvegarde</p>}
+    </div>
+  );
+
   return (
-    <div className="p-4 lg:p-6 max-w-2xl">
-      <div className="mb-6">
+    <div className="p-4 lg:p-6 max-w-3xl">
+      <div className="mb-4">
         <h1 className="text-xl font-bold text-gray-900">Paramètres</h1>
         <p className="text-sm text-gray-500">Configuration de votre espace de gestion</p>
       </div>
 
-      <div className="space-y-6">
+      {/* Onglets horizontaux */}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex gap-1 overflow-x-auto">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors
+                ${activeTab === tab.id
+                  ? 'border-[#01696e] text-[#01696e]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-        {/* 1. Comptes Getaround */}
-        <GetaroundSection />
+      {/* ── GETAROUND ── */}
+      {activeTab === 'getaround' && (
+        <div className="space-y-6">
+          <GetaroundSection />
+        </div>
+      )}
 
-        {/* 2. Informations société */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">Informations société</h2>
-          <p className="mt-0.5 text-xs text-gray-400">Raison sociale, adresse et contacts de votre entreprise</p>
-          <p className="mt-3 text-xs text-gray-400 italic">Ces informations sont gérées par le super admin depuis le tableau de bord SuperAdmin.</p>
-        </section>
+      {/* ── ÉQUIPE ── */}
+      {activeTab === 'equipe' && (
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-900">Informations société</h2>
+            <p className="mt-0.5 text-xs text-gray-400">Raison sociale, adresse et contacts de votre entreprise</p>
+            <p className="mt-3 text-xs text-gray-400 italic">Ces informations sont gérées par le super admin depuis le tableau de bord SuperAdmin.</p>
+          </section>
+          <UsersSection />
+        </div>
+      )}
 
-        {/* 3. Utilisateurs & rôles */}
-        <UsersSection />
-
-        {/* 4. Notifications */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
-          <h2 className="text-sm font-semibold text-gray-900">Notifications</h2>
-          <p className="mt-0.5 text-xs text-gray-400">Alertes automatiques et intégrations</p>
-
-          {/* TV Dashboard */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Tableau de bord TV</p>
-              <p className="text-xs text-gray-400 mt-0.5">Affichage plein écran pour moniteur ou TV de bureau</p>
+      {/* ── NOTIFICATIONS ── */}
+      {activeTab === 'notifications' && (
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Tableau de bord TV</p>
+                <p className="text-xs text-gray-400 mt-0.5">Affichage plein écran pour moniteur ou TV de bureau</p>
+              </div>
+              <a href="/tv" target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                Ouvrir le TV
+              </a>
             </div>
-            <a href="/tv" target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-              Ouvrir le TV
-            </a>
-          </div>
-
-          {/* Telegram */}
-          <TelegramSection />
-
-          {/* Alertes email */}
+          </section>
           <AlertEmailsSection />
-
-          {/* Slack */}
+          <TelegramSection />
           <SlackSection />
-        </section>
+        </div>
+      )}
 
-        {/* 5. Messagerie automatique */}
+      {/* ── MESSAGERIE IA ── */}
+      {activeTab === 'messagerie' && (
         <form onSubmit={handleSubmit} className="space-y-6">
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
             <div>
@@ -2241,47 +2281,51 @@ export default function SettingsPage(): React.JSX.Element {
             <div>
               <label className="mb-1 block text-xs font-semibold text-gray-700">Prénom de l'assistant IA</label>
               <p className="mb-2 text-[11px] text-gray-400">Ce prénom sera utilisé dans les signatures de messages générés par l'IA</p>
-              <input
-                type="text"
-                value={form.aiName}
+              <input type="text" value={form.aiName}
                 onChange={e => setForm(f => ({ ...f, aiName: e.target.value }))}
-                maxLength={20}
-                pattern="[a-zA-ZÀ-ÿ]+"
-                placeholder="Alex"
-                className="w-40 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
-              />
+                maxLength={20} pattern="[a-zA-ZÀ-ÿ]+" placeholder="Alex"
+                className="w-40 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20" />
             </div>
 
             <div>
               <label className="mb-1 block text-xs font-semibold text-gray-700">Délai avant alerte message sans réponse</label>
               <p className="mb-2 text-[11px] text-gray-400">Délai en minutes après lequel un message inbound sans réponse est signalé (défaut : 30 min)</p>
               <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={5}
-                  max={240}
-                  step={5}
+                <input type="number" min={5} max={240} step={5}
                   value={form.messageUnansweredMinutes ?? ''}
                   onChange={e => setForm(f => ({ ...f, messageUnansweredMinutes: e.target.value ? parseInt(e.target.value, 10) : null }))}
                   placeholder="30"
-                  className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
-                />
+                  className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20" />
                 <span className="text-xs text-gray-400">minutes (défaut : 30 min)</span>
               </div>
             </div>
           </section>
 
-          {/* 7. Export & comptabilité */}
+          <ICalSection />
+          <SaveBtn />
+        </form>
+      )}
+
+      {/* ── VÉHICULES & ROI ── */}
+      {activeTab === 'vehicules' && (
+        <div className="space-y-6">
+          <VehicleSettingsSection />
+          <ReventeDecoteSection />
+          <IntelligenceSettingsSection />
+        </div>
+      )}
+
+      {/* ── COMPTABILITÉ ── */}
+      {activeTab === 'comptabilite' && (
+        <div className="space-y-6">
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-gray-900">Export & comptabilité</h2>
                 <p className="mt-0.5 text-xs text-gray-400">Exports CSV, rapports mensuels, relevés propriétaires</p>
               </div>
-              <Link
-                to="/export"
-                className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-              >
+              <Link to="/export"
+                className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
                 Aller aux exports
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -2289,29 +2333,29 @@ export default function SettingsPage(): React.JSX.Element {
               </Link>
             </div>
           </section>
+          <ExtraChargesSection />
+          <ComptabiliteSection />
+          <BillingSection />
+        </div>
+      )}
 
-          {/* Intégrations iCal */}
-          <ICalSection />
-
-          {/* 8. Apparence */}
+      {/* ── APPARENCE ── */}
+      {activeTab === 'apparence' && (
+        <form onSubmit={handleSubmit} className="space-y-6">
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
             <h2 className="text-sm font-semibold text-gray-900">Apparence</h2>
 
-            {/* Sélecteur de police */}
             <div>
               <label className="mb-1.5 block text-xs font-medium text-gray-600">Police</label>
-              <select
-                value={form.fontFamily}
+              <select value={form.fontFamily}
                 onChange={e => {
                   const f = e.target.value;
                   setForm(prev => ({ ...prev, fontFamily: f }));
-                  // Prévisualisation en temps réel
                   const applyThemeFn = (window as unknown as Record<string, unknown>).applyTheme as ((s: { fontFamily: string }) => void) | undefined;
                   applyThemeFn?.({ fontFamily: f });
                 }}
                 className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]"
-                style={{ fontFamily: form.fontFamily }}
-              >
+                style={{ fontFamily: form.fontFamily }}>
                 {GOOGLE_FONTS.map(f => (
                   <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
                 ))}
@@ -2340,25 +2384,16 @@ export default function SettingsPage(): React.JSX.Element {
               ))}
             </div>
 
-            {/* Upload logo */}
             <div>
               <label className="mb-1.5 block text-xs font-medium text-gray-600">Logo</label>
               <div className="flex items-center gap-3">
                 {logoPreview && (
-                  <img
-                    src={logoPreview}
-                    alt="Logo"
-                    className="h-20 rounded-lg border border-gray-200 object-contain p-1"
-                    style={{ maxHeight: 80 }}
-                  />
+                  <img src={logoPreview} alt="Logo"
+                    className="h-20 rounded-lg border border-gray-200 object-contain p-1" style={{ maxHeight: 80 }} />
                 )}
                 <div className="flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => logoInputRef.current?.click()}
-                    disabled={logoUploading}
-                    className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  >
+                  <button type="button" onClick={() => logoInputRef.current?.click()} disabled={logoUploading}
+                    className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                     </svg>
@@ -2366,51 +2401,16 @@ export default function SettingsPage(): React.JSX.Element {
                   </button>
                   <p className="text-[11px] text-gray-400">PNG, JPG ou SVG — max 5 Mo</p>
                 </div>
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/svg+xml"
-                  className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) void handleLogoUpload(f); }}
-                />
+                <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/svg+xml" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) void handleLogoUpload(f); }} />
               </div>
             </div>
           </section>
 
-          {/* Demandes & remontées */}
           <FeedbackSection />
-
-          {/* Actions */}
-          <div className="flex items-center gap-3">
-            <button type="submit" disabled={saveMutation.isPending}
-              className="rounded-xl px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-60 transition"
-              style={{ backgroundColor: '#01696e' }}>
-              {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
-            </button>
-            {saved && <p className="text-sm font-medium text-green-600">Paramètres sauvegardés ✓</p>}
-            {saveMutation.isError && <p className="text-sm text-red-600">Erreur lors de la sauvegarde</p>}
-          </div>
+          <SaveBtn />
         </form>
-
-        {/* Abonnement */}
-        <BillingSection />
-
-        {/* Frais supplémentaires */}
-        <ExtraChargesSection />
-
-        {/* Véhicule */}
-        <VehicleSettingsSection />
-
-        {/* Revente & Décote */}
-        <ReventeDecoteSection />
-
-        {/* Intelligence */}
-        <IntelligenceSettingsSection />
-
-        {/* Comptabilité */}
-        <ComptabiliteSection />
-
-      </div>
+      )}
     </div>
   );
 }

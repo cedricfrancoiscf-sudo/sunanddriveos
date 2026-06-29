@@ -601,6 +601,9 @@ Retourne exactement ce JSON (sans markdown) :
   },
   "recommandations": [
     { "priorite": "haute|moyenne|basse", "titre": "titre court", "detail": "explication actionnable", "echeance": "délai concret" }
+  ],
+  "plan_action_mensuel": [
+    { "priorite": "haute|moyenne|basse", "action": "titre court et actionnable", "detail": "description concrète de ce qu'il faut faire", "echeance": "délai réaliste (ex: cette semaine, fin de mois)", "impact_euros": <estimation numérique du gain ou économie attendu, 0 si inconnu> }
   ]
 }`,
       }],
@@ -656,6 +659,7 @@ Retourne exactement ce JSON (sans markdown) :
       alertes_operationnelles: aiData.alertes_operationnelles,
       previsionnel_mois_suivant: aiData.previsionnel_mois_suivant,
       recommandations: aiData.recommandations,
+      plan_action_mensuel: Array.isArray(aiData.plan_action_mensuel) ? (aiData.plan_action_mensuel as unknown[]).slice(0, 3) : [],
     };
 
     await db.ceoReport.update({

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { api } from '../../utils/api';
+import { useAuth } from '../../hooks/useAuth';
 
 interface RentabilityEntry {
   vehicleId: string;
@@ -657,6 +658,8 @@ function ObjectifsTab({ entries }: { entries: RentabilityEntry[] }): React.JSX.E
 }
 
 export default function RentabilityPage(): React.JSX.Element {
+  const { user } = useAuth();
+  const isEnterprise = (user as unknown as { plan?: string })?.plan === 'enterprise';
   const [tab, setTab] = useState<MainTab>('ce_mois');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('caNet');
@@ -883,7 +886,22 @@ export default function RentabilityPage(): React.JSX.Element {
       )}
 
       {tab === 'objectifs' && <ObjectifsTab entries={rawEntries} />}
-      {tab === 'revente' && <ReventeTab roiFleetData={roiFleetData} roiFleetLoading={roiFleetLoading} />}
+      {tab === 'revente' && (
+        isEnterprise ? (
+          <ReventeTab roiFleetData={roiFleetData} roiFleetLoading={roiFleetLoading} />
+        ) : (
+          <div className="relative">
+            <div className="pointer-events-none select-none opacity-30">
+              <ReventeTab roiFleetData={undefined} roiFleetLoading={false} />
+            </div>
+            <div className="absolute inset-0 flex flex-col items-center justify-center rounded-2xl bg-white/80 backdrop-blur-sm">
+              <span className="text-3xl mb-3">🔒</span>
+              <p className="text-sm font-semibold text-gray-900">Disponible sur le plan Enterprise</p>
+              <p className="mt-1 text-xs text-gray-500 text-center max-w-xs">Analyse de revente, signal ROI et valeur marchande de toute la flotte.</p>
+            </div>
+          </div>
+        )
+      )}
 
       {/* Outils avancés (Sinistres + Simulateur) */}
       <div className="rounded-2xl border border-gray-100 bg-gray-50/50">

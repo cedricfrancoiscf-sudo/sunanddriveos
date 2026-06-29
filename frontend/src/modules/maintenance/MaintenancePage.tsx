@@ -168,8 +168,16 @@ export default function MaintenancePage(): React.JSX.Element {
       <section>
         <h2 className="mb-3 text-base font-semibold text-gray-900">Révision</h2>
         {isLoading ? (
-          <div className="flex justify-center py-8">
-            <div className="h-7 w-7 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} />
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="animate-pulse rounded-xl border border-gray-200 bg-white p-4 shadow-sm flex gap-4">
+                <div className="h-10 w-10 rounded-lg bg-gray-100 shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-2/3 rounded bg-gray-100" />
+                  <div className="h-3 w-1/3 rounded bg-gray-100" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : revisionTasks.length === 0 ? (
           <div className="rounded-xl border border-dashed border-gray-200 py-10 text-center">

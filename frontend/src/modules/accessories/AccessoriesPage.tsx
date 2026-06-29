@@ -218,8 +218,14 @@ function AccessoriesTab(): React.JSX.Element {
       )}
 
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="h-4 w-2/3 rounded bg-gray-100 mb-3" />
+              <div className="h-3 w-1/2 rounded bg-gray-100 mb-2" />
+              <div className="h-3 w-1/3 rounded bg-gray-100" />
+            </div>
+          ))}
         </div>
       ) : accessories.length === 0 ? (
         <div className="py-16 text-center text-gray-400">Aucun accessoire enregistré</div>

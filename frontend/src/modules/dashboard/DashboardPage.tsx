@@ -33,6 +33,14 @@ function formatWeekLabel(week: string): string {
 }
 void formatWeekLabel; // used in chartData below via occupancyData
 
+function cleanText(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^#{1,4}\s+/gm, '')
+    .replace(/`([^`]+)`/g, '$1');
+}
+
 function GaugeCard({ label, value, sub, gaugePct, gaugeColor, link }: {
   label: string; value: string; sub?: string; gaugePct?: number; gaugeColor?: string; link?: string;
 }): React.JSX.Element {
@@ -390,7 +398,7 @@ export default function DashboardPage(): React.JSX.Element {
           </div>
         ) : copilotData?.text ? (
           <div className="mt-3 rounded-xl border-l-4 border-[#01696e] bg-[#f0fdf4] px-4 py-3">
-            <p className="text-sm text-gray-700">✨ {copilotData.text}</p>
+            <p className="text-sm text-gray-700">✨ {cleanText(copilotData.text)}</p>
           </div>
         ) : null}
       </div>

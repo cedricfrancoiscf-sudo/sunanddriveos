@@ -211,11 +211,11 @@ export default function RentersPage(): React.JSX.Element {
                     </td>
                     <td className="px-5 py-3 text-right">
                       {r.isBlacklisted ? (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">Blacklisté</span>
+                        <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">🚫 Blacklisté</span>
                       ) : r.isVip ? (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">VIP</span>
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">⭐ VIP</span>
                       ) : (
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-500">Normal</span>
+                        <span className="text-xs text-gray-400">Normal</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-gray-500">{fmtDate(r.lastRentalAt)}</td>

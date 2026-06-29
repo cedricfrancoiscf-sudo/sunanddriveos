@@ -193,6 +193,9 @@ function VehicleTableRow({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
       <td className="px-4 py-3 text-sm text-gray-600">{vehicle.year}</td>
       <td className="px-4 py-3 text-sm text-gray-600">{vehicle.currentMileage.toLocaleString('fr-FR')} km</td>
       <td className="px-4 py-3">
+        <HealthBadge score={vehicle.healthScore} />
+      </td>
+      <td className="px-4 py-3">
         <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${vehicle.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
           {statusLabel}
         </span>
@@ -342,8 +345,14 @@ export default function VehicleListPage(): React.JSX.Element {
 
       {/* États */}
       {isLoading && (
-        <div className="flex justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="h-4 w-3/4 rounded bg-gray-100 mb-3" />
+              <div className="h-3 w-1/2 rounded bg-gray-100 mb-2" />
+              <div className="h-3 w-1/3 rounded bg-gray-100" />
+            </div>
+          ))}
         </div>
       )}
 
@@ -418,6 +427,7 @@ export default function VehicleListPage(): React.JSX.Element {
                         <SortVehicleTh k="make" label="Marque / Modèle" />
                         <SortVehicleTh k="year" label="Année" />
                         <SortVehicleTh k="currentMileage" label="Kilométrage" />
+                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Santé</th>
                         <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Statut</th>
                         <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Actions</th>
                       </tr>

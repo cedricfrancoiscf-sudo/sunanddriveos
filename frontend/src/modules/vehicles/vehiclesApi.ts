@@ -21,6 +21,8 @@ export interface Vehicle {
   loanDeposit: number | null;
   marketValue: number | null;
   marketValueDate: string | null;
+  marketValueJ0: number | null;
+  depreciationRate: number | null;
   parkingZone: string | null;
   deliveryPointName: string | null;
   deliveryPostalCode: string | null;

@@ -77,6 +77,8 @@ const updateSchema = createSchema.partial().extend({
   loanDeposit: z.number().min(0).nullable().optional(),
   marketValue: z.number().min(0).nullable().optional(),
   marketValueDate: z.string().datetime().nullable().optional(),
+  marketValueJ0: z.number().min(0).nullable().optional(),
+  depreciationRate: z.number().min(0).nullable().optional(),
 });
 
 // GET /api/v1/vehicles
@@ -156,6 +158,7 @@ async function maybeCreateValuationSnapshot(
   vehicleId: string,
   marketValue: number,
   marketValueDate?: string | null,
+  source = 'manual',
 ): Promise<void> {
   const evalAt = marketValueDate ? new Date(marketValueDate) : new Date();
   const startOfDay = new Date(evalAt);
@@ -167,7 +170,7 @@ async function maybeCreateValuationSnapshot(
   });
   if (!existing) {
     await db.vehicleValuation.create({
-      data: { vehicleId, estimatedValue: marketValue, source: 'manual', evaluatedAt: evalAt },
+      data: { vehicleId, estimatedValue: marketValue, source, evaluatedAt: evalAt },
     });
   }
 }
@@ -184,6 +187,9 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     if (body.data.marketValue != null) {
       await maybeCreateValuationSnapshot(db, req.params.id as string, body.data.marketValue, body.data.marketValueDate);
     }
+    if (body.data.marketValueJ0 != null) {
+      await maybeCreateValuationSnapshot(db, req.params.id as string, body.data.marketValueJ0, null, 'manual_j0');
+    }
     res.json({ vehicle });
   } catch (err: unknown) { next(err); }
 });
@@ -197,6 +203,9 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
     const vehicle = await updateVehicle(db, (req.params.id as string), body.data);
     if (body.data.marketValue != null) {
       await maybeCreateValuationSnapshot(db, req.params.id as string, body.data.marketValue, body.data.marketValueDate);
+    }
+    if (body.data.marketValueJ0 != null) {
+      await maybeCreateValuationSnapshot(db, req.params.id as string, body.data.marketValueJ0, null, 'manual_j0');
     }
     res.json({ vehicle });
   } catch (err: unknown) { next(err); }

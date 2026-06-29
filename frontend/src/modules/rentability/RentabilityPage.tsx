@@ -230,6 +230,10 @@ interface RoiFleetEntry {
     cocActuel: number | null;
     cashflowMensuelNet: number;
     mensualitePret: number;
+    moisVersDeclin: number;
+    moisVersStop: number;
+    kmActuel: number;
+    kmParMois: number;
   } | null;
 }
 
@@ -255,7 +259,7 @@ function ReventeTab(): React.JSX.Element {
     staleTime: 10 * 60_000,
   });
 
-  type RoiSortKey = 'licensePlate' | 'plusValueNette' | 'roiActuel' | 'triActuel' | 'cocActuel' | 'cashflowMensuelNet' | 'moisRestants';
+  type RoiSortKey = 'licensePlate' | 'plusValueNette' | 'roiActuel' | 'triActuel' | 'cocActuel' | 'cashflowMensuelNet' | 'moisVersDeclin';
   const [roiSortKey, setRoiSortKey] = React.useState<RoiSortKey>('roiActuel');
   const [roiSortDir, setRoiSortDir] = React.useState<'asc' | 'desc'>('desc');
 
@@ -288,7 +292,7 @@ function ReventeTab(): React.JSX.Element {
     else if (roiSortKey === 'triActuel') cmp = (aa.triActuel ?? -Infinity) - (ba.triActuel ?? -Infinity);
     else if (roiSortKey === 'cocActuel') cmp = (aa.cocActuel ?? -Infinity) - (ba.cocActuel ?? -Infinity);
     else if (roiSortKey === 'cashflowMensuelNet') cmp = aa.cashflowMensuelNet - ba.cashflowMensuelNet;
-    else if (roiSortKey === 'moisRestants') cmp = aa.moisRestants - ba.moisRestants;
+    else if (roiSortKey === 'moisVersDeclin') cmp = (aa.moisVersDeclin ?? 0) - (ba.moisVersDeclin ?? 0);
     return roiSortDir === 'desc' ? -cmp : cmp;
   });
 
@@ -318,13 +322,13 @@ function ReventeTab(): React.JSX.Element {
               <RoiSortTh k="cashflowMensuelNet" label="Cashflow net" />
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Fenêtre optimale</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Signal</th>
-              <RoiSortTh k="moisRestants" label="Mois avant optimal" />
+              <RoiSortTh k="moisVersDeclin" label="Avant déclin" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.map(row => {
               const a = row.analysis;
-              const moisAvantOptimal = a ? a.moisRestants : null;
+              const moisAvantDeclin = a ? (a.moisVersDeclin ?? a.moisRestants) : null;
 
               if (!row.hasData || !a) {
                 return (
@@ -377,7 +381,11 @@ function ReventeTab(): React.JSX.Element {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {moisAvantOptimal === 0 ? <span className="font-semibold text-red-600">Maintenant</span> : `${moisAvantOptimal} mois`}
+                    {moisAvantDeclin === 0
+                      ? <span className="font-semibold text-red-600">Déclin imminent</span>
+                      : moisAvantDeclin !== null
+                        ? <span>{moisAvantDeclin} mois<br/><span className="text-[10px] text-gray-400">{a && a.kmActuel > 0 ? `${(a.kmActuel).toLocaleString('fr-FR')} km` : ''}</span></span>
+                        : '—'}
                   </td>
                 </tr>
               );

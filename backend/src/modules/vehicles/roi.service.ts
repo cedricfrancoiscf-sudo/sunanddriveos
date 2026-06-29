@@ -43,6 +43,14 @@ export interface RoiAnalysis {
   cocActuel: number | null;
   cocMax: number | null;
   cashflowMensuelNet: number;
+  // Km / pente dépréciation
+  kmParMois: number;
+  kmActuel: number;
+  moisVersDeclin: number;
+  moisVersStop: number;
+  valeurDepart: number;
+  penteParMois: number;
+  valeurResiduelle: number;
 }
 
 type Db = ReturnType<typeof import('../../prisma/client').getTenantClient>;
@@ -59,6 +67,9 @@ interface RoiSettings {
   roiCaMoyenMois: number;
   roiHorizonMonths: number;
   roiCoeffSaison: number[] | null;
+  kmDeclinCA: number;
+  kmStopGA: number;
+  defaultDepreciationRate: number;
 }
 
 const DEFAULT_SETTINGS: RoiSettings = {
@@ -73,15 +84,10 @@ const DEFAULT_SETTINGS: RoiSettings = {
   roiCaMoyenMois: 5,
   roiHorizonMonths: 48,
   roiCoeffSaison: null,
+  kmDeclinCA: 160000,
+  kmStopGA: 200000,
+  defaultDepreciationRate: 100,
 };
-
-function getAnnualDepreciationRate(ageYears: number, s: RoiSettings): number {
-  if (ageYears < 1) return s.depreciationRateYear1;
-  if (ageYears < 2) return s.depreciationRateYear2;
-  if (ageYears < 3) return s.depreciationRateYear3;
-  if (ageYears <= 6) return s.depreciationRateYears4to6;
-  return s.depreciationRateAfter6;
-}
 
 function loanRemainingBalance(
   principal: number,
@@ -115,7 +121,8 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
         loanDeposit: true,
         marketValue: true,
         currentMileage: true,
-        year: true,
+        marketValueJ0: true,
+        depreciationRate: true,
       },
     }),
     db.companySettings.findFirst({
@@ -131,6 +138,9 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
         roiCaMoyenMois: true,
         roiHorizonMonths: true,
         roiCoeffSaison: true,
+        kmDeclinCA: true,
+        kmStopGA: true,
+        defaultDepreciationRate: true,
       },
     }),
     db.vehicleCost.findMany({
@@ -169,6 +179,9 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
         roiCaMoyenMois: settings.roiCaMoyenMois ?? 5,
         roiHorizonMonths: settings.roiHorizonMonths ?? 48,
         roiCoeffSaison: Array.isArray(settings.roiCoeffSaison) ? (settings.roiCoeffSaison as number[]) : null,
+        kmDeclinCA: settings.kmDeclinCA ?? 160000,
+        kmStopGA: settings.kmStopGA ?? 200000,
+        defaultDepreciationRate: settings.defaultDepreciationRate ?? 100,
       }
     : DEFAULT_SETTINGS;
 
@@ -219,9 +232,6 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     0,
   );
   const caMensuelMoyen = totalCAFenetre / nbMoisEffectifs;
-
-  // Âge réel depuis l'année de fabrication à la date d'achat
-  const realAgeYears = vehicle.year ? Math.max(0, purchaseDate.getFullYear() - vehicle.year) : 0;
 
   const loanStartDate = vehicle.loanStartDate ? new Date(vehicle.loanStartDate) : purchaseDate;
   const loanElapsedBase = Math.max(
@@ -301,6 +311,65 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     coutsReelParMois[m] = c;
   }
 
+  // ── Modèle km + pente linéaire ────────────────────────────────────────────────
+
+  const kmActuel = vehicle.currentMileage ?? 0;
+  const moisReels = Math.max(1, (now.getTime() - purchaseDate.getTime()) / (30.44 * 86_400_000));
+  const kmParMois = kmActuel > 0 ? Math.round(kmActuel / moisReels) : 3000;
+
+  const moisVersDeclin = kmActuel < s.kmDeclinCA
+    ? Math.ceil((s.kmDeclinCA - kmActuel) / Math.max(1, kmParMois)) : 0;
+  const moisVersStop = kmActuel < s.kmStopGA
+    ? Math.ceil((s.kmStopGA - kmActuel) / Math.max(1, kmParMois)) : 0;
+
+  // Valeur de départ (J0) et valeur résiduelle
+  const valeurDepart = vehicle.marketValueJ0 ?? Math.round((vehicle.purchasePrice ?? 0) * 0.70);
+  const valeurResiduelle = Math.round((vehicle.purchasePrice ?? 0) * 0.15);
+
+  // Calibration pente €/mois depuis les snapshots ou paramètre manuel
+  let penteParMois: number;
+  if (vehicle.depreciationRate != null && vehicle.depreciationRate > 0) {
+    penteParMois = vehicle.depreciationRate;
+  } else if (valuations.length >= 2) {
+    const sorted = [...valuations].sort((a, b) => new Date(a.evaluatedAt).getTime() - new Date(b.evaluatedAt).getTime());
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    const moisEntre = Math.max(1, (new Date(last.evaluatedAt).getTime() - new Date(first.evaluatedAt).getTime()) / (30.44 * 86_400_000));
+    penteParMois = Math.max(0, (first.estimatedValue - last.estimatedValue) / moisEntre);
+  } else if (valuations.length === 1) {
+    const snap = valuations[0];
+    const moisDepuisSnap = Math.max(1, (now.getTime() - new Date(snap.evaluatedAt).getTime()) / (30.44 * 86_400_000));
+    penteParMois = Math.max(0, (valeurDepart - snap.estimatedValue) / moisDepuisSnap);
+  } else {
+    penteParMois = moisVersStop > 0
+      ? Math.max(0, Math.round((valeurDepart - valeurResiduelle) / moisVersStop))
+      : s.defaultDepreciationRate;
+  }
+
+  // Valeur marchande linéaire depuis le dernier snapshot connu ≤ date du point
+  function valeurMarchandeAuMois(m: number): number {
+    const mDate = new Date(purchaseDate.getTime() + m * 30.44 * 86_400_000);
+    const snapAvant = valuations
+      .filter((v) => new Date(v.evaluatedAt) <= mDate)
+      .sort((a, b) => new Date(b.evaluatedAt).getTime() - new Date(a.evaluatedAt).getTime())[0];
+    if (snapAvant) {
+      const moisDepuisSnap = (mDate.getTime() - new Date(snapAvant.evaluatedAt).getTime()) / (30.44 * 86_400_000);
+      return Math.max(0, Math.round(snapAvant.estimatedValue - penteParMois * moisDepuisSnap));
+    }
+    return Math.max(0, Math.round(valeurDepart - penteParMois * m));
+  }
+
+  // Facteur km pour un mois futur (m > moisActuel)
+  function facteurKmAuMoisFutur(moisDansLeFutur: number): number {
+    const kmAuMoisM = kmActuel + kmParMois * moisDansLeFutur;
+    const range = s.kmStopGA - s.kmDeclinCA;
+    if (kmAuMoisM < s.kmDeclinCA) return 1.0;
+    if (range <= 0 || kmAuMoisM >= s.kmStopGA) return 0;
+    return (s.kmStopGA - kmAuMoisM) / range;
+  }
+
+  // ── TRI ───────────────────────────────────────────────────────────────────────
+
   function calculerTRI(flux: number[]): number | null {
     if (flux.length < 2) return null;
     if (!flux.some((f) => f < 0) || !flux.some((f) => f > 0)) return null;
@@ -321,7 +390,6 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
   // 2C : TRI calculable uniquement si apport personnel renseigné
   const triCalculable = loanDeposit > 0;
 
-  let currentValue = vehicle.purchasePrice!;
   let cashflowCumule = 0;
   let maxRoi = -Infinity;
   let moisOptimal = 0;
@@ -335,19 +403,8 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     const mDate = new Date(purchaseDate);
     mDate.setMonth(mDate.getMonth() + m);
 
-    // Dernier snapshot connu à la date du point (propagé vers l'avenir jusqu'au prochain snapshot)
-    const snapshot = valuations
-      .filter((v) => new Date(v.evaluatedAt) <= mDate)
-      .sort((a, b) => new Date(b.evaluatedAt).getTime() - new Date(a.evaluatedAt).getTime())[0];
-    if (m === 0) {
-      currentValue = snapshot?.estimatedValue ?? vehicle.purchasePrice!;
-    } else if (snapshot) {
-      currentValue = snapshot.estimatedValue;
-    } else {
-      const ageYears = realAgeYears + m / 12;
-      const rate = getAnnualDepreciationRate(ageYears, s);
-      currentValue = currentValue * (1 - rate / 12);
-    }
+    const currentValue = valeurMarchandeAuMois(m);
+    const hasSnapshotAtM = valuations.some((v) => new Date(v.evaluatedAt) <= mDate);
 
     const loanElapsed = loanElapsedBase + m;
     const capitalRestant =
@@ -359,7 +416,12 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
 
     const estHistorique = m <= moisActuel;
     const moisCal = (purchaseDate.getMonth() + m) % 12;
-    const caM = estHistorique ? caReelParMois[m] : caParMoisCalendaire[moisCal];
+
+    // CA : réel pour l'historique, projeté × facteur km pour le futur
+    const moisDansLeFutur = m - moisActuel;
+    const caM = estHistorique
+      ? caReelParMois[m]
+      : Math.round(caParMoisCalendaire[moisCal] * facteurKmAuMoisFutur(moisDansLeFutur));
     const coutsM = estHistorique ? coutsReelParMois[m] : coutsMensuelsTotaux;
 
     const cashflow = caM - coutsM - mensualite;
@@ -372,7 +434,11 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     let coutsCumules = 0;
     for (let i = 0; i <= m; i++) {
       const ci = (purchaseDate.getMonth() + i) % 12;
-      caCumule += i <= moisActuel ? caReelParMois[i] : caParMoisCalendaire[ci];
+      if (i <= moisActuel) {
+        caCumule += caReelParMois[i];
+      } else {
+        caCumule += Math.round(caParMoisCalendaire[ci] * facteurKmAuMoisFutur(i - moisActuel));
+      }
       coutsCumules += i <= moisActuel ? coutsReelParMois[i] : coutsMensuelsTotaux;
     }
 
@@ -404,7 +470,7 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
       dateLabel,
       estHistorique,
       estAujourdhui: m === moisActuel,
-      hasSnapshot: Boolean(snapshot),
+      hasSnapshot: hasSnapshotAtM,
       cashflow: Math.round(cashflow),
       cashflowCumule: Math.round(cashflowCumule),
       mensualite: Math.round(mensualite),
@@ -419,31 +485,26 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     if (cocReturn !== null && (maxCoc === null || cocReturn > maxCoc)) maxCoc = cocReturn;
   }
 
-  const moisOptimalFinal = maxTri !== null ? moisOptimalTri : moisOptimal;
-  const moisRestants = Math.max(0, moisOptimalFinal - moisActuel);
+  // ── Signal basé sur km ────────────────────────────────────────────────────────
 
-  const loanElapsedNow = loanElapsedBase + moisActuel;
-  const moisFinPret = vehicle.loanDurationMonths
-    ? Math.max(0, vehicle.loanDurationMonths - loanElapsedNow)
-    : 0;
-  const pretEncoreEnCours = moisFinPret > 0 && moisFinPret <= TOTAL_MONTHS;
-
-  // 2B : logique signal corrigée (moisRestants=0 + prêt en cours → bientot)
   let signal: RoiAnalysis['signal'];
-  if (moisRestants === 0 && !pretEncoreEnCours) {
+  if (kmActuel >= s.kmStopGA) {
     signal = 'vendre_maintenant';
-  } else if (moisRestants === 0 && pretEncoreEnCours) {
+  } else if (kmActuel >= s.kmDeclinCA || moisVersDeclin <= 3) {
+    signal = 'vendre_maintenant';
+  } else if (moisVersDeclin <= s.roiAlertMonthsBefore) {
     signal = 'bientot';
-  } else if (moisRestants <= s.roiAlertMonthsBefore) {
-    signal = 'bientot';
-  } else if (moisRestants <= 24) {
+  } else if (moisVersDeclin <= 24) {
     signal = 'optimal';
   } else {
     signal = 'attendre';
   }
 
-  const dateOpt = new Date(purchaseDate);
-  dateOpt.setMonth(dateOpt.getMonth() + moisOptimalFinal);
+  const moisRestants = moisVersDeclin;
+
+  // dateOptimale = maintenant + moisVersDeclin
+  const dateOpt = new Date(now);
+  dateOpt.setMonth(dateOpt.getMonth() + moisVersDeclin);
   const dateStr = `${dateOpt.getFullYear()}-${String(dateOpt.getMonth() + 1).padStart(2, '0')}`;
 
   const actuPoint = courbe[moisActuel];
@@ -451,7 +512,7 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
   return {
     roiActuel: actuPoint?.roi ?? courbe[0].roi,
     roiMax: Math.round(maxRoi * 100) / 100,
-    moisOptimal: moisOptimalFinal,
+    moisOptimal: maxTri !== null ? moisOptimalTri : moisOptimal,
     moisRestants,
     dateOptimale: dateStr,
     plusValueNette: actuPoint?.plusValue ?? courbe[0].plusValue,
@@ -471,5 +532,13 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     cocActuel: actuPoint?.cocReturn ?? null,
     cocMax: maxCoc !== null ? Math.round(maxCoc * 100) / 100 : null,
     cashflowMensuelNet: Math.round(caMensuelMoyen - coutsMensuelsTotaux - pmt),
+    // Km / pente
+    kmParMois,
+    kmActuel,
+    moisVersDeclin,
+    moisVersStop,
+    valeurDepart,
+    penteParMois: Math.round(penteParMois),
+    valeurResiduelle,
   };
 }

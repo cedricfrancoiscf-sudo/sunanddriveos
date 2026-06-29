@@ -477,6 +477,9 @@ interface CompanySettings {
   roiCoeffSaison: number[] | null;
   platformName: string | null;
   platformCommissionRate: number | null;
+  kmDeclinCA: number;
+  kmStopGA: number;
+  defaultDepreciationRate: number;
   messageUnansweredMinutes: number | null;
 }
 
@@ -1492,6 +1495,9 @@ function ReventeDecoteSection(): React.JSX.Element {
     roiCaMoyenMois: 5,
     roiHorizonMonths: 48,
     platformCommissionRate: 1.2544,
+    kmDeclinCA: 160000,
+    kmStopGA: 200000,
+    defaultDepreciationRate: 100,
   });
   const [platformName, setPlatformName] = React.useState<string>('');
   const [roiCoeffSaison, setRoiCoeffSaison] = React.useState<number[] | null>(null);
@@ -1513,6 +1519,9 @@ function ReventeDecoteSection(): React.JSX.Element {
         roiCaMoyenMois: settings.roiCaMoyenMois ?? 5,
         roiHorizonMonths: settings.roiHorizonMonths ?? 48,
         platformCommissionRate: settings.platformCommissionRate ?? 1.2544,
+        kmDeclinCA: settings.kmDeclinCA ?? 160000,
+        kmStopGA: settings.kmStopGA ?? 200000,
+        defaultDepreciationRate: settings.defaultDepreciationRate ?? 100,
       });
       setPlatformName(settings.platformName ?? '');
       setRoiCoeffSaison(settings.roiCoeffSaison ?? null);
@@ -1595,6 +1604,20 @@ function ReventeDecoteSection(): React.JSX.Element {
         {numField('roiAlertMonthsBefore', 'Seuil alerte "Revendre bientôt"', 'mois avant optimal')}
         {numField('roiCaMoyenMois', 'Mois d\'historique CA moyen', 'mois (1-24, défaut 5)')}
         {numField('roiHorizonMonths', 'Horizon courbe ROI', 'mois (12-120, défaut 48)')}
+      </div>
+
+      {/* Seuils km (Getaround) */}
+      <div>
+        <p className="mb-3 text-xs font-semibold text-gray-700">Seuils kilométrage</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {numField('kmDeclinCA', 'Km déclin CA', 'km — ex : 160 000')}
+          {numField('kmStopGA', 'Km limite plateforme', 'km — ex : 200 000')}
+          {numField('defaultDepreciationRate', 'Pente €/mois par défaut', '€/mois si aucun snapshot')}
+        </div>
+        <p className="mt-2 text-[11px] text-gray-400 leading-relaxed">
+          Le CA projeté décroît linéairement entre km déclin et km limite, puis tombe à 0 (véhicule retiré).
+          La pente €/mois est utilisée si aucun snapshot de valeur marchande n'est disponible.
+        </p>
       </div>
 
       {/* Plateforme */}

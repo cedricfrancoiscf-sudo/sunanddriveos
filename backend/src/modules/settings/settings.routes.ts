@@ -102,6 +102,9 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       roiCoeffSaison: z.array(z.number().min(0.1).max(3.0)).length(12).nullable().optional(),
       platformName: z.string().min(1).max(100).nullable().optional(),
       platformCommissionRate: z.number().min(1.0).max(2.0).nullable().optional(),
+      kmDeclinCA: z.number().int().min(50000).max(300000).optional(),
+      kmStopGA: z.number().int().min(50000).max(400000).optional(),
+      defaultDepreciationRate: z.number().min(0).max(2000).optional(),
       messageUnansweredMinutes: z.number().int().min(5).max(240).nullable().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }

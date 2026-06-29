@@ -150,6 +150,8 @@ model Vehicle {
   loanDeposit        Float?            // Apport personnel à l'achat (€) — null = 0
   marketValue        Float?            // Valeur de revente estimée (€) — saisie manuelle
   marketValueDate    DateTime?         // Date de la dernière estimation
+  marketValueJ0      Float?            // Valeur de reprise pro au jour de l'achat (€)
+  depreciationRate   Float?            // Pente mensuelle en €/mois (null = calibrée auto)
   currentMileage     Int               @default(0)
   healthScore        Int               @default(100)
   vehicleCategory    String            @default("tourisme") // "tourisme" | "utilitaire" | "camionnette"
@@ -730,6 +732,9 @@ model CompanySettings {
   roiCoeffSaison            Json?                   // Profil saisonnier [jan..déc] (null = pas de profil)
   platformName              String?                 // Nom de la plateforme (ex: Getaround)
   platformCommissionRate    Float?                  // Taux commission plateforme (ex: 1.2544 = 25,44 %)
+  kmDeclinCA              Int      @default(160000) // Km déclencheur déclin CA (Getaround)
+  kmStopGA                Int      @default(200000) // Km limite GA (véhicule retiré de la plateforme)
+  defaultDepreciationRate Float    @default(100)    // Pente €/mois par défaut si aucun snapshot disponible
   messageUnansweredMinutes  Int?                    // Délai avant alerte message sans réponse (null = 30 min)
   suggestionsCacheTtlHours  Int      @default(1)    // Durée cache suggestions IA (heures)
   createdAt            DateTime @default(now())

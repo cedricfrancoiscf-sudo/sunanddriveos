@@ -399,11 +399,21 @@ function RoiAnalysisDisplay({ analysis, mktDateStale }: {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ValeurReventeSection({ vehicleId, purchasePrice, currentMileage, settings }: {
+function ValeurReventeSection({ vehicleId, purchasePrice, currentMileage, settings, marketValueJ0, depreciationRate }: {
   vehicleId: string; purchasePrice: number | null; currentMileage: number;
   settings: { autobizApiKey?: string | null; depreciationThreshold?: number };
+  marketValueJ0: number | null; depreciationRate: number | null;
 }): React.JSX.Element {
   const qc = useQueryClient();
+  const [j0, setJ0] = useState(marketValueJ0 != null ? String(marketValueJ0) : '');
+  const [pente, setPente] = useState(depreciationRate != null ? String(depreciationRate) : '');
+  const saveJ0Mut = useMutation({
+    mutationFn: () => api.patch(`/vehicles/${vehicleId}`, {
+      ...(j0 !== '' ? { marketValueJ0: parseFloat(j0) } : {}),
+      ...(pente !== '' ? { depreciationRate: parseFloat(pente) } : {}),
+    }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['vehicle', vehicleId] }),
+  });
   const { data } = useQuery<{ valuations: VehicleValuation[] }>({
     queryKey: ['valuations', vehicleId],
     queryFn: () => api.get<{ valuations: VehicleValuation[] }>(`/vehicles/${vehicleId}/valuations`).then(r => r.data),
@@ -481,6 +491,32 @@ function ValeurReventeSection({ vehicleId, purchasePrice, currentMileage, settin
           className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
           style={{ backgroundColor: '#01696e' }}>
           Ajouter
+        </button>
+      </div>
+
+      <div className="mt-4 border-t border-gray-100 pt-4">
+        <p className="mb-2 text-xs font-semibold text-gray-700">Modèle de dépréciation</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Valeur pro J0 (€)</label>
+            <input type="number" min="0" step="100" value={j0}
+              onChange={e => setJ0(e.target.value)}
+              placeholder="Ex : 16 000"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Pente €/mois (0 = auto)</label>
+            <input type="number" min="0" step="10" value={pente}
+              onChange={e => setPente(e.target.value)}
+              placeholder="Auto-calibrée"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+          </div>
+        </div>
+        <button type="button" disabled={saveJ0Mut.isPending}
+          onClick={() => saveJ0Mut.mutate()}
+          className="mt-2 rounded-lg px-4 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+          style={{ backgroundColor: '#01696e' }}>
+          Enregistrer
         </button>
       </div>
     </div>
@@ -1556,6 +1592,8 @@ export default function VehicleDetailPage(): React.JSX.Element {
             purchasePrice={vehicle.purchasePrice ?? null}
             currentMileage={vehicle.currentMileage ?? 0}
             settings={vehicleSettings}
+            marketValueJ0={vehicle.marketValueJ0 ?? null}
+            depreciationRate={vehicle.depreciationRate ?? null}
           />
 
           {/* Analyse de revente ROI */}

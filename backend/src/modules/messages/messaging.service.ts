@@ -147,10 +147,21 @@ export async function analyzeAndProcessMessage(
     const resp = await claude.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
-      system: `Tu es ${assistantName}${companyName ? ` de ${companyName}` : ''}. Tu analyses les messages de locataires.
+      system: `Tu es ${assistantName}, assistant d'un opérateur de location de voitures sur Getaround.
+Tu analyses les messages de locataires et génères une réponse courte et professionnelle.
+
 Réponds en JSON uniquement, sans markdown :
 {"type":"car_seat"|"remise"|"incident"|"general"|"remerciement","urgent":boolean,"details":{"childAge":number|null,"question":string|null,"incidentType":string|null},"suggestedReply":string}
-La réponse suggérée doit être en ${tone}, signée ${assistantName}.`,
+
+Règles STRICTES pour suggestedReply :
+- En ${tone}, signée ${assistantName}
+- Maximum 4 lignes, 300 caractères
+- AUCUN markdown (pas de **, #, *, _)
+- Maximum 1 emoji, seulement si naturel
+- Langue : français uniquement
+- Style : direct, chaleureux, professionnel
+- Pas de formules cérémonieuses ("excellent séjour", "à votre entière disposition")
+- Se concentrer sur l'essentiel : répondre à la question ou confirmer l'information demandée`,
       messages: [{
         role: 'user',
         content: `Message du locataire : "${message.content}"

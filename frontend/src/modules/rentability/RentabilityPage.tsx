@@ -309,12 +309,15 @@ function ReventeTab({ roiFleetData, roiFleetLoading }: { roiFleetData: { fleet: 
           <thead className="border-b border-gray-100 bg-gray-50">
             <tr>
               <RoiSortTh k="licensePlate" label="Véhicule" />
-              <RoiSortTh k="kmActuel" label="Km actuels" />
-              <RoiSortTh k="valeurMarchande" label="Valeur marchande" />
-              <RoiSortTh k="plusValueNette" label="Plus-value" />
-              <RoiSortTh k="roiActuel" label="ROI actuel" />
-              <RoiSortTh k="signal" label="Signal" />
-              <RoiSortTh k="moisVersDeclin" label="Revente avant" />
+              <RoiSortTh k="kmActuel" label="Kilométrage" />
+              <RoiSortTh k="valeurMarchande" label="Valeur résiduelle" />
+              <RoiSortTh k="plusValueNette" label="Solde si vente" />
+              <RoiSortTh k="roiActuel" label="Rendement" />
+              {rows.some(r => r.analysis?.triActuel !== null && r.analysis?.triActuel !== undefined) && (
+                <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">TRI</th>
+              )}
+              <RoiSortTh k="signal" label="Décision" />
+              <RoiSortTh k="moisVersDeclin" label="Vendre avant" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -364,6 +367,11 @@ function ReventeTab({ roiFleetData, roiFleetLoading }: { roiFleetData: { fleet: 
                   <td className={`px-4 py-3 font-semibold ${a.roiActuel >= 0 ? 'text-green-700' : 'text-red-600'}`}>
                     {a.roiActuel.toFixed(1)}%
                   </td>
+                  {rows.some(r => r.analysis?.triActuel !== null && r.analysis?.triActuel !== undefined) && (
+                    <td className={`px-4 py-3 font-semibold ${a.triActuel !== null ? (a.triActuel >= 0 ? 'text-green-700' : 'text-red-600') : 'text-gray-400'}`}>
+                      {a.triActuel !== null ? `${a.triActuel.toFixed(1)}%` : '—'}
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${SIGNAL_BADGE[a.signal]}`}>
                       {SIGNAL_ICON[a.signal]} {SIGNAL_LABEL[a.signal]}
@@ -388,6 +396,9 @@ function ReventeTab({ roiFleetData, roiFleetLoading }: { roiFleetData: { fleet: 
           <p className="py-8 text-center text-sm text-gray-400">Aucune donnée — complétez les fiches véhicule avec le prix d'achat et la valeur marchande.</p>
         )}
       </div>
+      <p className="text-xs text-gray-400 mt-3 px-1">
+        * Valeur résiduelle : estimation basée sur votre dernière saisie Autobiz et la pente de dépréciation. Solde si vente = valeur résiduelle − capital restant dû.
+      </p>
     </div>
   );
 }
@@ -763,7 +774,7 @@ export default function RentabilityPage(): React.JSX.Element {
                     </button>
                   );
                 })}
-                <div className="text-right text-gray-400 min-w-16 shrink-0">Signal km</div>
+                <div className="text-right text-gray-400 min-w-20 shrink-0">Décision</div>
                 <div className="w-20 shrink-0" />
               </div>
             )}
@@ -827,16 +838,17 @@ export default function RentabilityPage(): React.JSX.Element {
                           <p className="text-xs font-semibold text-gray-700">{fmtEuro(e.mensualitePret)}</p>
                         </div>
                       )}
-                      {e.signal && (
-                        <div className="min-w-16 shrink-0 flex justify-end">
-                          <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${SIGNAL_BADGE[e.signal] ?? 'bg-gray-100 text-gray-500'}`}>
-                            {SIGNAL_ICON[e.signal]}
-                            {e.moisVersDeclin !== null && e.moisVersDeclin <= 12
-                              ? `${e.moisVersDeclin}m`
-                              : SIGNAL_LABEL[e.signal]?.split(' ')[0]}
-                          </span>
-                        </div>
-                      )}
+                      <div className="min-w-20 shrink-0 flex justify-end">
+                        {e.signal
+                          ? <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${SIGNAL_BADGE[e.signal] ?? 'bg-gray-100 text-gray-500'}`}>
+                              {SIGNAL_ICON[e.signal]}{' '}
+                              {e.signal === 'vendre_maintenant' ? 'Vendre maintenant'
+                                : e.signal === 'bientot' ? 'Bientôt'
+                                : e.signal === 'optimal' ? 'Fenêtre'
+                                : 'OK'}
+                            </span>
+                          : <span className="text-xs text-gray-300">—</span>}
+                      </div>
                       <svg className={`h-4 w-4 text-gray-400 transition-transform duration-200 shrink-0 ${expanded === e.vehicleId ? 'rotate-180' : ''}`}
                         fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />

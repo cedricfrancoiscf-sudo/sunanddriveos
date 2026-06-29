@@ -929,8 +929,7 @@ export async function syncAccountRentals(
           data: { syncStatus: 'error', syncError: message },
         });
       } catch { /* ignore */ }
-      // On reprendra depuis lastSyncAt au prochain cron
-      break;
+      // Continuer vers la fenêtre précédente malgré l'erreur
     }
 
     // Fenêtre précédente

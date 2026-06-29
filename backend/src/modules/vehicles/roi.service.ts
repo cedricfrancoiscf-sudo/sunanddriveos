@@ -352,13 +352,12 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     (a, b) => new Date(b.evaluatedAt).getTime() - new Date(a.evaluatedAt).getTime(),
   );
 
-  // Valeur marchande linéaire depuis le dernier snapshot connu ≤ mDate (fin de journée incluse)
+  // Valeur marchande linéaire depuis le dernier snapshot connu ≤ fin du mois calendaire de mDate
   function valeurMarchandeAuMois(m: number): number {
     const mDate = new Date(purchaseDate.getTime() + m * 30.44 * 86_400_000);
-    const mDateEndOfDay = new Date(mDate);
-    mDateEndOfDay.setHours(23, 59, 59, 999);
+    const mDateEndOfMonth = new Date(mDate.getFullYear(), mDate.getMonth() + 1, 0, 23, 59, 59, 999);
     const snapAvant = valuationsSortedDesc.find(
-      (v) => new Date(v.evaluatedAt) <= mDateEndOfDay,
+      (v) => new Date(v.evaluatedAt) <= mDateEndOfMonth,
     );
     if (snapAvant) {
       const moisDepuisSnap = (mDate.getTime() - new Date(snapAvant.evaluatedAt).getTime()) / (30.44 * 86_400_000);
@@ -412,8 +411,8 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     mDate.setMonth(mDate.getMonth() + m);
 
     const currentValue = valeurMarchandeAuMois(m);
-    const mDateEndOfDayLoop = new Date(mDate); mDateEndOfDayLoop.setHours(23, 59, 59, 999);
-    const hasSnapshotAtM = valuations.some((v) => new Date(v.evaluatedAt) <= mDateEndOfDayLoop);
+    const mDateEndOfMonthLoop = new Date(mDate.getFullYear(), mDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    const hasSnapshotAtM = valuations.some((v) => new Date(v.evaluatedAt) <= mDateEndOfMonthLoop);
 
     const loanElapsed = loanElapsedBase + m;
     const capitalRestant =

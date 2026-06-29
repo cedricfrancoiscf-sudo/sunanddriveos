@@ -36,7 +36,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
   const sixMonthsAgo = new Date(Date.now() - 180 * 86_400_000);
   const nextMonth = new Date(Date.now() + 30 * 86_400_000);
 
-  const [settings, vehicles, rentals, incidents, maintenances, technicalControls, carSeatRequests, vehicleCosts, reportBlockings] = await Promise.all([
+  const [settings, vehicles, rentals, incidents, maintenances, technicalControls, carSeatRequests, vehicleCosts, reportBlockings, vehicleValuations] = await Promise.all([
     db.companySettings.findFirst({
       select: { primaryColor: true, fontFamily: true, logoUrl: true, senderName: true },
     }),
@@ -44,7 +44,9 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
       where: { isActive: true },
       select: { id: true, make: true, model: true, licensePlate: true, year: true,
                 currentMileage: true, healthScore: true, parkingZone: true,
-                deliveryPointName: true, deliveryPostalCode: true, fuelType: true },
+                deliveryPointName: true, deliveryPostalCode: true, fuelType: true,
+                purchasePrice: true, purchaseDate: true,
+                loanAmount: true, loanRate: true, loanDurationMonths: true, loanStartDate: true, loanDeposit: true },
     }),
     db.rental.findMany({
       where: { startAt: { gte: oneYearAgo }, status: { notIn: ['cancelled'] } },
@@ -82,6 +84,11 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     db.blocking.findMany({
       where: { startAt: { gte: oneYearAgo } },
       select: { vehicleId: true, startAt: true, endAt: true, type: true, reason: true },
+    }),
+    db.vehicleValuation.findMany({
+      where: { vehicle: { isActive: true } },
+      select: { vehicleId: true, estimatedValue: true, evaluatedAt: true },
+      orderBy: { evaluatedAt: 'desc' },
     }),
   ]);
 
@@ -173,6 +180,40 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
   const margeNette = totalCA - totalCostsAnnuels;
   const ratioChargesCA = totalCA > 0 ? Math.round(totalMonthlyCosts * 12 / totalCA * 100) : 0;
 
+  // ── Données patrimoniales ────────────────────────────────────────────────────
+  function loanRemaining(loanAmount: number, rate: number, durationMonths: number, elapsedMonths: number): number {
+    if (rate === 0) return Math.max(0, loanAmount - (loanAmount / durationMonths) * elapsedMonths);
+    const r = rate / 12 / 100;
+    const pmt = (loanAmount * r) / (1 - Math.pow(1 + r, -durationMonths));
+    const remaining = loanAmount * Math.pow(1 + r, elapsedMonths) - pmt * ((Math.pow(1 + r, elapsedMonths) - 1) / r);
+    return Math.max(0, Math.round(remaining));
+  }
+
+  const investissementTotal = vehicles.reduce((s, v) => s + (v.purchasePrice ?? 0), 0);
+  const valeurFlotte = vehicles.reduce((s, v) => {
+    const lastVal = vehicleValuations.find(vv => vv.vehicleId === v.id);
+    return s + (lastVal?.estimatedValue ?? v.purchasePrice ?? 0);
+  }, 0);
+  const capitalRestantTotal = vehicles.reduce((s, v) => {
+    if (!v.loanAmount || v.loanRate === null || !v.loanDurationMonths || !v.loanStartDate) return s;
+    const elapsed = Math.floor((now.getTime() - new Date(v.loanStartDate).getTime()) / (30.44 * 86_400_000));
+    return s + loanRemaining(v.loanAmount, v.loanRate, v.loanDurationMonths, elapsed);
+  }, 0);
+  const positionNette = valeurFlotte - capitalRestantTotal;
+  const mensualitesAnnuelles = vehicles.reduce((s, v) => {
+    if (!v.loanAmount || v.loanRate === null || !v.loanDurationMonths) return s;
+    const r = (v.loanRate ?? 0) / 12 / 100;
+    const pmt = r > 0
+      ? (v.loanAmount * r) / (1 - Math.pow(1 + r, -v.loanDurationMonths))
+      : v.loanAmount / v.loanDurationMonths;
+    return s + pmt * 12;
+  }, 0);
+  const dscr = mensualitesAnnuelles > 0 ? Math.round((totalCA / mensualitesAnnuelles) * 100) / 100 : null;
+  const vehiclesWithLoan = vehicles.filter(v => v.loanAmount && v.loanDeposit);
+  const roiAnnualise = vehiclesWithLoan.length > 0 && margeNette > 0
+    ? Math.round((margeNette / vehiclesWithLoan.reduce((s, v) => s + (v.loanDeposit ?? 0), 0)) * 100)
+    : null;
+
   const internalContext = {
     periode: '12 derniers mois',
     societe: settings?.senderName ?? 'notre service',
@@ -205,6 +246,15 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     })),
     evolutionMensuelle: Object.entries(monthlyCA)
       .map(([mois, ca]) => ({ mois, ca: Math.round(ca * 100) / 100 })),
+    patrimonial: {
+      investissementTotal: Math.round(investissementTotal),
+      valeurFlotte: Math.round(valeurFlotte),
+      capitalRestant: Math.round(capitalRestantTotal),
+      positionNette: Math.round(positionNette),
+      dscr,
+      roiAnnualise,
+      mensualitesAnnuelles: Math.round(mensualitesAnnuelles),
+    },
   };
 
   return { settings, vehicleStats, zones, internalContext };
@@ -254,6 +304,15 @@ ANALYSE FINANCIÈRE :
 - Ratio charges/CA : ${internalContext.finances.ratioChargesCA}
 ${vehicleStats.map(v => `- ${v.vehicule} : CA=${v.caNet}€ / Coûts ann.=${v.coutsAnnuels}€ / Marge=${v.margeAnnuelle}€`).join('\n')}
 
+SYNTHÈSE PATRIMONIALE :
+- Investissement total (prix d'achat flotte) : ${internalContext.patrimonial.investissementTotal} €
+- Valeur estimée flotte (dernières Autobiz) : ${internalContext.patrimonial.valeurFlotte} €
+- Capital restant dû (crédits) : ${internalContext.patrimonial.capitalRestant} €
+- Position nette (valeur - dette) : ${internalContext.patrimonial.positionNette} €
+- DSCR (CA / mensualités annuelles) : ${internalContext.patrimonial.dscr ?? 'N/A'}
+- ROI annualisé sur apport : ${internalContext.patrimonial.roiAnnualise != null ? `${internalContext.patrimonial.roiAnnualise}%` : 'N/A'}
+- Mensualités crédit annuelles : ${internalContext.patrimonial.mensualitesAnnuelles} €
+
 ZONES DE LIVRAISON : ${zones.join(', ')}
 
 Retourne exactement ce JSON (sans markdown, sans backticks) :
@@ -284,6 +343,17 @@ Retourne exactement ce JSON (sans markdown, sans backticks) :
   },
   "recommandations_ceo": [
     { "priorite": "haute", "action": "titre court", "detail": "explication", "echeance": "court terme (1 mois)" }
+  ],
+  "synthese_financiere": {
+    "signal_global": "positif|neutre|negatif",
+    "signal_label": "libellé court (ex: Position nette saine)",
+    "points_forts": ["point 1 avec chiffre", "point 2"],
+    "points_attention": ["point 1 avec chiffre", "point 2"],
+    "commentaire_dscr": "2 phrases sur la couverture du service de la dette",
+    "commentaire_position": "2 phrases sur la position nette et l'évolution de la valeur flotte"
+  },
+  "plan_action": [
+    { "priorite": "haute|moyenne|basse", "action": "titre court (5 mots max)", "detail": "1-2 phrases actionnables", "echeance": "J+30|J+90|J+180", "impact_euros": 500 }
   ],
   "analyse_accessoires": {
     "demandes_par_zone": [{ "zone": "nom", "demandes_siege": 0, "stock_estime": "suffisant" }],

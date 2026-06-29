@@ -84,6 +84,7 @@ export async function updateTask(db: PrismaClient, taskId: string, input: TaskUp
       cost: input.cost,
       provider: input.provider,
       notes: input.notes,
+      ...(input.ctResult ? { ctResult: input.ctResult } : {}),
       ...(nextDueDate ? { nextServiceDate: nextDueDate } : {}),
       ...(nextDueMileage ? { nextServiceMileage: nextDueMileage } : {}),
     },

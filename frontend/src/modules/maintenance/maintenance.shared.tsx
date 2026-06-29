@@ -47,6 +47,7 @@ export interface Maintenance {
   cost: number | null;
   provider: string | null;
   notes: string | null;
+  ctResult: string | null;
   vehicle: Vehicle;
 }
 

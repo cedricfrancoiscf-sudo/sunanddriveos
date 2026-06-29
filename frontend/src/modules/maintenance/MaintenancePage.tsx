@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, isPast, differenceInDays } from 'date-fns';
+import { format, isPast, differenceInDays, addMonths } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
 import { DocumentScanner } from '../../components/ui/DocumentScanner';
@@ -28,6 +28,18 @@ const TYPES_PONCTUELS = ['pneus', 'freins', 'bougies', 'amortisseurs', 'courroie
 // Types récurrents (ne pas afficher dans la section ponctuels)
 const TYPES_RECURRENTS = new Set(['revision', 'vidange', 'ct']);
 
+// Intervalles recommandés par type (km / mois)
+const INTERVALS: Record<string, { km: number | null; months: number | null; label: string }> = {
+  pneus:         { km: 40000,  months: 48,   label: 'tous les 40 000 km ou 4 ans' },
+  freins:        { km: 60000,  months: 48,   label: 'tous les 60 000 km ou 4 ans' },
+  bougies:       { km: 60000,  months: 48,   label: 'tous les 60 000 km ou 4 ans' },
+  amortisseurs:  { km: 80000,  months: null, label: 'tous les 80 000 km' },
+  courroie:      { km: 120000, months: 60,   label: 'tous les 120 000 km ou 5 ans' },
+  éclairage:     { km: null,   months: null, label: 'selon besoin' },
+  filtres:       { km: 30000,  months: 12,   label: 'tous les 30 000 km ou 1 an' },
+  autre:         { km: null,   months: null, label: '' },
+};
+
 function StatusDot({ nextDate }: { nextDate: string | null }): React.JSX.Element {
   if (!nextDate) return <span className="h-2 w-2 rounded-full bg-gray-200" />;
   const d = new Date(nextDate);
@@ -45,6 +57,7 @@ export default function MaintenancePage(): React.JSX.Element {
     vehicleId: '', type: 'pneus',
     performedAt: new Date().toISOString().slice(0, 16),
     mileageAtService: '', cost: '', provider: '', notes: '',
+    nextDueDate: '', nextDueMileage: '',
   });
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery({
@@ -79,7 +92,7 @@ export default function MaintenancePage(): React.JSX.Element {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['maintenances'] });
       setShowForm(false);
-      setForm({ vehicleId: '', type: 'pneus', performedAt: new Date().toISOString().slice(0, 16), mileageAtService: '', cost: '', provider: '', notes: '' });
+      setForm({ vehicleId: '', type: 'pneus', performedAt: new Date().toISOString().slice(0, 16), mileageAtService: '', cost: '', provider: '', notes: '', nextDueDate: '', nextDueMileage: '' });
     },
   });
 
@@ -98,8 +111,18 @@ export default function MaintenancePage(): React.JSX.Element {
       cost: form.cost ? parseFloat(form.cost) : undefined,
       provider: form.provider || undefined,
       notes: form.notes || undefined,
+      nextServiceDate: form.nextDueDate ? new Date(form.nextDueDate).toISOString() : undefined,
+      nextServiceMileage: form.nextDueMileage ? parseInt(form.nextDueMileage, 10) : undefined,
     });
   }
+
+  // Prestataires fréquents pour le type sélectionné (depuis l'historique)
+  const frequentProviders = useMemo(() => {
+    const forType = maintenances.filter(m => m.type === form.type && m.provider);
+    const counts: Record<string, number> = {};
+    forType.forEach(m => { if (m.provider) counts[m.provider] = (counts[m.provider] ?? 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([p]) => p);
+  }, [maintenances, form.type]);
 
   // Tâches révision uniquement
   const revisionTasks = tasks.filter(t => t.type === 'revision');
@@ -213,21 +236,41 @@ export default function MaintenancePage(): React.JSX.Element {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">Type *</label>
-                <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+                <select value={form.type} onChange={e => {
+                  const t = e.target.value;
+                  const iv = INTERVALS[t];
+                  const performedDate = form.performedAt ? new Date(form.performedAt) : new Date();
+                  const autoDate = iv?.months ? format(addMonths(performedDate, iv.months), 'yyyy-MM-dd') : '';
+                  const km = form.mileageAtService && iv?.km ? String(parseInt(form.mileageAtService, 10) + iv.km) : '';
+                  setForm(f => ({ ...f, type: t, nextDueDate: autoDate, nextDueMileage: km }));
+                }}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]">
                   {TYPES_PONCTUELS.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
+                {INTERVALS[form.type]?.label && (
+                  <p className="mt-1 text-[11px] text-gray-400">Recommandé : {INTERVALS[form.type]!.label}</p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">Date réalisé *</label>
                 <input type="datetime-local" required value={form.performedAt}
-                  onChange={e => setForm(f => ({ ...f, performedAt: e.target.value }))}
+                  onChange={e => {
+                    const d = e.target.value;
+                    const iv = INTERVALS[form.type];
+                    const autoDate = iv?.months && d ? format(addMonths(new Date(d), iv.months), 'yyyy-MM-dd') : form.nextDueDate;
+                    setForm(f => ({ ...f, performedAt: d, nextDueDate: autoDate }));
+                  }}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">Kilométrage *</label>
                 <input type="number" required min={0} value={form.mileageAtService}
-                  onChange={e => setForm(f => ({ ...f, mileageAtService: e.target.value }))}
+                  onChange={e => {
+                    const km = e.target.value;
+                    const iv = INTERVALS[form.type];
+                    const autoKm = iv?.km && km ? String(parseInt(km, 10) + iv.km) : form.nextDueMileage;
+                    setForm(f => ({ ...f, mileageAtService: km, nextDueMileage: autoKm }));
+                  }}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" placeholder="50000" />
               </div>
               <div>
@@ -241,6 +284,34 @@ export default function MaintenancePage(): React.JSX.Element {
                 <input type="text" value={form.provider}
                   onChange={e => setForm(f => ({ ...f, provider: e.target.value }))}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" placeholder="Garage Dupont" />
+                {frequentProviders.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {frequentProviders.map(p => (
+                      <button key={p} type="button" onClick={() => setForm(f => ({ ...f, provider: p }))}
+                        className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:border-[#01696e] hover:text-[#01696e]">
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Prochaine date
+                  <span className="ml-1 font-normal text-gray-400">(auto-calculé)</span>
+                </label>
+                <input type="date" value={form.nextDueDate}
+                  onChange={e => setForm(f => ({ ...f, nextDueDate: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Prochain km
+                  <span className="ml-1 font-normal text-gray-400">(auto-calculé)</span>
+                </label>
+                <input type="number" min={0} value={form.nextDueMileage}
+                  onChange={e => setForm(f => ({ ...f, nextDueMileage: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e]" placeholder="90000" />
               </div>
             </div>
             <div>

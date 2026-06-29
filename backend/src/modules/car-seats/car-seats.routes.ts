@@ -109,6 +109,31 @@ router.post('/:id/out-of-service', async (req: Request, res: Response, next: Nex
 });
 
 // POST /api/v1/car-seats/:id/in-service — remettre 1 unité en service
+// GET /api/v1/car-seats/:id/upcoming-rentals — locations à venir pour ce type de siège
+router.get('/:id/upcoming-rentals', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const rentals = await db.carSeatRequest.findMany({
+      where: {
+        carSeatId: req.params['id'] as string,
+        status: { in: ['pending', 'confirmed'] },
+        rental: { endAt: { gte: now } },
+      },
+      include: {
+        rental: {
+          select: {
+            id: true, startAt: true, endAt: true, driverName: true,
+            vehicle: { select: { make: true, model: true, licensePlate: true } },
+          },
+        },
+      },
+      orderBy: { rental: { startAt: 'asc' } },
+    });
+    res.json({ rentals: rentals.map(r => ({ ...r.rental, status: r.status })) });
+  } catch (err: unknown) { next(err); }
+});
+
 router.post('/:id/in-service', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);

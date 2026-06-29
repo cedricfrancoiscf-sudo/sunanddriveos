@@ -333,6 +333,7 @@ model Maintenance {
   cost               Float?
   provider           String?
   notes              String?
+  ctResult           String?          // "favorable" | "defavorable" | "contre_visite" (CT uniquement)
   documentUrl        String?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt

@@ -714,6 +714,24 @@ function GetaroundSection(): React.JSX.Element {
         </div>
       )}
 
+      {/* Erreur sync */}
+      {syncStatus?.error && !syncStatus.isRunning && (
+        <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold text-red-800">
+              {syncStatus.error.toLowerCase().includes('rate') || syncStatus.error.toLowerCase().includes('429') || syncStatus.error.toLowerCase().includes('trop')
+                ? 'Limite Getaround atteinte — réessayez dans quelques minutes'
+                : `Erreur de synchronisation : ${syncStatus.error}`}
+            </p>
+          </div>
+          <button type="button" onClick={() => syncAllMutation.mutate()}
+            disabled={isSyncing}
+            className="ml-4 shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40">
+            Réessayer
+          </button>
+        </div>
+      )}
+
       {showForm && (
         <form onSubmit={e => { e.preventDefault(); createMutation.mutate(); }}
           className="rounded-xl border border-[#01696e]/20 bg-[#01696e]/5 p-4 space-y-3">

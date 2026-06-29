@@ -153,40 +153,39 @@ export default function RentalListPage(): React.JSX.Element {
       </div>
 
       {/* KPIs du mois */}
-      {stats && (
-        <div className="mb-6 grid gap-3 grid-cols-2 lg:grid-cols-4">
-          {/* Carte CA : encaissé (vert) + prévisionnel (bleu) */}
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">CA du mois</p>
-            <p className="mt-1 text-2xl font-bold text-green-700">
-              {stats.totalEncaisse.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-            </p>
-            {stats.totalPrevisionnel > 0 && (
-              <p className="text-xs font-medium text-blue-600 mt-0.5">
-                + {stats.totalPrevisionnel.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} prévu
+      <div className="mb-6 grid gap-3 grid-cols-2 lg:grid-cols-4">
+        {stats ? (
+          <>
+            {/* Carte CA : encaissé (vert) + prévisionnel (bleu) */}
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">CA du mois</p>
+              <p className="mt-1 text-2xl font-bold text-green-700">
+                {stats.totalEncaisse.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
               </p>
-            )}
-            <p className="text-xs text-gray-400 mt-1">
-              Total : {(stats.totalEncaisse + stats.totalPrevisionnel).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-            </p>
-          </div>
-          <StatCard
-            label="Taux d'occupation"
-            value={`${stats.occupancyRate} %`}
-            sub={`${stats.vehicleCount} véhicule${stats.vehicleCount !== 1 ? 's' : ''}`}
-          />
-          <StatCard
-            label="Locations"
-            value={String(stats.rentalCount)}
-            sub="ce mois-ci"
-          />
-          <StatCard
-            label="Km parcourus"
-            value={stats.totalKm.toLocaleString('fr-FR')}
-            sub="ce mois-ci"
-          />
-        </div>
-      )}
+              {stats.totalPrevisionnel > 0 && (
+                <p className="text-xs font-medium text-blue-600 mt-0.5">
+                  + {stats.totalPrevisionnel.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} prévu
+                </p>
+              )}
+              <p className="text-xs text-gray-400 mt-1">
+                Total : {(stats.totalEncaisse + stats.totalPrevisionnel).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+              </p>
+            </div>
+            <StatCard label="Taux d'occupation" value={`${stats.occupancyRate} %`} sub={`${stats.vehicleCount} véhicule${stats.vehicleCount !== 1 ? 's' : ''}`} />
+            <StatCard label="Locations" value={String(stats.rentalCount)} sub="ce mois-ci" />
+            <StatCard label="Km parcourus" value={stats.totalKm.toLocaleString('fr-FR')} sub="ce mois-ci" />
+          </>
+        ) : (
+          <>
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="rounded-xl border border-gray-200 bg-white p-4 animate-pulse">
+                <div className="h-3 w-20 rounded bg-gray-200 mb-2" />
+                <div className="h-7 w-24 rounded bg-gray-200" />
+              </div>
+            ))}
+          </>
+        )}
+      </div>
 
       {/* Sélecteur de mois */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -245,8 +244,20 @@ export default function RentalListPage(): React.JSX.Element {
 
       {/* États */}
       {isLoading && (
-        <div className="flex justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} />
+        <div className="space-y-2">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-4 py-3 animate-pulse">
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3.5 w-40 rounded bg-gray-200" />
+                <div className="h-3 w-24 rounded bg-gray-200" />
+              </div>
+              <div className="hidden sm:block text-right space-y-1">
+                <div className="h-3 w-28 rounded bg-gray-200" />
+                <div className="h-2.5 w-16 rounded bg-gray-200" />
+              </div>
+              <div className="h-5 w-16 rounded-full bg-gray-200" />
+            </div>
+          ))}
         </div>
       )}
 

@@ -179,7 +179,7 @@ router.get('/ical-info', requireRole('admin'), async (req: Request, res: Respons
       select: { icalToken: true },
     });
     const token = company?.icalToken ?? null;
-    const baseUrl = (process.env.API_BASE_URL ?? 'http://localhost:4000').replace(/\/$/, '');
+    const baseUrl = (process.env.PUBLIC_URL ?? process.env.FRONTEND_URL ?? 'http://localhost:4000').replace(/\/$/, '');
     const icalUrl = token ? `${baseUrl}/ical/${token}/accessories.ics` : null;
     res.json({ icalToken: token, icalUrl });
   } catch (err: unknown) { next(err); }
@@ -192,7 +192,7 @@ router.post('/ical-regenerate', requireRole('admin'), async (req: Request, res: 
     const tenantSlug = req.auth!.tenantSlug!;
     const newToken = randomUUID();
     await master.company.update({ where: { slug: tenantSlug }, data: { icalToken: newToken } });
-    const baseUrl = (process.env.API_BASE_URL ?? 'http://localhost:4000').replace(/\/$/, '');
+    const baseUrl = (process.env.PUBLIC_URL ?? process.env.FRONTEND_URL ?? 'http://localhost:4000').replace(/\/$/, '');
     const icalUrl = `${baseUrl}/ical/${newToken}/accessories.ics`;
     res.json({ icalToken: newToken, icalUrl });
   } catch (err: unknown) { next(err); }

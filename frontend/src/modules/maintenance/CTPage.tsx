@@ -144,12 +144,16 @@ export default function CTPage(): React.JSX.Element {
                   <CTSortTh k="licensePlate" label="Véhicule" />
                   <CTSortTh k="performedAt" label="Date" />
                   <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Résultat</th>
+                  <th className="px-4 py-2.5 text-xs font-medium text-left text-gray-500">Km CT</th>
                   <CTSortTh k="nextServiceDate" label="Prochain" />
                   <CTSortTh k="cost" label="Coût" right />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {ctHistory.map(m => (
+                {ctHistory.map(m => {
+                  const ctLbl: Record<string, string> = { favorable: 'Favorable', defavorable: 'Défavorable', contre_visite: 'Contre-visite OK' };
+                  const ctCls: Record<string, string> = { favorable: 'text-green-600', defavorable: 'text-red-600 font-medium', contre_visite: 'text-green-600' };
+                  return (
                   <tr key={m.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2.5">
                       <p className="font-medium text-gray-900">{m.vehicle.make} {m.vehicle.model}</p>
@@ -159,11 +163,16 @@ export default function CTPage(): React.JSX.Element {
                       {format(new Date(m.performedAt), 'dd/MM/yyyy', { locale: fr })}
                     </td>
                     <td className="px-4 py-2.5">
-                      {m.provider ? (
+                      {m.ctResult ? (
+                        <span className={`text-xs ${ctCls[m.ctResult] ?? 'text-gray-500'}`}>{ctLbl[m.ctResult] ?? m.ctResult}</span>
+                      ) : m.provider ? (
                         <span className="text-gray-500 text-xs">{m.provider}</span>
                       ) : (
                         <span className="text-gray-300 text-xs">—</span>
                       )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                      {m.mileageAtService > 0 ? `${m.mileageAtService.toLocaleString('fr-FR')} km` : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
                       {m.nextServiceDate ? format(new Date(m.nextServiceDate), 'dd/MM/yyyy', { locale: fr }) : '—'}
@@ -172,7 +181,8 @@ export default function CTPage(): React.JSX.Element {
                       {m.cost != null ? m.cost.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

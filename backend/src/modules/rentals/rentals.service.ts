@@ -35,10 +35,8 @@ export async function listRentals(db: PrismaClient, filters: RentalFilters = {})
     status: status ? { equals: status } : { not: 'cancelled' as const },
     ...(from || to
       ? {
-          startAt: {
-            ...(from ? { gte: from } : {}),
-            ...(to ? { lte: to } : {}),
-          },
+          startAt: to ? { lte: to } : undefined,
+          endAt: from ? { gte: from } : undefined,
         }
       : {}),
   };

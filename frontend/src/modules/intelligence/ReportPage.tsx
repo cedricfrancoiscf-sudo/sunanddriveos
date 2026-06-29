@@ -13,6 +13,24 @@ interface VehicleStat {
   vehicule: string; zone: string; annee: number; km: number; scoreSante: number;
   nbLocations: number; caNet: number; kmTotal: number; kmAnnuelPrevu: number;
   incidents: number; entretiensEnAttente: number; ctExpiration: string | null;
+  valeurEstimee?: number; signal?: string;
+}
+
+interface SyntheseFinanciere {
+  signal_global: 'positif' | 'neutre' | 'negatif';
+  signal_label: string;
+  points_forts: string[];
+  points_attention: string[];
+  commentaire_dscr: string;
+  commentaire_position: string;
+}
+
+interface PlanAction {
+  priorite: 'haute' | 'moyenne' | 'basse';
+  action: string;
+  detail: string;
+  echeance: string;
+  impact_euros?: number;
 }
 
 interface ReportData {
@@ -26,6 +44,10 @@ interface ReportData {
     evolutionMensuelle: Array<{ mois: string; ca: number }>;
     interventionsAVenir: Array<{ vehicule: string; type: string; echeance: string | null }>;
     ctExpiration: Array<{ vehicule: string; expiration: string }>;
+    patrimonial?: {
+      investissementTotal: number; valeurFlotte: number; capitalRestant: number;
+      positionNette: number; dscr: number; roiAnnualise: number; mensualitesAnnuelles: number;
+    };
   };
   vehicleStats: VehicleStat[];
   report: {
@@ -35,6 +57,8 @@ interface ReportData {
     veille_zones: Array<{ zone: string; trafic_voyageurs: string; perspectives: string; opportunites: string; risques: string }>;
     veille_sectorielle: { autopartage: string; ademe: string; fiscalite: string; marche: string } | null;
     recommandations_ceo: Array<{ priorite: string; action: string; detail: string; echeance: string }>;
+    synthese_financiere?: SyntheseFinanciere;
+    plan_action?: PlanAction[];
     analyse_accessoires: {
       demandes_par_zone: Array<{ zone: string; demandes_siege: number; stock_estime: string }>;
       recommandations: string[];
@@ -320,6 +344,7 @@ export default function ReportPage(): React.JSX.Element {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [mode, setMode] = useState<'annual' | 'monthly'>('annual');
   const [perfView, setPerfView] = useState<'chart' | 'table'>('chart');
+  const [openPlanIdx, setOpenPlanIdx] = useState<number | null>(null);
 
   const { data, isFetching, isError, refetch } = useQuery<AnnualResponse | MonthlyResponse>({
     queryKey: ['ceo-report', selectedMonth, mode],
@@ -361,9 +386,10 @@ export default function ReportPage(): React.JSX.Element {
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   const ANNUAL_SECTIONS = [
     { id: 'resume', label: 'Résumé' }, { id: 'performance', label: 'Performance' },
-    { id: 'flotte', label: 'Flotte' }, { id: 'swot', label: 'SWOT' },
-    { id: 'pestel', label: 'PESTEL' }, { id: 'zones', label: 'Zones' },
-    { id: 'veille', label: 'Veille' }, { id: 'recommandations', label: 'Recommandations' },
+    { id: 'finances', label: 'Finances' }, { id: 'flotte', label: 'Flotte' },
+    { id: 'swot', label: 'SWOT' }, { id: 'pestel', label: 'PESTEL' },
+    { id: 'zones', label: 'Zones' }, { id: 'veille', label: 'Veille' },
+    { id: 'plan', label: 'Plan d\'action' },
   ];
 
   return (
@@ -665,6 +691,93 @@ export default function ReportPage(): React.JSX.Element {
               </div>
             </section>
 
+            {/* FINANCES */}
+            {internal.patrimonial && (
+              <section id="finances" className="space-y-4 page-break">
+                <h2 className="text-lg font-bold text-gray-900">Synthèse patrimoniale</h2>
+
+                {/* Signal global */}
+                {report.synthese_financiere && (
+                  <div className={`flex items-center gap-3 rounded-2xl border p-4 ${
+                    report.synthese_financiere.signal_global === 'positif' ? 'border-green-200 bg-green-50' :
+                    report.synthese_financiere.signal_global === 'negatif' ? 'border-red-200 bg-red-50' :
+                    'border-yellow-200 bg-yellow-50'
+                  }`}>
+                    <span className="text-2xl">
+                      {report.synthese_financiere.signal_global === 'positif' ? '✅' : report.synthese_financiere.signal_global === 'negatif' ? '🔴' : '🟡'}
+                    </span>
+                    <div>
+                      <p className={`font-semibold text-sm ${
+                        report.synthese_financiere.signal_global === 'positif' ? 'text-green-800' :
+                        report.synthese_financiere.signal_global === 'negatif' ? 'text-red-800' : 'text-yellow-800'
+                      }`}>{report.synthese_financiere.signal_label}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 6 KPI cartes */}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {[
+                    { label: 'Investissement total', value: internal.patrimonial.investissementTotal, suffix: '€', color: 'text-gray-900' },
+                    { label: 'Valeur flotte estimée', value: internal.patrimonial.valeurFlotte, suffix: '€', color: 'text-blue-700' },
+                    { label: 'Capital restant dû', value: internal.patrimonial.capitalRestant, suffix: '€', color: 'text-orange-700' },
+                    { label: 'Position nette', value: internal.patrimonial.positionNette, suffix: '€', color: internal.patrimonial.positionNette >= 0 ? 'text-green-700' : 'text-red-700' },
+                    { label: 'DSCR', value: internal.patrimonial.dscr, suffix: 'x', color: internal.patrimonial.dscr >= 1.2 ? 'text-green-700' : internal.patrimonial.dscr >= 1 ? 'text-yellow-700' : 'text-red-700', decimals: 2 },
+                    { label: 'ROI annualisé', value: internal.patrimonial.roiAnnualise, suffix: '%', color: internal.patrimonial.roiAnnualise >= 8 ? 'text-green-700' : 'text-yellow-700', decimals: 1 },
+                  ].map(kpi => (
+                    <div key={kpi.label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                      <p className="text-xs text-gray-400 mb-1">{kpi.label}</p>
+                      <p className={`text-xl font-bold ${kpi.color}`}>
+                        {kpi.suffix === '€'
+                          ? `${kpi.value.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`
+                          : kpi.suffix === '%'
+                          ? `${kpi.value.toFixed(kpi.decimals ?? 0)} %`
+                          : `${kpi.value.toFixed(kpi.decimals ?? 2)} x`}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Points forts / attention */}
+                {report.synthese_financiere && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {report.synthese_financiere.points_forts.length > 0 && (
+                      <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-green-700 mb-2">Points forts</p>
+                        <ul className="space-y-1">
+                          {report.synthese_financiere.points_forts.map((p, i) => (
+                            <li key={i} className="text-sm text-green-800 flex gap-2"><span className="text-green-400">✓</span>{p}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {report.synthese_financiere.points_attention.length > 0 && (
+                      <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-orange-700 mb-2">Points d'attention</p>
+                        <ul className="space-y-1">
+                          {report.synthese_financiere.points_attention.map((p, i) => (
+                            <li key={i} className="text-sm text-orange-800 flex gap-2"><span className="text-orange-400">!</span>{p}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {report.synthese_financiere.commentaire_dscr && (
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:col-span-2">
+                        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">DSCR</p>
+                        <p className="text-sm text-gray-700">{report.synthese_financiere.commentaire_dscr}</p>
+                      </div>
+                    )}
+                    {report.synthese_financiere.commentaire_position && (
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:col-span-2">
+                        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Position nette</p>
+                        <p className="text-sm text-gray-700">{report.synthese_financiere.commentaire_position}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+
             {/* FLOTTE & INTERVENTIONS */}
             <section id="flotte" className="space-y-4 page-break">
               <h2 className="text-lg font-bold text-gray-900">Flotte &amp; Interventions</h2>
@@ -672,7 +785,7 @@ export default function ReportPage(): React.JSX.Element {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
-                      {['Véhicule', 'Zone', 'CA net', 'Loc.', 'Km total', 'Km/an prévu', 'Score', 'Alertes'].map(h => (
+                      {['Véhicule', 'Zone', 'CA net', 'Loc.', 'Km total', 'Valeur est.', 'Signal', 'Score', 'Alertes'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -685,7 +798,20 @@ export default function ReportPage(): React.JSX.Element {
                         <td className="px-4 py-3 font-medium text-gray-900">{v.caNet.toFixed(0)} €</td>
                         <td className="px-4 py-3 text-gray-600">{v.nbLocations}</td>
                         <td className="px-4 py-3 text-gray-600">{v.kmTotal.toLocaleString('fr-FR')}</td>
-                        <td className="px-4 py-3 text-gray-600">{v.kmAnnuelPrevu.toLocaleString('fr-FR')}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {v.valeurEstimee != null ? `${v.valeurEstimee.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €` : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {v.signal ? (
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              v.signal === 'vendre_maintenant' ? 'bg-red-100 text-red-700' :
+                              v.signal === 'conserver' ? 'bg-green-100 text-green-700' :
+                              'bg-gray-100 text-gray-500'
+                            }`}>
+                              {v.signal === 'vendre_maintenant' ? 'Vendre' : v.signal === 'conserver' ? 'Conserver' : v.signal}
+                            </span>
+                          ) : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
                         <td className="px-4 py-3">
                           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${HEALTH_COLOR(v.scoreSante)}`}>
                             {v.scoreSante}/100
@@ -764,18 +890,23 @@ export default function ReportPage(): React.JSX.Element {
             {report.pestel && (
               <section id="pestel" className="page-break">
                 <h2 className="mb-4 text-lg font-bold text-gray-900">Analyse PESTEL</h2>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {[
-                    { key: 'politique', label: 'Politique', icon: '🏛️' },
-                    { key: 'economique', label: 'Économique', icon: '💰' },
-                    { key: 'sociologique', label: 'Sociologique', icon: '👥' },
-                    { key: 'technologique', label: 'Technologique', icon: '💻' },
-                    { key: 'environnemental', label: 'Environnemental', icon: '🌱' },
-                    { key: 'legal', label: 'Légal', icon: '⚖️' },
-                  ].map(({ key, label, icon }) => (
-                    <div key={key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                      <h3 className="mb-2 text-sm font-semibold text-gray-900">{icon} {label}</h3>
-                      <p className="text-sm text-gray-600 leading-relaxed">
+                    { key: 'politique',     label: 'Politique',     icon: '🏛️', border: 'border-blue-200',    bg: 'bg-blue-50',    letter: 'bg-blue-600',    hdg: 'text-blue-900',    body: 'text-blue-800' },
+                    { key: 'economique',    label: 'Économique',    icon: '💰', border: 'border-green-200',   bg: 'bg-green-50',   letter: 'bg-green-600',   hdg: 'text-green-900',   body: 'text-green-800' },
+                    { key: 'sociologique',  label: 'Sociologique',  icon: '👥', border: 'border-violet-200',  bg: 'bg-violet-50',  letter: 'bg-violet-600',  hdg: 'text-violet-900',  body: 'text-violet-800' },
+                    { key: 'technologique', label: 'Technologique', icon: '💻', border: 'border-orange-200',  bg: 'bg-orange-50',  letter: 'bg-orange-500',  hdg: 'text-orange-900',  body: 'text-orange-800' },
+                    { key: 'environnemental', label: 'Environnemental', icon: '🌱', border: 'border-emerald-200', bg: 'bg-emerald-50', letter: 'bg-emerald-600', hdg: 'text-emerald-900', body: 'text-emerald-800' },
+                    { key: 'legal',         label: 'Légal',         icon: '⚖️', border: 'border-red-200',     bg: 'bg-red-50',     letter: 'bg-red-600',     hdg: 'text-red-900',     body: 'text-red-800' },
+                  ].map(({ key, label, icon, border, bg, letter, hdg, body }) => (
+                    <div key={key} className={`rounded-2xl border p-5 ${border} ${bg}`}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white ${letter}`}>
+                          {label[0]}
+                        </span>
+                        <h3 className={`text-sm font-semibold ${hdg}`}>{icon} {label}</h3>
+                      </div>
+                      <p className={`text-sm leading-relaxed ${body}`}>
                         {report.pestel?.[key as keyof typeof report.pestel] ?? ''}
                       </p>
                     </div>
@@ -785,8 +916,24 @@ export default function ReportPage(): React.JSX.Element {
             )}
 
             {/* ZONES */}
-            <section id="zones" className="page-break">
-              <h2 className="mb-4 text-lg font-bold text-gray-900">Zones de livraison</h2>
+            <section id="zones" className="page-break space-y-4">
+              <h2 className="text-lg font-bold text-gray-900">Zones de livraison</h2>
+
+              {/* BarChart demandes sièges par zone */}
+              {report.analyse_accessoires && report.analyse_accessoires.demandes_par_zone.length > 0 && (
+                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <h3 className="mb-3 text-sm font-semibold text-gray-700">Demandes sièges auto par zone</h3>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={report.analyse_accessoires.demandes_par_zone} margin={{ top: 4, right: 4, left: 0, bottom: 4 }}>
+                      <XAxis dataKey="zone" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <Tooltip formatter={(v: number) => [v, 'Demandes']} />
+                      <Bar dataKey="demandes_siege" fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
               <div className="space-y-4">
                 {report.veille_zones.map((z, i) => (
                   <div key={i} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -836,28 +983,69 @@ export default function ReportPage(): React.JSX.Element {
               </section>
             )}
 
-            {/* RECOMMANDATIONS */}
-            <section id="recommandations" className="page-break">
-              <h2 className="mb-4 text-lg font-bold text-gray-900">Recommandations CEO</h2>
-              <div className="space-y-3">
-                {report.recommandations_ceo.map((r, i) => (
-                  <div key={i} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-start gap-3">
-                      <span className="shrink-0 text-lg font-bold text-gray-300">{String(i + 1).padStart(2, '0')}</span>
-                      <div className="flex-1">
-                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_COLOR(r.priorite)}`}>
-                            {r.priorite}
-                          </span>
-                          <p className="font-semibold text-gray-900">{r.action}</p>
+            {/* PLAN D'ACTION */}
+            <section id="plan" className="page-break">
+              <h2 className="mb-4 text-lg font-bold text-gray-900">Plan d'action</h2>
+              {report.plan_action && report.plan_action.length > 0 ? (
+                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-8">#</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Action</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Priorité</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Échéance</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">Impact €</th>
+                        <th className="px-4 py-3 w-8" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.plan_action.map((r, i) => (
+                        <React.Fragment key={i}>
+                          <tr className={`border-b border-gray-50 cursor-pointer hover:bg-gray-50 ${openPlanIdx === i ? 'bg-gray-50' : ''}`}
+                            onClick={() => setOpenPlanIdx(openPlanIdx === i ? null : i)}>
+                            <td className="px-4 py-3 text-xs font-bold text-gray-300">{String(i + 1).padStart(2, '0')}</td>
+                            <td className="px-4 py-3 font-medium text-gray-900">{r.action}</td>
+                            <td className="px-4 py-3">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_COLOR(r.priorite)}`}>{r.priorite}</span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-500">{r.echeance}</td>
+                            <td className="px-4 py-3 text-right text-sm font-medium text-gray-700">
+                              {r.impact_euros != null ? `${r.impact_euros.toLocaleString('fr-FR')} €` : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-gray-300 text-xs">{openPlanIdx === i ? '▲' : '▼'}</td>
+                          </tr>
+                          {openPlanIdx === i && (
+                            <tr className="border-b border-gray-50 bg-gray-50">
+                              <td colSpan={6} className="px-6 pb-4 pt-2">
+                                <p className="text-sm text-gray-700">{r.detail}</p>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {report.recommandations_ceo.map((r, i) => (
+                    <div key={i} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                      <div className="flex items-start gap-3">
+                        <span className="shrink-0 text-lg font-bold text-gray-300">{String(i + 1).padStart(2, '0')}</span>
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_COLOR(r.priorite)}`}>{r.priorite}</span>
+                            <p className="font-semibold text-gray-900">{r.action}</p>
+                          </div>
+                          <p className="text-sm text-gray-600">{r.detail}</p>
+                          <p className="mt-1 text-xs text-gray-400">⏱ {r.echeance}</p>
                         </div>
-                        <p className="text-sm text-gray-600">{r.detail}</p>
-                        <p className="mt-1 text-xs text-gray-400">⏱ {r.echeance}</p>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </section>
 
             {/* ACCESSOIRES */}

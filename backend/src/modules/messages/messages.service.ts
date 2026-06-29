@@ -3,6 +3,7 @@ import type { PrismaClient } from '../../generated/tenant';
 export type MessageFilters = {
   rentalId?: string;
   vehicleId?: string;
+  vehicleIds?: string[];
   rentalStatus?: string;
   startDate?: string;
   endDate?: string;
@@ -13,14 +14,15 @@ export type MessageFilters = {
 };
 
 export async function listMessages(db: PrismaClient, filters: MessageFilters = {}) {
-  const { rentalId, vehicleId, rentalStatus, startDate, endDate, direction, sortOrder = 'desc', page = 1, limit = 50 } = filters;
+  const { rentalId, vehicleId, vehicleIds, rentalStatus, startDate, endDate, direction, sortOrder = 'desc', page = 1, limit = 50 } = filters;
 
   // Étape 1 : si filtres sur la location, résoudre les rentalIds éligibles
   let eligibleRentalIds: string[] | null = null;
-  if (vehicleId || rentalStatus || startDate || endDate) {
+  if (vehicleId || vehicleIds || rentalStatus || startDate || endDate) {
     const matchingRentals = await db.rental.findMany({
       where: {
         ...(vehicleId ? { vehicleId } : {}),
+        ...(vehicleIds ? { vehicleId: { in: vehicleIds } } : {}),
         ...(rentalStatus ? { status: rentalStatus as never } : {}),
         ...(startDate ? { startAt: { gte: new Date(startDate) } } : {}),
         ...(endDate ? { endAt: { lte: new Date(endDate) } } : {}),
@@ -164,15 +166,23 @@ export async function cancelMessage(db: PrismaClient, id: string) {
   });
 }
 
-export async function getInboxSummary(db: PrismaClient) {
+export async function getInboxSummary(db: PrismaClient, vehicleIds?: string[]) {
   const settings = await db.companySettings.findFirst({ select: { messageUnansweredMinutes: true } });
   const delayMin = settings?.messageUnansweredMinutes ?? 30;
   const cutoff = new Date(Date.now() - delayMin * 60_000);
 
+  const vFilter = vehicleIds ? { vehicleId: { in: vehicleIds } } : {};
+
   const [pendingCount, unansweredRentals, unansweredRentalIds] = await Promise.all([
-    db.message.count({ where: { status: 'pending_approval' } }),
+    db.message.count({
+      where: {
+        status: 'pending_approval',
+        ...(vehicleIds ? { rental: vFilter } : {}),
+      },
+    }),
     db.rental.count({
       where: {
+        ...vFilter,
         messages: {
           some: { direction: 'inbound' },
           none: { direction: 'outbound', status: { in: ['approved', 'sent'] } },
@@ -180,9 +190,9 @@ export async function getInboxSummary(db: PrismaClient) {
         status: { in: ['booked', 'active'] },
       },
     }),
-    // Locations actives/à venir avec inbound > 2h et aucune réponse outbound
     db.rental.findMany({
       where: {
+        ...vFilter,
         status: { in: ['booked', 'active'] },
         messages: {
           some: { direction: 'inbound', createdAt: { lt: cutoff } },
@@ -227,7 +237,7 @@ export async function getInboxSummary(db: PrismaClient) {
       direction: 'outbound',
       status: 'pending_approval',
       aiSuggestion: { not: null },
-      rental: { status: { in: ['booked', 'active'] } },
+      rental: { status: { in: ['booked', 'active'] }, ...vFilter },
     },
     select: {
       id: true,

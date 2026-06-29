@@ -26,6 +26,7 @@ export interface RoiAnalysis {
   roiMax: number;
   moisOptimal: number;
   moisRestants: number;
+  valeurMarchandeActuelle: number;
   dateOptimale: string;
   plusValueNette: number;
   capitalRestantDu: number;
@@ -514,6 +515,7 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     roiMax: Math.round(maxRoi * 100) / 100,
     moisOptimal: maxTri !== null ? moisOptimalTri : moisOptimal,
     moisRestants,
+    valeurMarchandeActuelle: actuPoint?.valeurMarchande ?? 0,
     dateOptimale: dateStr,
     plusValueNette: actuPoint?.plusValue ?? courbe[0].plusValue,
     capitalRestantDu: actuPoint?.capitalRestant ?? courbe[0].capitalRestant,
@@ -529,8 +531,8 @@ export async function calculateOptimalSaleWindow(vehicleId: string, db: Db): Pro
     triActuel: triCalculable ? (actuPoint?.tri ?? null) : null,
     triMax: triCalculable && maxTri !== null ? Math.round(maxTri * 100) / 100 : null,
     moisOptimalTri,
-    cocActuel: actuPoint?.cocReturn ?? null,
-    cocMax: maxCoc !== null ? Math.round(maxCoc * 100) / 100 : null,
+    cocActuel: triCalculable ? (actuPoint?.cocReturn ?? null) : null,
+    cocMax: triCalculable && maxCoc !== null ? Math.round(maxCoc * 100) / 100 : null,
     cashflowMensuelNet: Math.round(caMensuelMoyen - coutsMensuelsTotaux - pmt),
     // Km / pente
     kmParMois,

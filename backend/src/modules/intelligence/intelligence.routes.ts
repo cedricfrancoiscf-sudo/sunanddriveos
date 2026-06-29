@@ -502,45 +502,43 @@ router.get('/rentability', async (req: Request, res: Response, next: NextFunctio
   try {
     const db = getTenantClient(req.tenantDbUrl!);
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // CA mensuel = moyenne glissante sur N mois complets (endAt dans la fenêtre)
+    const settings = await db.companySettings.findFirst({ select: { roiCaMoyenMois: true } });
+    const N = settings?.roiCaMoyenMois ?? 5;
+    const windowEnd = new Date(now.getFullYear(), now.getMonth(), 1);
+    const windowStart = new Date(windowEnd.getFullYear(), windowEnd.getMonth() - N, 1);
 
     const yearStart = new Date(Date.now() - 365 * 86_400_000);
-    const [vehicles, rentals, costs, annualRentals, annualMaintenances] = await Promise.all([
+    const [vehicles, rentals, costs, annualMaintenances] = await Promise.all([
       db.vehicle.findMany({
         where: { isActive: true },
         select: { id: true, make: true, model: true, licensePlate: true },
       }),
       db.rental.findMany({
-        where: { startAt: { gte: monthStart }, status: { in: ['booked', 'active', 'completed'] } },
+        where: { endAt: { gte: windowStart, lt: windowEnd }, status: { in: ['booked', 'active', 'completed'] } },
         select: { vehicleId: true, ownerPayout: true, grossRevenue: true },
       }),
       db.vehicleCost.findMany({ select: { vehicleId: true, amount: true, type: true, amortizationMonths: true, endDate: true } }),
-      db.rental.findMany({
-        where: { startAt: { gte: yearStart }, status: { in: ['booked', 'active', 'completed'] } },
-        select: { vehicleId: true, ownerPayout: true, grossRevenue: true },
-      }),
       db.maintenance.findMany({ where: { performedAt: { gte: yearStart } }, select: { vehicleId: true, cost: true } }),
     ]);
 
     const rentability = vehicles.map(v => {
       const vRentals = rentals.filter(r => r.vehicleId === v.id);
-      const caNet = vRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
-      const caGross = vRentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
-      const now = new Date();
+      // Somme sur N mois, divisée par N pour la moyenne mensuelle
+      const caNetTotal = vRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
+      const caNet = caNetTotal / N;
+      const caGross = vRentals.reduce((s, r) => s + (r.grossRevenue ?? 0), 0) / N;
       const vCosts = costs.filter(c => c.vehicleId === v.id && (!c.endDate || new Date(c.endDate) > now));
       const fixedCosts = vCosts.filter(c => c.type === 'fixed').reduce((s, c) => s + c.amount, 0);
       const variableCosts = vCosts.filter(c => c.type === 'onetime').reduce((s, c) => s + c.amount / (c.amortizationMonths ?? 1), 0);
-      const totalCosts = fixedCosts + variableCosts;
-      const breakEven = totalCosts;
-      const margin = caNet - totalCosts;
-
-      const vAnnualRentals = annualRentals.filter(r => r.vehicleId === v.id);
-      const caAnnuel = vAnnualRentals.reduce((s, r) => s + ((r.ownerPayout ?? 0) > 0 ? r.ownerPayout! : Math.max(0, r.grossRevenue ?? 0)), 0);
       const annualMaintCosts = annualMaintenances.filter(m => m.vehicleId === v.id).reduce((s, m) => s + (m.cost ?? 0), 0);
       const maintenanceMensuel = annualMaintCosts / 12;
-      const getaroundFees = vRentals.filter(r => (r.ownerPayout ?? 0) > 0).reduce((s, r) => s + Math.max(0, (r.grossRevenue ?? 0) - r.ownerPayout!), 0);
+      const getaroundFees = vRentals.filter(r => (r.ownerPayout ?? 0) > 0).reduce((s, r) => s + Math.max(0, (r.grossRevenue ?? 0) - r.ownerPayout!), 0) / N;
       const totalCostsWithMaint = fixedCosts + variableCosts + maintenanceMensuel;
       const marginWithMaint = caNet - totalCostsWithMaint;
+      // CA annuel = extrapolation linéaire depuis la moyenne mensuelle
+      const caAnnuel = caNet * 12;
       const costsAnnuels = fixedCosts * 12 + annualMaintCosts;
       const margeAnnuelle = caAnnuel - costsAnnuels;
 

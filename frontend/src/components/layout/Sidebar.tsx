@@ -221,12 +221,14 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
 
           {/* ── GESTION ── */}
           <SectionLabel label="Gestion" collapsed={collapsed} />
-          <li>
-            <NavLink to="/renters" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Locataires' : undefined}>
-              <Icon d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              {!collapsed && 'Locataires'}
-            </NavLink>
-          </li>
+          {!isCarkeeper && (
+            <li>
+              <NavLink to="/renters" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Locataires' : undefined}>
+                <Icon d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                {!collapsed && 'Locataires'}
+              </NavLink>
+            </li>
+          )}
           <li>
             <NavLink to="/accessories" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Accessoires' : undefined}>
               <Icon d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
@@ -275,15 +277,17 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
 
           {/* ── AUTOMATISATION ── */}
           <SectionLabel label="Automatisation" collapsed={collapsed} />
-          <li>
-            {isPro
-              ? <NavLink to="/sequences" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Séquences' : undefined}>
-                  <Icon d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                  {!collapsed && 'Séquences'}
-                </NavLink>
-              : <LockedItem label="Séquences" icon={<Icon d="M4 6h16M4 10h16M4 14h16M4 18h16" />} requiredPlan="pro" collapsed={collapsed} />
-            }
-          </li>
+          {!isCarkeeper && (
+            <li>
+              {isPro
+                ? <NavLink to="/sequences" onClick={onClose} className={navLinkClass} style={navLinkStyle} title={collapsed ? 'Séquences' : undefined}>
+                    <Icon d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    {!collapsed && 'Séquences'}
+                  </NavLink>
+                : <LockedItem label="Séquences" icon={<Icon d="M4 6h16M4 10h16M4 14h16M4 18h16" />} requiredPlan="pro" collapsed={collapsed} />
+              }
+            </li>
+          )}
           {!isCarkeeper && (
             <li>
               {isPro

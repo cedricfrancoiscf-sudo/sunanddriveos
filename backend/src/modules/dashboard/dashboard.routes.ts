@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, isOnlyCarkeeper, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient, getMasterClient } from '../../prisma/client';
 import { getTaskAlerts } from '../maintenance/maintenance.service';
@@ -201,7 +201,11 @@ router.get('/copilot', async (req: Request, res: Response, next: NextFunction) =
 router.get('/maintenances', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
-    const maintenances = await getTaskAlerts(db);
+    let vehicleIds: string[] | undefined;
+    if (isOnlyCarkeeper(req.auth)) {
+      vehicleIds = await getCarekeeperVehicleIds(db, req.auth!.userId!);
+    }
+    const maintenances = await getTaskAlerts(db, vehicleIds);
     res.json({ maintenances, count: maintenances.length });
   } catch (err) {
     next(err);

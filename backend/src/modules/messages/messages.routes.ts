@@ -1,6 +1,6 @@
 ﻿import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, isOnlyCarkeeper, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import {
@@ -33,7 +33,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     if (!q.success) { res.status(400).json({ error: 'Paramètres invalides' }); return; }
 
     const db = getTenantClient(req.tenantDbUrl!);
-    const result = await listMessages(db, q.data);
+    const filters = { ...q.data } as typeof q.data & { vehicleIds?: string[] };
+    if (isOnlyCarkeeper(req.auth)) {
+      const assigned = await getCarekeeperVehicleIds(db, req.auth!.userId!);
+      if (assigned.length === 0) { res.json({ messages: [], total: 0, page: 1, limit: 50 }); return; }
+      filters.vehicleIds = assigned;
+    }
+    const result = await listMessages(db, filters);
     res.json(result);
   } catch (err: unknown) { next(err); }
 });
@@ -42,7 +48,11 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/inbox-summary', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
-    const summary = await getInboxSummary(db);
+    let vehicleIds: string[] | undefined;
+    if (isOnlyCarkeeper(req.auth)) {
+      vehicleIds = await getCarekeeperVehicleIds(db, req.auth!.userId!);
+    }
+    const summary = await getInboxSummary(db, vehicleIds);
     res.json(summary);
   } catch (err: unknown) { next(err); }
 });

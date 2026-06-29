@@ -171,14 +171,14 @@ export async function initMaintenanceTasks(
 }
 
 // Alertes issues des tâches récurrentes — logique contextuelle selon ctResult
-export async function getTaskAlerts(db: PrismaClient) {
+export async function getTaskAlerts(db: PrismaClient, vehicleIds?: string[]) {
   const now = new Date();
   const in30d = new Date(now.getTime() + 30 * 86_400_000);
   const in60d = new Date(now.getTime() + 60 * 86_400_000);
 
   return db.maintenanceTask.findMany({
     where: {
-      vehicle: { isActive: true },
+      vehicle: { isActive: true, ...(vehicleIds ? { id: { in: vehicleIds } } : {}) },
       OR: [
         // Contre-visite CT urgente (deadline dans 30j ou dépassée)
         { type: 'ct', ctResult: { in: ['defavorable', 'contre_visite'] }, ctCounterVisitDeadline: { lte: in30d } },

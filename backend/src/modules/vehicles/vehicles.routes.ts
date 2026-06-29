@@ -541,4 +541,39 @@ router.get('/:id/roi-analysis', async (req: Request, res: Response, next: NextFu
   } catch (err: unknown) { next(err); }
 });
 
+// GET /api/v1/vehicles/:id/unavailabilities
+router.get('/:id/unavailabilities', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const vehicleId = req.params.id as string;
+    const now = new Date();
+    const [unavailabilities, blockings] = await Promise.all([
+      db.unavailability.findMany({
+        where: { vehicleId },
+        orderBy: { startsAt: 'asc' },
+        select: { id: true, startsAt: true, endsAt: true, reason: true, getaroundId: true },
+      }),
+      db.blocking.findMany({
+        where: { vehicleId, endAt: { gte: now } },
+        orderBy: { startAt: 'asc' },
+        select: { id: true, startAt: true, endAt: true, reason: true, type: true },
+      }),
+    ]);
+
+    // Calcul jours indisponibles futurs (indispos GA + blocages à venir)
+    const allPeriods = [
+      ...unavailabilities.map(u => ({ start: new Date(u.startsAt), end: new Date(u.endsAt) })),
+      ...blockings.map(b => ({ start: new Date(b.startAt), end: new Date(b.endAt) })),
+    ];
+    const joursIndispo = allPeriods.reduce((total, p) => {
+      const start = p.start < now ? now : p.start;
+      const end = p.end;
+      if (end <= start) return total;
+      return total + Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
+    }, 0);
+
+    res.json({ unavailabilities, blockings, joursIndispo });
+  } catch (err: unknown) { next(err); }
+});
+
 export default router;

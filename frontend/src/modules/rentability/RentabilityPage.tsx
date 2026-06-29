@@ -206,8 +206,8 @@ function CostPanel({ vehicleId, breakEven }: { vehicleId: string; breakEven: num
   );
 }
 
-type SortKey = 'licensePlate' | 'caNet' | 'totalCosts' | 'margin' | 'caAnnuel' | 'costsAnnuels' | 'margeAnnuelle' | 'triActuel' | 'cocActuel' | 'cashflowMensuelNet' | 'mensualitePret';
-type MainTab = 'rentabilite' | 'sinistres' | 'simulateur' | 'objectifs' | 'revente';
+type SortKey = 'licensePlate' | 'caNet' | 'totalCosts' | 'margin' | 'caAnnuel' | 'costsAnnuels' | 'margeAnnuelle' | 'cashflowMensuelNet' | 'mensualitePret';
+type MainTab = 'ce_mois' | 'objectifs' | 'revente';
 
 // ─── Revente optimale ─────────────────────────────────────────────────────────
 
@@ -222,6 +222,7 @@ interface RoiFleetEntry {
     roiMax: number;
     moisOptimal: number;
     moisRestants: number;
+    valeurMarchandeActuelle: number;
     dateOptimale: string;
     plusValueNette: number;
     capitalRestantDu: number;
@@ -252,16 +253,10 @@ const SIGNAL_LABEL: Record<string, string> = {
   attendre: 'Continuer à exploiter',
 };
 
-function ReventeTab(): React.JSX.Element {
-  const { data, isLoading } = useQuery<{ fleet: RoiFleetEntry[] }>({
-    queryKey: ['roi-fleet'],
-    queryFn: () => api.get<{ fleet: RoiFleetEntry[] }>('/vehicles/roi-fleet').then(r => r.data),
-    staleTime: 10 * 60_000,
-  });
-
-  type RoiSortKey = 'licensePlate' | 'plusValueNette' | 'roiActuel' | 'triActuel' | 'cocActuel' | 'cashflowMensuelNet' | 'moisVersDeclin';
-  const [roiSortKey, setRoiSortKey] = React.useState<RoiSortKey>('roiActuel');
-  const [roiSortDir, setRoiSortDir] = React.useState<'asc' | 'desc'>('desc');
+function ReventeTab({ roiFleetData, roiFleetLoading }: { roiFleetData: { fleet: RoiFleetEntry[] } | undefined; roiFleetLoading: boolean }): React.JSX.Element {
+  type RoiSortKey = 'licensePlate' | 'kmActuel' | 'valeurMarchande' | 'plusValueNette' | 'roiActuel' | 'signal' | 'moisVersDeclin';
+  const [roiSortKey, setRoiSortKey] = React.useState<RoiSortKey>('signal');
+  const [roiSortDir, setRoiSortDir] = React.useState<'asc' | 'desc'>('asc');
 
   function toggleRoiSort(k: RoiSortKey) {
     if (roiSortKey === k) setRoiSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -278,7 +273,7 @@ function ReventeTab(): React.JSX.Element {
     );
   }
 
-  const rows = [...(data?.fleet ?? [])].sort((a, b) => {
+  const rows = [...(roiFleetData?.fleet ?? [])].sort((a, b) => {
     if (!a.hasData && b.hasData) return 1;
     if (a.hasData && !b.hasData) return -1;
     if (!a.analysis && !b.analysis) return 0;
@@ -287,16 +282,16 @@ function ReventeTab(): React.JSX.Element {
     let cmp = 0;
     const aa = a.analysis, ba = b.analysis;
     if (roiSortKey === 'licensePlate') cmp = a.licensePlate.localeCompare(b.licensePlate, 'fr');
+    else if (roiSortKey === 'kmActuel') cmp = aa.kmActuel - ba.kmActuel;
+    else if (roiSortKey === 'valeurMarchande') cmp = (aa.valeurMarchandeActuelle ?? 0) - (ba.valeurMarchandeActuelle ?? 0);
     else if (roiSortKey === 'plusValueNette') cmp = aa.plusValueNette - ba.plusValueNette;
     else if (roiSortKey === 'roiActuel') cmp = aa.roiActuel - ba.roiActuel;
-    else if (roiSortKey === 'triActuel') cmp = (aa.triActuel ?? -Infinity) - (ba.triActuel ?? -Infinity);
-    else if (roiSortKey === 'cocActuel') cmp = (aa.cocActuel ?? -Infinity) - (ba.cocActuel ?? -Infinity);
-    else if (roiSortKey === 'cashflowMensuelNet') cmp = aa.cashflowMensuelNet - ba.cashflowMensuelNet;
+    else if (roiSortKey === 'signal') cmp = (SIGNAL_SORT[aa.signal] ?? 9) - (SIGNAL_SORT[ba.signal] ?? 9);
     else if (roiSortKey === 'moisVersDeclin') cmp = (aa.moisVersDeclin ?? 0) - (ba.moisVersDeclin ?? 0);
     return roiSortDir === 'desc' ? -cmp : cmp;
   });
 
-  if (isLoading) {
+  if (roiFleetLoading) {
     return (
       <div className="flex justify-center py-12">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: '#01696e', borderTopColor: 'transparent' }} />
@@ -307,28 +302,24 @@ function ReventeTab(): React.JSX.Element {
   return (
     <div data-testid="revente-tab" className="space-y-4">
       <p className="text-sm text-gray-500">
-        Classement de la flotte par signal de revente optimale. Trier par urgence pour prioriser les décisions.
+        Classement de la flotte par signal de revente basé sur le kilométrage. Trier par urgence pour prioriser les décisions.
       </p>
       <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="border-b border-gray-100 bg-gray-50">
             <tr>
               <RoiSortTh k="licensePlate" label="Véhicule" />
-              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Valeur marchande</th>
-              <RoiSortTh k="plusValueNette" label="Plus-value nette" />
+              <RoiSortTh k="kmActuel" label="Km actuels" />
+              <RoiSortTh k="valeurMarchande" label="Valeur marchande" />
+              <RoiSortTh k="plusValueNette" label="Plus-value" />
               <RoiSortTh k="roiActuel" label="ROI actuel" />
-              <RoiSortTh k="triActuel" label="TRI" />
-              <RoiSortTh k="cocActuel" label="Cash/Cash" />
-              <RoiSortTh k="cashflowMensuelNet" label="Cashflow net" />
-              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Fenêtre optimale</th>
-              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">Signal</th>
-              <RoiSortTh k="moisVersDeclin" label="Avant déclin" />
+              <RoiSortTh k="signal" label="Signal" />
+              <RoiSortTh k="moisVersDeclin" label="Revente avant" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.map(row => {
               const a = row.analysis;
-              const moisAvantDeclin = a ? (a.moisVersDeclin ?? a.moisRestants) : null;
 
               if (!row.hasData || !a) {
                 return (
@@ -337,9 +328,9 @@ function ReventeTab(): React.JSX.Element {
                       {row.make} {row.model}
                       <span className="ml-2 font-mono text-xs text-gray-400">{row.licensePlate}</span>
                     </td>
-                    <td colSpan={9} className="px-4 py-3 text-xs text-gray-400 italic">
+                    <td colSpan={6} className="px-4 py-3 text-xs text-gray-400 italic">
                       Données incomplètes —{' '}
-                      <a href={`/vehicles/${row.vehicleId}/edit`} className="text-[#01696e] hover:underline">
+                      <a href={`/vehicles/${row.vehicleId}`} className="text-[#01696e] hover:underline">
                         Compléter la fiche
                       </a>
                     </td>
@@ -347,7 +338,12 @@ function ReventeTab(): React.JSX.Element {
                 );
               }
 
-              const optDate = new Date(a.dateOptimale + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+              const moisAvantDeclin = a.moisVersDeclin;
+              const now = new Date();
+              const reventeDate = new Date(now.getFullYear(), now.getMonth() + moisAvantDeclin, 1)
+                .toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
+              const kmAuDeclin = Math.round(a.kmActuel + a.kmParMois * moisAvantDeclin);
+
               return (
                 <tr key={row.vehicleId} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">
@@ -357,7 +353,10 @@ function ReventeTab(): React.JSX.Element {
                     <span className="ml-2 font-mono text-xs text-gray-400">{row.licensePlate}</span>
                   </td>
                   <td className="px-4 py-3 text-gray-700">
-                    {a.capitalRestantDu > 0 ? `${a.capitalRestantDu.toLocaleString('fr-FR')} €` : '—'}
+                    {a.kmActuel > 0 ? `${a.kmActuel.toLocaleString('fr-FR')} km` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">
+                    {(a.valeurMarchandeActuelle ?? 0) > 0 ? `${(a.valeurMarchandeActuelle).toLocaleString('fr-FR')} €` : '—'}
                   </td>
                   <td className={`px-4 py-3 font-semibold ${a.plusValueNette >= 0 ? 'text-green-700' : 'text-red-600'}`}>
                     {a.plusValueNette >= 0 ? '+' : ''}{a.plusValueNette.toLocaleString('fr-FR')} €
@@ -365,16 +364,6 @@ function ReventeTab(): React.JSX.Element {
                   <td className={`px-4 py-3 font-semibold ${a.roiActuel >= 0 ? 'text-green-700' : 'text-red-600'}`}>
                     {a.roiActuel.toFixed(1)}%
                   </td>
-                  <td className={`px-4 py-3 font-semibold ${a.triActuel !== null ? (a.triActuel >= 0 ? 'text-green-700' : 'text-red-600') : 'text-gray-400'}`}>
-                    {a.triActuel !== null ? `${a.triActuel.toFixed(1)}%` : '—'}
-                  </td>
-                  <td className={`px-4 py-3 ${a.cocActuel !== null ? (a.cocActuel >= 0 ? 'text-green-700' : 'text-red-600') : 'text-gray-400'}`}>
-                    {a.cocActuel !== null ? `${a.cocActuel.toFixed(1)}%` : '—'}
-                  </td>
-                  <td className={`px-4 py-3 ${a.cashflowMensuelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                    {a.cashflowMensuelNet >= 0 ? '+' : ''}{a.cashflowMensuelNet.toLocaleString('fr-FR')} €
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{optDate}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${SIGNAL_BADGE[a.signal]}`}>
                       {SIGNAL_ICON[a.signal]} {SIGNAL_LABEL[a.signal]}
@@ -383,9 +372,12 @@ function ReventeTab(): React.JSX.Element {
                   <td className="px-4 py-3 text-gray-600">
                     {moisAvantDeclin === 0
                       ? <span className="font-semibold text-red-600">Déclin imminent</span>
-                      : moisAvantDeclin !== null
-                        ? <span>{moisAvantDeclin} mois<br/><span className="text-[10px] text-gray-400">{a && a.kmActuel > 0 ? `${(a.kmActuel).toLocaleString('fr-FR')} km` : ''}</span></span>
-                        : '—'}
+                      : <span>
+                          <span className="font-medium">{reventeDate}</span>
+                          <br />
+                          <span className="text-[10px] text-gray-400">{kmAuDeclin.toLocaleString('fr-FR')} km · {moisAvantDeclin} mois</span>
+                        </span>
+                    }
                   </td>
                 </tr>
               );
@@ -396,11 +388,6 @@ function ReventeTab(): React.JSX.Element {
           <p className="py-8 text-center text-sm text-gray-400">Aucune donnée — complétez les fiches véhicule avec le prix d'achat et la valeur marchande.</p>
         )}
       </div>
-      {rows.some(r => r.hasData && r.analysis?.triActuel === null) && (
-        <p className="mt-2 text-[11px] text-gray-400 italic px-1">
-          * TRI non calculable — apport personnel non renseigné dans la fiche véhicule
-        </p>
-      )}
     </div>
   );
 }
@@ -659,11 +646,12 @@ function ObjectifsTab({ entries }: { entries: RentabilityEntry[] }): React.JSX.E
 }
 
 export default function RentabilityPage(): React.JSX.Element {
-  const [tab, setTab] = useState<MainTab>('rentabilite');
+  const [tab, setTab] = useState<MainTab>('ce_mois');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('caNet');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [addModal, setAddModal] = useState<{ vehicleId: string; make: string; model: string } | null>(null);
+  const [outilsOpen, setOutilsOpen] = useState(false);
 
   const PRIMARY = '#01696e';
 
@@ -678,24 +666,22 @@ export default function RentabilityPage(): React.JSX.Element {
     staleTime: 5 * 60_000,
   });
 
-  const { data: roiFleetData } = useQuery<{ fleet: RoiFleetEntry[] }>({
+  const { data: roiFleetData, isLoading: roiFleetLoading } = useQuery<{ fleet: RoiFleetEntry[] }>({
     queryKey: ['roi-fleet'],
     queryFn: () => api.get<{ fleet: RoiFleetEntry[] }>('/vehicles/roi-fleet').then(r => r.data),
     staleTime: 10 * 60_000,
   });
   const roiMap = new Map((roiFleetData?.fleet ?? []).map(r => [r.vehicleId, r.analysis]));
 
-  type RentabilityEntryPlus = RentabilityEntry & { triActuel: number | null; cocActuel: number | null; cashflowMensuelNet: number | null; mensualitePret: number | null };
+  type RentabilityEntryPlus = RentabilityEntry & { cashflowMensuelNet: number | null; mensualitePret: number | null; signal: string | null; moisVersDeclin: number | null };
 
   const rawEntries: RentabilityEntryPlus[] = (data?.rentability ?? []).map(e => {
     const roi = roiMap.get(e.vehicleId);
-    return { ...e, triActuel: roi?.triActuel ?? null, cocActuel: roi?.cocActuel ?? null, cashflowMensuelNet: roi?.cashflowMensuelNet ?? null, mensualitePret: roi?.mensualitePret ?? null };
+    return { ...e, cashflowMensuelNet: roi?.cashflowMensuelNet ?? null, mensualitePret: roi?.mensualitePret ?? null, signal: roi?.signal ?? null, moisVersDeclin: roi?.moisVersDeclin ?? null };
   });
   const entries = [...rawEntries].sort((a, b) => {
     let cmp = 0;
     if (sortKey === 'licensePlate') cmp = a.licensePlate.localeCompare(b.licensePlate, 'fr');
-    else if (sortKey === 'triActuel') cmp = (a.triActuel ?? -Infinity) - (b.triActuel ?? -Infinity);
-    else if (sortKey === 'cocActuel') cmp = (a.cocActuel ?? -Infinity) - (b.cocActuel ?? -Infinity);
     else if (sortKey === 'cashflowMensuelNet') cmp = (a.cashflowMensuelNet ?? 0) - (b.cashflowMensuelNet ?? 0);
     else if (sortKey === 'mensualitePret') cmp = (a.mensualitePret ?? 0) - (b.mensualitePret ?? 0);
     else cmp = (a[sortKey as keyof RentabilityEntry] as number) - (b[sortKey as keyof RentabilityEntry] as number);
@@ -706,11 +692,9 @@ export default function RentabilityPage(): React.JSX.Element {
   const totalMargin = totalCA - totalCosts;
 
   const TABS: { key: MainTab; label: string }[] = [
-    { key: 'rentabilite', label: 'Rentabilité' },
-    { key: 'sinistres', label: 'Sinistres' },
-    { key: 'simulateur', label: 'Simulateur ROI' },
+    { key: 'ce_mois', label: 'Ce mois' },
+    { key: 'revente', label: 'Revente' },
     { key: 'objectifs', label: 'Objectifs CA' },
-    { key: 'revente', label: 'Revente optimale' },
   ];
 
   return (
@@ -736,7 +720,7 @@ export default function RentabilityPage(): React.JSX.Element {
         ))}
       </div>
 
-      {tab === 'rentabilite' && (
+      {tab === 'ce_mois' && (
         <>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -763,11 +747,11 @@ export default function RentabilityPage(): React.JSX.Element {
 
             {!isLoading && entries.length > 0 && (
               <div className="flex items-center gap-4 px-5 py-2 border-b border-gray-100 text-[10px] font-semibold uppercase tracking-wide bg-gray-50">
-                {(['licensePlate', 'caNet', 'totalCosts', 'margin', 'caAnnuel', 'costsAnnuels', 'margeAnnuelle', 'triActuel', 'cocActuel', 'cashflowMensuelNet', 'mensualitePret'] as SortKey[]).map((k, i) => {
+                {(['licensePlate', 'caNet', 'totalCosts', 'margin', 'caAnnuel', 'costsAnnuels', 'margeAnnuelle', 'cashflowMensuelNet', 'mensualitePret'] as SortKey[]).map((k, i) => {
                   const labels: Record<SortKey, string> = {
                     licensePlate: 'Véhicule', caNet: 'CA net / mois', totalCosts: 'Coûts / mois',
                     margin: 'Marge mens.', caAnnuel: 'CA annuel', costsAnnuels: 'Coûts ann.', margeAnnuelle: 'Marge ann.',
-                    triActuel: 'TRI', cocActuel: 'Cash/Cash', cashflowMensuelNet: 'Cashflow net', mensualitePret: 'Mensualité',
+                    cashflowMensuelNet: 'Cashflow net', mensualitePret: 'Mensualité',
                   };
                   const active = sortKey === k;
                   const isGreen = i >= 4 && i <= 6;
@@ -779,6 +763,7 @@ export default function RentabilityPage(): React.JSX.Element {
                     </button>
                   );
                 })}
+                <div className="text-right text-gray-400 min-w-16 shrink-0">Signal km</div>
                 <div className="w-20 shrink-0" />
               </div>
             )}
@@ -830,18 +815,6 @@ export default function RentabilityPage(): React.JSX.Element {
                           {e.margeAnnuelle >= 0 ? '+' : ''}{fmtEuro(e.margeAnnuelle)}
                         </span>
                       </div>
-                      {e.triActuel !== null && (
-                        <div className="text-right min-w-16 shrink-0">
-                          <p className="text-[10px] text-gray-400">TRI</p>
-                          <p className={`text-xs font-semibold ${e.triActuel >= 0 ? 'text-green-700' : 'text-red-600'}`}>{e.triActuel.toFixed(1)}%</p>
-                        </div>
-                      )}
-                      {e.cocActuel !== null && (
-                        <div className="text-right min-w-16 shrink-0">
-                          <p className="text-[10px] text-gray-400">CoC</p>
-                          <p className={`text-xs font-semibold ${e.cocActuel >= 0 ? 'text-green-700' : 'text-red-600'}`}>{e.cocActuel.toFixed(1)}%</p>
-                        </div>
-                      )}
                       {e.cashflowMensuelNet !== null && (
                         <div className="text-right min-w-20 shrink-0">
                           <p className="text-[10px] text-gray-400">Cashflow</p>
@@ -852,6 +825,16 @@ export default function RentabilityPage(): React.JSX.Element {
                         <div className="text-right min-w-20 shrink-0">
                           <p className="text-[10px] text-gray-400">Mensualité</p>
                           <p className="text-xs font-semibold text-gray-700">{fmtEuro(e.mensualitePret)}</p>
+                        </div>
+                      )}
+                      {e.signal && (
+                        <div className="min-w-16 shrink-0 flex justify-end">
+                          <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${SIGNAL_BADGE[e.signal] ?? 'bg-gray-100 text-gray-500'}`}>
+                            {SIGNAL_ICON[e.signal]}
+                            {e.moisVersDeclin !== null && e.moisVersDeclin <= 12
+                              ? `${e.moisVersDeclin}m`
+                              : SIGNAL_LABEL[e.signal]?.split(' ')[0]}
+                          </span>
                         </div>
                       )}
                       <svg className={`h-4 w-4 text-gray-400 transition-transform duration-200 shrink-0 ${expanded === e.vehicleId ? 'rotate-180' : ''}`}
@@ -887,10 +870,32 @@ export default function RentabilityPage(): React.JSX.Element {
         </>
       )}
 
-      {tab === 'sinistres' && <SinistresTab />}
-      {tab === 'simulateur' && <SimulateurTab />}
       {tab === 'objectifs' && <ObjectifsTab entries={rawEntries} />}
-      {tab === 'revente' && <ReventeTab />}
+      {tab === 'revente' && <ReventeTab roiFleetData={roiFleetData} roiFleetLoading={roiFleetLoading} />}
+
+      {/* Outils avancés (Sinistres + Simulateur) */}
+      <div className="rounded-2xl border border-gray-100 bg-gray-50/50">
+        <button type="button"
+          onClick={() => setOutilsOpen(o => !o)}
+          className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 transition">
+          <span className="flex items-center gap-2">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Outils avancés
+          </span>
+          <svg className={`h-4 w-4 transition-transform ${outilsOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {outilsOpen && (
+          <div className="border-t border-gray-100 p-4 space-y-6">
+            <SinistresTab />
+            <SimulateurTab />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

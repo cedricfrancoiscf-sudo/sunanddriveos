@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../utils/api';
 
 const PRIMARY = '#01696e';
+const DARK = '#014a4e';
 
 type TabId = 'brochure' | 'quickstart' | 'manual' | 'technical';
 
@@ -71,138 +74,176 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
 
 // ─── DOCUMENT 1 — Brochure ───────────────────────────────────────────────────
 
-function DocBrochure() {
+interface BrochureStats {
+  caNetAnnuel: number;
+  tauxOccupation: number;
+  nbLocations: number;
+  nbVehicules: number;
+}
+
+function fmtCA(n: number): string {
+  if (n >= 100_000) return `${Math.round(n / 1_000)} k €`;
+  if (n >= 10_000)  return `${(n / 1_000).toFixed(1)} k €`;
+  return `${n.toLocaleString('fr-FR')} €`;
+}
+
+const COMPARISON_ROWS: [string, string, string][] = [
+  ['Vue flotte',
+   'Un calendrier par véhicule, à consulter un par un',
+   'Planning Gantt de toute la flotte sur une seule ligne de temps'],
+  ['Messagerie',
+   'Fil de discussion brut, aucune suggestion',
+   "IA qui rédige des brouillons depuis les données réelles — jamais d'invention"],
+  ['Performance',
+   "Revenus et taux d'occupation, vue globale uniquement",
+   'Marge nette par véhicule, coûts fixes/variables, cashflow réel'],
+  ['Entretien',
+   'Aucun suivi CT ni révision visible',
+   'Alertes automatiques CT, révisions, historique complet par véhicule'],
+  ['Patrimoine',
+   'Aucune donnée de valeur ou de revente',
+   'Signal de revente par véhicule, position patrimoniale nette, DSCR'],
+  ['Comptabilité',
+   'Relevés de paiement bruts',
+   'Export FEC prêt pour votre expert-comptable'],
+  ['Équipe',
+   'Un seul accès propriétaire',
+   'Rôles séparés : carkeeper, comptable, multi-comptes Getaround'],
+];
+
+const MODULES_DATA = [
+  { icon: '☀️', title: 'Dashboard quotidien',
+    accroche: "Chaque matin, l'app vous dit ce qui compte",
+    desc: "Résumé IA en français — départs, retours, alertes, occupation par zone. Plus besoin de chercher." },
+  { icon: '📅', title: 'Planning centralisé',
+    accroche: 'Toute votre flotte sur une seule ligne de temps',
+    desc: "Vue Gantt multi-véhicule avec indicateurs de retour imminent. Ce que Getaround ne propose pas nativement." },
+  { icon: '💬', title: 'Messagerie IA fiable',
+    accroche: 'Une IA qui répond vite, mais qui ne ment jamais',
+    desc: "Brouillons fondés sur les données réelles du véhicule. Si une information manque, l'IA le dit." },
+  { icon: '🤖', title: 'Séquences automatiques',
+    accroche: 'Le pilote automatique de votre quotidien',
+    desc: "Messages déclenchés par événement (réservation, départ, retour, annulation). Historique vérifiable." },
+  { icon: '📊', title: 'Rentabilité par véhicule',
+    accroche: 'Vous saurez enfin quelle voiture rapporte vraiment',
+    desc: "Marge nette réelle, coûts fixes/variables, signal de revente argumenté par les vrais chiffres." },
+  { icon: '🧠', title: 'Fiche IA & Instructions',
+    accroche: "La mémoire que Getaround n'a pas",
+    desc: "Équipements, procédures d'accès, consignes structurées par véhicule. L'IA ne s'appuie que sur du vérifié." },
+  { icon: '📈', title: 'Rapport CEO mensuel',
+    accroche: 'Un document que votre banquier prendrait au sérieux',
+    desc: "Position patrimoniale, DSCR, SWOT, veille zone de chalandise, plan d'action chiffré en euros." },
+  { icon: '🏢', title: 'Multi-rôles & Croissance',
+    accroche: 'Conçu pour 5 voitures comme pour 50',
+    desc: "Rôles séparés (carkeeper, comptable), multi-comptes Getaround, architecture multi-tenant évolutive." },
+];
+
+function DocBrochure({ stats }: { stats: BrochureStats | null }) {
   return (
     <div className="mx-auto max-w-3xl">
-      {/* En-tête visible uniquement à l'impression */}
+      {/* En-tête impression uniquement */}
       <div className="print-only mb-6 pb-4 border-b-2" style={{ borderColor: PRIMARY }}>
         <p className="text-sm font-bold" style={{ color: PRIMARY, fontFamily: "'Montserrat', sans-serif" }}>SunanddriveOS — Logiciel de gestion de flotte Getaround</p>
         <p className="text-xs text-gray-400 mt-0.5">Brochure commerciale · appli.sunanddrive.com</p>
       </div>
 
-      {/* Accroche */}
-      <div className="mb-8 rounded-2xl p-8 text-white" style={{ background: `linear-gradient(135deg, ${PRIMARY} 0%, #014a4e 100%)` }}>
-        <p className="text-xs font-semibold uppercase tracking-widest opacity-80">SunanddriveOS · Logiciel de gestion de flotte</p>
-        <H1><span className="text-white">Gérez votre flotte Getaround comme un pro</span></H1>
-        <p className="mt-3 text-lg opacity-90 font-medium">La plateforme tout-en-un pour les loueurs Getaround sérieux.</p>
-        <p className="mt-2 text-sm opacity-75">Automatisation · Rentabilité · Intelligence · Comptabilité</p>
+      {/* Hero — positionnement complémentarité */}
+      <div className="mb-6 rounded-2xl p-8 text-white print-avoid-break" style={{ background: `linear-gradient(135deg, ${PRIMARY} 0%, ${DARK} 100%)` }}>
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#a7f3d0' }}>Le logiciel qui manquait aux loueurs Getaround</p>
+        <p className="mt-3 text-lg font-medium" style={{ color: '#e0f2f1' }}>Getaround gère vos locations.</p>
+        <H1><span className="text-white">SunanddriveOS gère votre activité.</span></H1>
+        <p className="mt-3 text-sm leading-relaxed" style={{ color: '#d1fae5' }}>
+          Connectez votre compte Getaround existant. Gardez tout ce qu'il fait déjà très bien.
+          Ajoutez le pilotage business qui manque : rentabilité réelle, planning consolidé,
+          IA fiable, et un vrai rapport de direction chaque mois.
+        </p>
       </div>
 
-      {/* Le problème */}
-      <H2>Le quotidien sans SunanddriveOS</H2>
-      <P>Vous gérez votre flotte avec des onglets Excel, des notes vocales et Getaround ouvert en permanence. Chaque mois, vous perdez des heures à :</P>
-      <Ul>
-        <Li>Recopier les locations dans un tableau pour calculer votre rentabilité</Li>
-        <Li>Répondre manuellement aux mêmes questions locataires (clés, carburant, retours)</Li>
-        <Li>Oublier les contrôles techniques et les entretiens à planifier</Li>
-        <Li>Ne jamais savoir avec certitude si chaque véhicule est rentable</Li>
-        <Li>Jongler entre plusieurs comptes Getaround sans vue consolidée</Li>
-        <Li>Produire les données comptables à la main en fin de mois</Li>
-      </Ul>
-      <InfoBox><strong>Résultat :</strong> 3 à 6 heures perdues par semaine, des opportunités manquées, et une gestion opaque qui bloque votre croissance.</InfoBox>
+      {/* Bandeau complémentarité */}
+      <div className="mb-6 rounded-xl p-4 text-white print-avoid-break" style={{ backgroundColor: DARK }}>
+        <span className="font-semibold text-sm">SunanddriveOS ne remplace pas Getaround&nbsp;:</span>
+        <span className="text-sm" style={{ color: '#d1fae5' }}> on se branche sur votre compte existant via l'API officielle et on synchronise automatiquement toutes vos données. Vous continuez à utiliser Getaround exactement comme avant.</span>
+      </div>
 
-      {/* Ce que fait SunanddriveOS */}
-      <H2>Ce que fait SunanddriveOS — 10 bénéfices concrets</H2>
+      {/* Tableau comparatif */}
+      <H2>Getaround vous connecte au locataire. Nous vous connectons à votre activité.</H2>
+      <div className="my-4 overflow-x-auto rounded-xl border border-gray-200 print-avoid-break">
+        <table className="w-full text-xs">
+          <thead className="text-white" style={{ backgroundColor: PRIMARY }}>
+            <tr>
+              <th className="px-3 py-2 text-left font-semibold w-24">Besoin</th>
+              <th className="px-3 py-2 text-left font-semibold">Sur Getaround natif</th>
+              <th className="px-3 py-2 text-left font-semibold">Avec SunanddriveOS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {COMPARISON_ROWS.map(([besoin, ga, sos], i) => (
+              <tr key={besoin} className={i % 2 === 0 ? 'bg-white' : 'bg-teal-50'}>
+                <td className="px-3 py-2.5 font-semibold" style={{ color: PRIMARY }}>{besoin}</td>
+                <td className="px-3 py-2.5 text-gray-500">{ga}</td>
+                <td className="px-3 py-2.5 text-gray-800">{sos}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Bandeau preuve chiffrée */}
+      {stats !== null && (
+        <div className="my-6 rounded-2xl p-5 text-white print-avoid-break" style={{ backgroundColor: DARK }}>
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest" style={{ color: '#a7f3d0' }}>Données réelles Sun and Drive — 12 mois glissants</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: 'CA net annuel',     value: fmtCA(stats.caNetAnnuel) },
+              { label: "Taux d'occupation", value: `${stats.tauxOccupation}%` },
+              { label: 'Locations / an',    value: String(stats.nbLocations) },
+              { label: 'Véhicules actifs',  value: String(stats.nbVehicules) },
+            ].map(s => (
+              <div key={s.label} className="text-center">
+                <p className="text-2xl font-bold">{s.value}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#a7f3d0' }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 8 modules */}
+      <H2>8 modules, un seul outil</H2>
       <div className="grid gap-3 sm:grid-cols-2">
-        {[
-          { icon: '⚡', title: '−80% de temps de réponse', desc: 'L\'IA rédige les réponses locataires en 2 secondes.' },
-          { icon: '📊', title: 'Rentabilité instantanée', desc: 'Marge nette par véhicule calculée en temps réel.' },
-          { icon: '📅', title: 'Planning centralisé', desc: 'Vue Gantt 7/14/28 jours sur toute la flotte.' },
-          { icon: '🔔', title: 'Zéro oubli', desc: 'Alertes CT, entretien, garantie, stocks sièges.' },
-          { icon: '🤖', title: 'Séquences automatiques', desc: 'Messages pré-départ/post-retour sans intervention.' },
-          { icon: '📈', title: 'Intelligence prédictive', desc: 'Benchmarks, corrélations, score de risque locataire.' },
-          { icon: '📝', title: 'Export FEC clé en main', desc: 'Comptabilité conforme prête pour votre expert-comptable.' },
-          { icon: '🌍', title: 'Multi-comptes Getaround', desc: 'Tous vos comptes synchronisés dans une seule app.' },
-          { icon: '📱', title: 'Rôle Carkeeper mobile', desc: 'Vos gestionnaires sur le terrain avec périmètre limité.' },
-          { icon: '🏢', title: 'Rapport CEO mensuel', desc: 'Synthèse exécutive avec IA et données météo corrélées.' },
-        ].map(b => (
-          <div key={b.title} className="flex gap-3 rounded-xl border border-gray-200 bg-white p-4 print-avoid-break">
-            <span className="text-2xl">{b.icon}</span>
-            <div>
-              <p className="font-semibold text-gray-900 text-sm">{b.title}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{b.desc}</p>
-            </div>
+        {MODULES_DATA.map(m => (
+          <div key={m.title} className="rounded-xl border-l-4 bg-teal-50 p-4 print-avoid-break" style={{ borderColor: PRIMARY }}>
+            <p className="font-bold text-gray-900 text-sm">{m.icon} {m.title}</p>
+            <p className="text-xs italic mt-1" style={{ color: PRIMARY }}>{m.accroche}</p>
+            <p className="text-xs text-gray-500 mt-1.5">{m.desc}</p>
           </div>
         ))}
       </div>
-
-      {/* Modules */}
-      <H2>Les modules de la plateforme</H2>
-      <Table
-        headers={['Module', 'Ce que vous gagnez']}
-        rows={[
-          ['Planning', 'Vue Gantt multi-véhicule, blocages synchronisés Getaround, indisponibilités bidirectionnelles'],
-          ['Messages IA', 'Suggestions contextuelles Claude, approbation 1 clic, ton personnalisable (vouvoiement/tutoiement)'],
-          ['Rentabilité', 'Coûts fixes/variables, marge nette, simulateur, objectifs par véhicule'],
-          ['Intelligence', 'Alertes automatiques, corrélation météo-revenus, benchmark flotte, forecast 8 semaines'],
-          ['Séquences', 'Automatisation messages par trigger (réservation, départ, retour, annulation)'],
-          ['Export comptable', 'FEC norme française, CSV personnalisé, rapport mensuel PDF, export propriétaires tiers'],
-        ]}
-      />
-
-      {/* Pour qui */}
-      <H2>Pour qui ?</H2>
-      <Ul>
-        <Li><strong>Loueurs Getaround professionnels</strong> avec 1 à 30+ véhicules</Li>
-        <Li><strong>Multi-sites</strong> : Marseille, Aix, Lyon, Paris, Bordeaux…</Li>
-        <Li><strong>Structures avec plusieurs rôles</strong> : admin, exploitant, carkeeper, comptable</Li>
-        <Li><strong>Gestionnaires</strong> de propriétaires tiers (reverse facturation)</Li>
-      </Ul>
 
       {/* Plans */}
       <H2>Plans & Tarifs</H2>
       <div className="grid gap-4 sm:grid-cols-3">
         {[
-          { plan: 'Starter', price: 'Sur devis', features: ['Flotte jusqu\'à 5 véhicules', 'Planning + Locations', 'Messages IA basiques', 'Export CSV'] },
-          { plan: 'Pro', price: 'Sur devis', hot: true, features: ['Flotte illimitée', 'Intelligence + Forecast', 'Séquences automatiques', 'Export FEC', 'Rapport CEO', 'Score de risque'] },
-          { plan: 'Enterprise', price: 'Sur devis', features: ['Tout Pro inclus', 'SLA prioritaire', 'Onboarding dédié', 'API accès', 'Multi-tenants'] },
+          { plan: 'Starter', features: ["Jusqu'à 5 véhicules", 'Planning + Locations', 'Messages IA', 'Export CSV'] },
+          { plan: 'Pro', hot: true, features: ['Flotte illimitée', 'Intelligence + Forecast', 'Séquences automatiques', 'Export FEC + Rapport CEO', 'Score de risque locataire'] },
+          { plan: 'Enterprise', features: ['Tout Pro inclus', 'SLA prioritaire', 'Onboarding dédié', 'API accès + Multi-tenants'] },
         ].map(p => (
-          <div key={p.plan} className={`rounded-2xl border p-5 print-avoid-break ${p.hot ? 'text-white shadow-lg' : 'bg-white border-gray-200'}`}
+          <div key={p.plan}
+            className={`rounded-2xl border p-5 print-avoid-break ${p.hot ? 'text-white shadow-lg' : 'bg-white border-gray-200'}`}
             style={p.hot ? { backgroundColor: PRIMARY, borderColor: PRIMARY } : {}}>
-            <p className={`text-xs font-bold uppercase tracking-widest ${p.hot ? 'text-white/70' : 'text-gray-400'}`}>{p.plan}</p>
-            <p className={`mt-1 text-2xl font-bold ${p.hot ? 'text-white' : 'text-gray-900'}`}>{p.price}</p>
-            <ul className={`mt-3 space-y-1.5 text-xs ${p.hot ? 'text-white/90' : 'text-gray-600'}`}>
+            <p className={`text-xs font-bold uppercase tracking-widest ${p.hot ? 'opacity-70' : 'text-gray-400'}`}>{p.plan}</p>
+            <p className={`mt-1 text-2xl font-bold ${p.hot ? '' : 'text-gray-900'}`}>Sur devis</p>
+            <ul className={`mt-3 space-y-1.5 text-xs ${p.hot ? 'opacity-90' : 'text-gray-600'}`}>
               {p.features.map(f => <li key={f} className="flex gap-1.5"><span>✓</span>{f}</li>)}
             </ul>
           </div>
         ))}
       </div>
 
-      {/* Témoignage */}
-      <H2>Témoignage — Sun and Drive, Marseille/Aix</H2>
-      <blockquote className="my-5 rounded-2xl border-l-4 bg-gray-50 p-5 print-avoid-break" style={{ borderColor: PRIMARY }}>
-        <p className="text-sm italic text-gray-700 leading-relaxed">
-          "Avant SunanddriveOS, on gérait 7 véhicules avec Excel et 3 onglets Getaround ouverts en permanence.
-          On perdait 5 heures par semaine rien qu'à suivre les locations et répondre aux messages.
-          Aujourd'hui, les séquences gèrent 90% des messages automatiquement, on voit en temps réel
-          quelle voiture est rentable, et l'export FEC nous a fait gagner 2 jours par mois côté comptabilité.
-          Le Rapport CEO chaque mois, c'est devenu notre outil de pilotage principal."
-        </p>
-        <p className="mt-3 text-xs font-semibold" style={{ color: PRIMARY }}>— Gérant, Sun and Drive · 7 véhicules · Marseille &amp; Aix-en-Provence</p>
-      </blockquote>
-
-      {/* FAQ */}
-      <H2>Questions fréquentes</H2>
-      {[
-        { q: 'Mes données Getaround sont-elles sécurisées ?', a: 'Oui. Chaque tenant a sa propre base de données PostgreSQL isolée. Vos données ne sont jamais mélangées avec d\'autres clients. Les communications sont chiffrées HTTPS via Cloudflare.' },
-        { q: 'Faut-il abandonner Getaround ?', a: 'Non. SunanddriveOS se connecte à votre compte Getaround existant via l\'API officielle et synchronise automatiquement toutes vos données. Vous continuez à utiliser Getaround normalement.' },
-        { q: 'C\'est complexe à mettre en place ?', a: 'La prise en main est guidée : un assistant en 6 étapes vous configure l\'application en moins de 30 minutes. Aucune compétence technique requise.' },
-        { q: 'Quel est le prix exact ?', a: 'Le tarif dépend de votre nombre de véhicules et de vos besoins. Contactez-nous pour un devis personnalisé adapté à votre flotte.' },
-      ].map(f => (
-        <div key={f.q} className="mb-3 rounded-xl border border-gray-200 bg-white p-4 print-avoid-break">
-          <p className="text-sm font-semibold text-gray-900">❓ {f.q}</p>
-          <p className="mt-1 text-sm text-gray-600">{f.a}</p>
-        </div>
-      ))}
-
       {/* CTA */}
       <div className="mt-8 rounded-2xl p-8 text-center text-white print-avoid-break" style={{ backgroundColor: PRIMARY }}>
         <p className="text-2xl font-bold">Démarrez votre essai gratuit 15 jours</p>
         <p className="mt-2 text-sm opacity-80">Sans engagement · Configuration en 30 minutes · Support inclus</p>
-        <a href="mailto:contact@sunanddrive.com"
-          className="mt-4 inline-block rounded-xl bg-white/20 px-6 py-3 text-sm font-semibold hover:bg-white/30 print:hidden">
-          Nous contacter →
-        </a>
         <p className="print-only mt-3 text-sm opacity-75">Contactez-nous via votre tableau de bord</p>
       </div>
     </div>
@@ -833,6 +874,32 @@ pnpm test:e2e:ui`}</CodeBlock>
 
 export default function DocumentationPage(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>('brochure');
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const { data: stats = null } = useQuery<BrochureStats>({
+    queryKey: ['brochure-stats'],
+    queryFn: () => api.get<BrochureStats>('/documentation/brochure/stats').then(r => r.data),
+    staleTime: 5 * 60_000,
+  });
+
+  async function handleDownloadPdf(): Promise<void> {
+    setIsDownloading(true);
+    try {
+      const resp = await api.get<Blob>('/documentation/brochure/pdf', { responseType: 'blob' });
+      const url = URL.createObjectURL(resp.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'SunanddriveOS-Brochure-Commerciale.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // silently fail — user sees the button re-enable
+    } finally {
+      setIsDownloading(false);
+    }
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -843,16 +910,37 @@ export default function DocumentationPage(): React.JSX.Element {
             <h1 className="text-lg font-bold text-gray-900" style={{ fontFamily: "'Montserrat', sans-serif" }}>Documentation</h1>
             <p className="text-xs text-gray-500 mt-0.5">Ressources SunanddriveOS — Accès administrateur</p>
           </div>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 print:hidden"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-            Imprimer / PDF
-          </button>
+          {activeTab === 'brochure' ? (
+            <button
+              type="button"
+              onClick={() => { void handleDownloadPdf(); }}
+              disabled={isDownloading}
+              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50 print:hidden"
+            >
+              {isDownloading ? (
+                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              )}
+              {isDownloading ? 'Génération…' : 'Télécharger PDF'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 print:hidden"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              Imprimer / PDF
+            </button>
+          )}
         </div>
 
         {/* Onglets */}
@@ -880,7 +968,7 @@ export default function DocumentationPage(): React.JSX.Element {
       {/* Contenu */}
       <div className="flex-1 overflow-y-auto p-6 print:overflow-visible">
         <div className="print:block">
-          {activeTab === 'brochure' && <DocBrochure />}
+          {activeTab === 'brochure' && <DocBrochure stats={stats} />}
           {activeTab === 'quickstart' && <DocQuickStart />}
           {activeTab === 'manual' && <DocManual />}
           {activeTab === 'technical' && <DocTechnical />}

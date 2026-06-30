@@ -259,7 +259,7 @@ async function runProactiveMessaging(): Promise<void> {
             },
           },
           select: {
-            id: true, content: true,
+            id: true, content: true, importedViaSync: true, createdAt: true,
             rental: {
               select: {
                 id: true, vehicleId: true, driverName: true,
@@ -293,7 +293,7 @@ async function runProactiveMessaging(): Promise<void> {
               driverGetaroundId: r.driverGetaroundId, getaroundId: r.getaroundId, startAt: r.startAt, endAt: r.endAt, status: r.status,
               vehicle: { make: r.vehicle.make, model: r.vehicle.model, licensePlate: r.vehicle.licensePlate, parkingZone: r.vehicle.parkingZone, deliveryPointName: r.vehicle.deliveryPointName },
             };
-            await analyzeAndProcessMessage({ id: msg.id, content: msg.content }, rentalData, db, ga);
+            await analyzeAndProcessMessage({ id: msg.id, content: msg.content, importedViaSync: msg.importedViaSync, createdAt: msg.createdAt }, rentalData, db, ga);
             processed++;
           } catch (e) { console.error(`[ProactiveMsg] Erreur message ${msg.id}:`, e); }
         }
@@ -350,7 +350,7 @@ async function runMorningRebalayage(): Promise<void> {
             },
             messages: {
               orderBy: { createdAt: 'asc' },
-              select: { id: true, direction: true, content: true, createdAt: true },
+              select: { id: true, direction: true, content: true, createdAt: true, importedViaSync: true },
             },
           },
         });
@@ -379,7 +379,7 @@ async function runMorningRebalayage(): Promise<void> {
           };
           for (const msg of inboundNoReply) {
             try {
-              await analyzeAndProcessMessage({ id: msg.id, content: msg.content }, rentalData, db, ga);
+              await analyzeAndProcessMessage({ id: msg.id, content: msg.content, importedViaSync: msg.importedViaSync, createdAt: msg.createdAt }, rentalData, db, ga);
               msgs++;
             } catch (e) { console.error(`[Rebalayage] Erreur message ${msg.id}:`, e); }
           }

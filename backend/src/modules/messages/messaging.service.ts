@@ -122,6 +122,14 @@ export async function sendCarSeatEmail(
   });
 }
 
+// ─── Guard : la location doit être active ou réservée ─────────────────────────
+// Jamais sur 'completed' ou 'cancelled' — aucune action automatique.
+export function isRentalActionable(rental: { status: string }): boolean {
+  return rental.status === 'active' || rental.status === 'booked';
+}
+
+const MESSAGE_FRESHNESS_MS = 24 * 3_600_000; // 24h
+
 const URGENCY_PATTERNS = [
   /\b(panne|accident|urgence|danger|bless[eé]|immobilis[eé]|ne d[eé]marre pas)\b/i,
 ];
@@ -131,12 +139,30 @@ function detectEmergency(content: string): boolean {
 }
 
 export async function analyzeAndProcessMessage(
-  message: { id: string; content: string },
+  message: { id: string; content: string; importedViaSync?: boolean; createdAt?: Date },
   rental: RentalForMessaging,
   db: PrismaClient,
   ga: GetaroundClient,
 ): Promise<void> {
   console.log(`[Messaging] IA analyse message ${message.id} — rental ${rental.id} (${rental.driverName})`);
+
+  // ── Guard 1 : statut location — JAMAIS sur completed/cancelled ───────────
+  if (!isRentalActionable(rental)) {
+    console.log(`[Messaging] Ignoré — location ${rental.status} non actionnable (rental ${rental.id})`);
+    return;
+  }
+
+  // ── Guard 2 : message importé en batch via sync — pas d'action automatique ─
+  if (message.importedViaSync) {
+    console.log(`[Messaging] Ignoré — message importé via sync (message ${message.id})`);
+    return;
+  }
+
+  // ── Guard 3 : fraîcheur du message — 24h max ─────────────────────────────
+  if (message.createdAt && Date.now() - message.createdAt.getTime() > MESSAGE_FRESHNESS_MS) {
+    console.log(`[Messaging] Ignoré — message trop ancien (message ${message.id}, créé le ${message.createdAt.toISOString()})`);
+    return;
+  }
 
   // Détection d'urgence avant toute analyse IA
   if (detectEmergency(message.content)) {

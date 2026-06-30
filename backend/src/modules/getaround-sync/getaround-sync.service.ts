@@ -700,6 +700,7 @@ async function syncMessagesForWindow(
               content: msg.content,
               sentAt: new Date(msg.sent_at),
               status: 'sent',
+              importedViaSync: true,
             },
             update: {
               content: msg.content,
@@ -994,6 +995,12 @@ async function autoReplyToMessage(
   },
   tenantSlug: string,
 ): Promise<void> {
+  // Guard : JAMAIS sur locations terminées ou annulées
+  if (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date()) {
+    console.log(`[autoReply][${tenantSlug}] Ignoré — location non actionnable (rental ${rental.id}, status=${rental.status})`);
+    return;
+  }
+
   const settings = await db.companySettings.findFirst({
     select: {
       aiModeCarSeat: true, aiModeIncident: true, aiModeGeneral: true,
@@ -1256,6 +1263,7 @@ export async function syncAccountMessages(
               content: msg.content,
               sentAt: new Date(msg.sent_at),
               status: 'sent',
+              importedViaSync: true,
             },
             update: { content: msg.content },
             select: { id: true, createdAt: true },
@@ -1843,6 +1851,7 @@ export async function syncSingleRental(
           content: msg.content,
           sentAt: new Date(msg.sent_at),
           status: 'sent',
+          importedViaSync: true,
         },
         update: { content: msg.content },
         select: { id: true },

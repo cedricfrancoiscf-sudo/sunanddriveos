@@ -306,9 +306,10 @@ model Message {
   approvedBy   User?            @relation("ApprovedBy", fields: [approvedById], references: [id])
   approvedAt   DateTime?
   cancelledAt  DateTime?
-  isTest       Boolean          @default(false)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  isTest          Boolean          @default(false)
+  importedViaSync Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@map("messages")
 }

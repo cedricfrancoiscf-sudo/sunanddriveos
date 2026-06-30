@@ -488,7 +488,7 @@ export default function VehicleListPage(): React.JSX.Element {
                   </button>
                   {!isCollapsed && (
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      {list.map((v) => <VehicleCard key={v.id} vehicle={v} signal={signalByVehicleId.get(v.id)} />)}
+                      {list.map((v) => <VehicleCard key={v.id} vehicle={v} signal={signalByVehicleId.get(v.id) ?? null} />)}
                     </div>
                   )}
                 </div>
@@ -565,7 +565,7 @@ export default function VehicleListPage(): React.JSX.Element {
                           </tr>
                         </thead>
                         <tbody>
-                          {list.map((v) => <VehicleTableRow key={v.id} vehicle={v} signal={signalByVehicleId.get(v.id)} />)}
+                          {list.map((v) => <VehicleTableRow key={v.id} vehicle={v} signal={signalByVehicleId.get(v.id) ?? null} />)}
                         </tbody>
                       </table>
                     </div>

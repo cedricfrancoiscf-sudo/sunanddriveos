@@ -429,7 +429,7 @@ export default function DashboardPage(): React.JSX.Element {
             <GaugeCard
               label="Pipeline 28j"
               value={pipelineData ? pipelineData.caReserve.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }) : '—'}
-              sub={pipelineData ? `${pipelineData.nbLocations} rés. · ${pipelineData.occupationProjetee}% occ.` : undefined}
+              {...(pipelineData ? { sub: `${pipelineData.nbLocations} rés. · ${pipelineData.occupationProjetee}% occ.` } : {})}
               gaugePct={pipelineData?.occupationProjetee ?? 0}
               gaugeColor="#8b5cf6"
               link="/planning"

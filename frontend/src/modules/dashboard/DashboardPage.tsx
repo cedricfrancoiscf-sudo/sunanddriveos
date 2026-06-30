@@ -2,36 +2,22 @@ import React, { useEffect } from 'react';
 import { trackEvent } from '../../utils/tracking';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, differenceInDays, isPast, addDays, startOfDay, isSameDay } from 'date-fns';
+import { format, isPast, addDays, startOfDay, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, Cell } from 'recharts';
 import { api } from '../../utils/api';
-
-const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
 import { useAuth } from '../../hooks/useAuth';
 
+const ZONE_LOW_THRESHOLD = 45;
+
 interface RentalStats { totalRevenue: number; totalEncaisse: number; totalPrevisionnel: number; occupancyRate: number; rentalCount: number; countDone: number; countUpcoming: number; totalKm: number; vehicleCount: number; totalPayout: number; }
-interface ActiveRental { id: string; driverName: string; startAt: string; endAt: string; vehicleId: string; vehicle: { make: string; model: string; licensePlate: string }; }
 interface Alert { id: string; type: string; label: string; severity: 'high' | 'medium'; link: string; }
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; lastSyncAt: string | null; lastSyncResult: { created: number; updated: number } | null; error: string | null; isTrialLimited: boolean; }
 interface TodayData { departs: number; retours: number; actives: number; disponibles: number; vehicleCount: number; accessoiresJour: { type: string; locataire: string; plaque: string; heure: string }[]; }
 interface PipelineData { caReserve: number; nbLocations: number; occupationProjetee: number; parSemaine: { label: string; rentalCount: number; caEstime: number }[]; }
 interface UnderutilizedVehicle { vehicleId: string; plate: string; make: string; model: string; zone: string; next28Count: number; past28Count: number; ecartPct: number; isUnderUtilized: boolean; }
 interface UnderutilizedData { vehicles: UnderutilizedVehicle[]; avgNext28: number; bestPerformer: { plate: string; next28Count: number } | null; }
+interface ZoneOccupancy { zone: string; vehicleCount: number; avgOccupancyPct: number; dailyOccupancy: { date: string; pct: number }[]; }
 
-function formatWeekLabel(week: string): string {
-  const [yearStr, weekStr] = week.split('-W');
-  const year = parseInt(yearStr ?? '2026');
-  const weekNum = parseInt(weekStr ?? '1');
-  const jan4 = new Date(year, 0, 4);
-  const startOfWeek = new Date(jan4);
-  startOfWeek.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (weekNum - 1) * 7);
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 6);
-  const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
-  return `S${weekNum} · ${fmt(startOfWeek)}→${fmt(endOfWeek)}`;
-}
-void formatWeekLabel; // used in chartData below via occupancyData
 
 function cleanText(text: string): string {
   return text
@@ -81,8 +67,6 @@ export default function DashboardPage(): React.JSX.Element {
   type DocExpiring = { id: string; name: string; expiryDate: string; vehicle: { make: string; model: string; licensePlate: string } };
   type PendingCarSeat = { id: string; rental: { id: string; driverName: string; endAt: string } | null; vehicle: { make: string; model: string; licensePlate: string } };
   type ForecastWeek = { week: string; label: string; rentalCount: number; encaisse: number; previsionnel: number; totalPayout: number };
-  type OccupancyVehicle = { id: string; name: string; occupancy: number };
-  type OccupancyWeek = { week: string; label: string; vehicles: OccupancyVehicle[]; globalOccupancy: number };
   type UnansweredMsg = { rentalId: string; driverName: string; vehicleLabel: string; msgPreview: string; createdAt: string };
   type PendingApprovalMsg = { messageId: string; rentalId: string; driverName: string; vehicleLabel: string };
   type InboxSummary = { pendingCount: number; unansweredRentals: number; unansweredMessages: UnansweredMsg[]; pendingApprovalMessages: PendingApprovalMsg[] };
@@ -100,12 +84,6 @@ export default function DashboardPage(): React.JSX.Element {
   const { data: statsData } = useQuery<RentalStats>({
     queryKey: ['rental-stats'],
     queryFn: () => api.get<{ stats: RentalStats }>('/rentals/stats').then(r => r.data.stats),
-    staleTime: 2 * 60_000,
-  });
-
-  const { data: activeRentals = [] } = useQuery<ActiveRental[]>({
-    queryKey: ['rentals', 'active'],
-    queryFn: () => api.get<{ rentals: ActiveRental[] }>('/rentals', { params: { status: 'active', limit: 20 } }).then(r => r.data.rentals),
     staleTime: 2 * 60_000,
   });
 
@@ -142,9 +120,9 @@ export default function DashboardPage(): React.JSX.Element {
   });
   void forecastData;
 
-  const { data: occupancyData } = useQuery<OccupancyWeek[]>({
-    queryKey: ['dashboard-occupancy'],
-    queryFn: () => api.get<OccupancyWeek[]>('/dashboard/occupancy').then(r => r.data),
+  const { data: zonesData = [] } = useQuery<ZoneOccupancy[]>({
+    queryKey: ['dashboard-zones-occupancy'],
+    queryFn: () => api.get<ZoneOccupancy[]>('/dashboard/zones-occupancy').then(r => r.data),
     staleTime: 5 * 60_000,
     enabled: user?.role !== 'carkeeper',
   });
@@ -268,10 +246,8 @@ export default function DashboardPage(): React.JSX.Element {
   });
   const showOnboardingBanner = onboarding && !onboarding.dismissed && !onboarding.allDone;
 
-  // Mini planning 7j — depuis activeRentals
   const today = startOfDay(new Date());
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(today, i));
-  const miniPlanVehicles = occupancyData?.[0]?.vehicles ?? [];
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -403,7 +379,7 @@ export default function DashboardPage(): React.JSX.Element {
         ) : null}
       </div>
 
-      {/* D2c — KPIs jauges du mois */}
+      {/* 3 — KPIs du mois */}
       {user?.role !== 'carkeeper' && (
         <div>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Ce mois-ci</h2>
@@ -451,118 +427,88 @@ export default function DashboardPage(): React.JSX.Element {
               <GaugeCard label="Locations" value="—" link="/rentals" />
             )}
             <GaugeCard
-              label="Km parcourus"
-              value={stats ? stats.totalKm.toLocaleString('fr-FR') : '—'}
-              sub="ce mois"
+              label="Pipeline 28j"
+              value={pipelineData ? pipelineData.caReserve.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }) : '—'}
+              sub={pipelineData ? `${pipelineData.nbLocations} rés. · ${pipelineData.occupationProjetee}% occ.` : undefined}
+              gaugePct={pipelineData?.occupationProjetee ?? 0}
+              gaugeColor="#8b5cf6"
+              link="/planning"
             />
           </div>
         </div>
       )}
 
-      {/* Occupation par véhicule — 4 semaines glissantes */}
-      {user?.role !== 'carkeeper' && occupancyData && occupancyData.length > 0 && (() => {
-        const vehicleList = occupancyData[0]?.vehicles ?? [];
-        const chartData = occupancyData.map(w => {
-          const row: Record<string, string | number> = { label: w.label, globalOccupancy: w.globalOccupancy };
-          for (const v of w.vehicles) row[v.id] = v.occupancy;
-          return row;
-        });
-        return (
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Occupation par véhicule — 4 semaines</h2>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                  <CartesianGrid stroke="#e5e7eb" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 100]} />
-                  <Tooltip formatter={(v: number, name: string) => [`${v}%`, name]} />
-                  <Legend wrapperStyle={{ fontSize: 10 }} />
-                  {vehicleList.map((v, i) => (
-                    <Bar key={v.id} dataKey={v.id} name={v.name} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[3, 3, 0, 0]} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* D2d — Pipeline 28 jours */}
-      {user?.role !== 'carkeeper' && pipelineData && (
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Pipeline 28 jours</h2>
-            <span className="text-xs text-gray-400">{pipelineData.occupationProjetee}% occupation projetée</span>
-          </div>
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3 mb-3">
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">CA réservé</p>
-              <p className="mt-1 text-xl font-bold text-[#01696e]">{pipelineData.caReserve.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}</p>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Locations</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">{pipelineData.nbLocations}</p>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Occupation</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">{pipelineData.occupationProjetee}%</p>
-            </div>
-          </div>
-          {pipelineData.parSemaine.length > 0 && (
-            <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <ResponsiveContainer width="100%" height={120}>
-                <BarChart data={pipelineData.parSemaine} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                  <CartesianGrid stroke="#e5e7eb" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(v: number) => [v, 'locations']} />
-                  <Bar dataKey="rentalCount" name="Locations" radius={[3, 3, 0, 0]}>
-                    {pipelineData.parSemaine.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+      {/* 4 — 2 alertes prioritaires côte à côte */}
+      {user?.role !== 'carkeeper' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Sous-utilisation */}
+          {(() => {
+            const worst = underutilizedData?.vehicles.filter(v => v.isUnderUtilized).sort((a, b) => a.next28Count - b.next28Count)[0];
+            if (!worst) return (
+              <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 h-full">
+                <span className="text-green-600">✓</span>
+                <p className="text-sm text-green-700">Flotte bien utilisée</p>
+              </div>
+            );
+            return (
+              <div className="flex items-center gap-3 rounded-xl border-l-4 border-amber-400 bg-white px-4 py-3 shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Sous-utilisation</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5 truncate">{worst.make} {worst.model} · <span className="font-mono text-xs text-gray-400">{worst.plate}</span></p>
+                  <p className="text-xs text-gray-500">{worst.next28Count} loc. prévues vs {worst.past28Count} passées</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">{worst.ecartPct}%</span>
+              </div>
+            );
+          })()}
+          {/* Alerte technique la plus urgente */}
+          {(() => {
+            const urgentAlert = alerts.find(a => ['ct', 'maintenance', 'doc'].includes(a.type)) ?? alerts[0];
+            if (!urgentAlert) return (
+              <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+                <span className="text-green-600">✓</span>
+                <p className="text-sm text-green-700">Aucune alerte technique</p>
+              </div>
+            );
+            return <AlertCard alert={urgentAlert} />;
+          })()}
         </div>
       )}
 
-      {/* D2f — Mini planning 7j */}
-      {user?.role !== 'carkeeper' && miniPlanVehicles.length > 0 && (
+      {/* 5 — Occupation par zone — 7 jours */}
+      {user?.role !== 'carkeeper' && zonesData.length > 0 && (
         <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Planning 7 jours</h2>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Occupation par zone — 7 jours</h2>
             <Link to="/planning" className="text-xs text-[#01696e] hover:underline">Planning complet →</Link>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-            {/* En-tête jours */}
             <div className="flex border-b border-gray-100">
-              <div className="w-32 shrink-0 border-r border-gray-100 px-3 py-2 text-[10px] font-semibold text-gray-400">Véhicule</div>
+              <div className="w-44 shrink-0 border-r border-gray-100 px-3 py-2 text-[10px] font-semibold text-gray-400">Zone</div>
               {weekDays.map(d => (
-                <div key={d.toISOString()} className={`flex-1 border-r border-gray-100 last:border-r-0 py-2 text-center text-[10px] font-medium ${isSameDay(d, today) ? 'bg-[#01696e]/5 text-[#01696e] font-bold' : 'text-gray-400'}`}>
+                <div key={d.toISOString()}
+                  className={`flex-1 border-r border-gray-100 last:border-r-0 py-2 text-center text-[10px] font-medium ${isSameDay(d, today) ? 'bg-[#01696e]/5 text-[#01696e] font-bold' : 'text-gray-400'}`}>
                   <div>{format(d, 'EEE', { locale: fr })}</div>
                   <div>{format(d, 'd')}</div>
                 </div>
               ))}
             </div>
-            {miniPlanVehicles.slice(0, 8).map(v => (
-              <div key={v.id} className="flex border-b border-gray-50 last:border-b-0">
-                <div className="w-32 shrink-0 border-r border-gray-100 px-3 py-2 text-xs text-gray-600 truncate">{v.name}</div>
-                {weekDays.map(d => {
-                  const hasRental = activeRentals.some(r =>
-                    r.vehicleId === v.id &&
-                    new Date(r.startAt) <= addDays(d, 1) &&
-                    new Date(r.endAt) >= d
-                  );
+            {zonesData.map(z => (
+              <div key={z.zone} className="flex border-b border-gray-50 last:border-b-0 items-stretch">
+                <div className="w-44 shrink-0 border-r border-gray-100 px-3 py-2 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-gray-700 truncate">{z.zone}</span>
+                  <span className="shrink-0 text-xs font-bold text-gray-600">{z.avgOccupancyPct}%</span>
+                </div>
+                {z.dailyOccupancy.map((d, i) => {
+                  const isLow = d.pct < ZONE_LOW_THRESHOLD;
+                  const opacity = Math.max(0.15, Math.min(1, 0.2 + (d.pct / 100) * 0.8));
+                  const isToday = isSameDay(new Date(d.date), today);
                   return (
-                    <div key={d.toISOString()} className={`flex-1 border-r border-gray-50 last:border-r-0 py-2 flex items-center justify-center ${isSameDay(d, today) ? 'bg-[#01696e]/5' : ''}`}>
-                      {hasRental && (
-                        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#01696e' }} />
-                      )}
+                    <div key={i} className={`flex-1 border-r border-gray-50 last:border-r-0 h-10 relative flex items-center justify-center ${isToday ? 'ring-1 ring-inset ring-[#01696e]/20' : ''}`}>
+                      <div className="absolute inset-1 rounded"
+                        style={{ backgroundColor: isLow ? '#f59e0b' : '#01696e', opacity }} />
+                      <span className="relative z-10 text-[10px] font-semibold"
+                        style={{ color: d.pct > 35 ? 'white' : '#9ca3af' }}>{d.pct}%</span>
                     </div>
                   );
                 })}
@@ -571,81 +517,6 @@ export default function DashboardPage(): React.JSX.Element {
           </div>
         </div>
       )}
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* D2e — Sous-utilisation + alertes */}
-        <div className="space-y-6">
-          {user?.role !== 'carkeeper' && underutilizedData && underutilizedData.vehicles.filter(v => v.isUnderUtilized).length > 0 && (
-            <div>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                Sous-utilisation proactive
-              </h2>
-              <div className="space-y-2">
-                {underutilizedData.vehicles.filter(v => v.isUnderUtilized).map(v => (
-                  <div key={v.vehicleId} className="flex items-center gap-3 rounded-xl border-l-4 border-amber-400 bg-white px-4 py-3 shadow-sm">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{v.make} {v.model} <span className="font-mono text-xs text-gray-400">{v.plate}</span></p>
-                      <p className="text-xs text-gray-500">{v.next28Count} loc. prévues vs {v.past28Count} les 28j passés</p>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                      {v.ecartPct}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Alertes */}
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                Alertes {alerts.length > 0 && <span className="ml-1 rounded-full bg-red-100 px-1.5 text-xs font-bold text-red-600">{alerts.length}</span>}
-              </h2>
-            </div>
-            {alerts.length === 0 ? (
-              <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-center text-sm font-medium text-green-700">
-                Tout est en ordre ✓
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {alerts.map(a => <AlertCard key={a.id} alert={a} />)}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Locations en cours */}
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Locations en cours</h2>
-            <Link to="/rentals?status=active" className="text-xs text-[#01696e] hover:underline">Voir toutes →</Link>
-          </div>
-          {activeRentals.length === 0 ? (
-            <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400 text-center">Aucune location active</div>
-          ) : (
-            <div className="space-y-2">
-              {activeRentals.slice(0, 5).map(r => {
-                const daysLeft = differenceInDays(new Date(r.endAt), new Date());
-                return (
-                  <Link key={r.id} to={`/rentals/${r.id}`}
-                    className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm transition hover:border-[#01696e]/40">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{r.driverName}</p>
-                      <p className="text-xs text-gray-500">{r.vehicle.make} {r.vehicle.model} · <span className="font-mono">{r.vehicle.licensePlate}</span></p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400">jusqu'au</p>
-                      <p className="text-sm font-medium text-gray-700">{format(new Date(r.endAt), 'dd/MM', { locale: fr })}</p>
-                      {daysLeft <= 1 && <p className="text-xs font-semibold text-orange-600">{daysLeft === 0 ? "Aujourd'hui" : "Demain"}</p>}
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

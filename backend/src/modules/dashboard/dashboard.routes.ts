@@ -394,4 +394,67 @@ router.get('/underutilized', async (req: Request, res: Response, next: NextFunct
   } catch (err) { next(err); }
 });
 
+// GET /api/v1/dashboard/zones-occupancy — occupation agrégée par zone sur 7 jours
+router.get('/zones-occupancy', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const days7End = new Date(startOfToday.getTime() + 7 * 86_400_000);
+
+    const [vehicles, rentals] = await Promise.all([
+      db.vehicle.findMany({
+        where: { isActive: true },
+        select: { id: true, deliveryPointName: true },
+      }),
+      db.rental.findMany({
+        where: {
+          status: { in: ['booked', 'active'] },
+          startAt: { lt: days7End },
+          endAt: { gt: startOfToday },
+        },
+        select: { vehicleId: true, startAt: true, endAt: true },
+      }),
+    ]);
+
+    const zoneMap: Record<string, typeof vehicles> = {};
+    for (const v of vehicles) {
+      const zone = v.deliveryPointName ?? 'Non assigné';
+      if (!zoneMap[zone]) zoneMap[zone] = [];
+      zoneMap[zone]!.push(v);
+    }
+
+    const next7Days = Array.from({ length: 7 }, (_, i) => new Date(startOfToday.getTime() + i * 86_400_000));
+
+    const result = Object.entries(zoneMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([zone, zvehicles]) => {
+        const vIds = new Set(zvehicles.map(v => v.id));
+        const zoneRentals = rentals.filter(r => vIds.has(r.vehicleId));
+        const vehicleCount = zvehicles.length;
+
+        const dailyOccupancy = next7Days.map(day => {
+          const dayEnd = new Date(day.getTime() + 86_400_000);
+          const uniqueOccupied = new Set(
+            zoneRentals
+              .filter(r => new Date(r.startAt) < dayEnd && new Date(r.endAt) > day)
+              .map(r => r.vehicleId)
+          ).size;
+          return {
+            date: day.toISOString().split('T')[0]!,
+            pct: vehicleCount > 0 ? Math.round((uniqueOccupied / vehicleCount) * 100) : 0,
+          };
+        });
+
+        const avgOccupancyPct = Math.round(dailyOccupancy.reduce((s, d) => s + d.pct, 0) / dailyOccupancy.length);
+
+        return { zone, vehicleCount, avgOccupancyPct, dailyOccupancy };
+      });
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

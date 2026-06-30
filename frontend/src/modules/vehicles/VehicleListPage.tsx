@@ -228,6 +228,24 @@ export default function VehicleListPage(): React.JSX.Element {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   useEffect(() => { void trackEvent('vehicles', 'view'); }, []);
 
+  const [collapsedDeliveryPoints, setCollapsedDeliveryPoints] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('flotte-collapsed-delivery-points');
+      return saved ? new Set(JSON.parse(saved) as string[]) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+  useEffect(() => {
+    localStorage.setItem('flotte-collapsed-delivery-points', JSON.stringify([...collapsedDeliveryPoints]));
+  }, [collapsedDeliveryPoints]);
+
+  function toggleDeliveryPoint(key: string): void {
+    setCollapsedDeliveryPoints(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
   function toggleVehicleSort(k: VehicleSortKey) {
     if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(k); setSortDir('asc'); }
@@ -387,16 +405,52 @@ export default function VehicleListPage(): React.JSX.Element {
           if (!b) return -1;
           return a.localeCompare(b);
         });
+        const allCollapsed = sorted.every(([k]) => collapsedDeliveryPoints.has(k || '_none'));
         return (
-          <div className="space-y-6">
-            {sorted.map(([point, list]) => (
-              <div key={point || '_none'}>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{point || 'Non assigné'}</p>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {list.map((v) => <VehicleCard key={v.id} vehicle={v} />)}
-                </div>
+          <div className="space-y-4">
+            {sorted.length >= 3 && (
+              <div className="flex justify-end">
+                <button type="button"
+                  onClick={() => allCollapsed
+                    ? setCollapsedDeliveryPoints(new Set())
+                    : setCollapsedDeliveryPoints(new Set(sorted.map(([k]) => k || '_none')))
+                  }
+                  className="text-xs text-gray-500 hover:text-gray-700 transition-colors">
+                  {allCollapsed ? 'Tout déplier' : 'Tout replier'}
+                </button>
               </div>
-            ))}
+            )}
+            {sorted.map(([point, list]) => {
+              const key = point || '_none';
+              const isCollapsed = collapsedDeliveryPoints.has(key);
+              const avgHealth = list.length > 0 ? Math.round(list.reduce((s, v) => s + v.healthScore, 0) / list.length) : 0;
+              const activeCount = list.filter(v => v.isActive).length;
+              return (
+                <div key={key}>
+                  <button type="button" onClick={() => toggleDeliveryPoint(key)}
+                    className="mb-2 flex w-full items-center gap-1.5 text-left group">
+                    <svg className={`h-3.5 w-3.5 text-gray-400 transition-transform shrink-0 ${isCollapsed ? '' : 'rotate-90'}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 group-hover:text-gray-600">
+                      {point || 'Non assigné'}
+                    </p>
+                    <span className="ml-1 rounded-full bg-gray-100 px-1.5 text-[10px] font-medium text-gray-500">{list.length}</span>
+                    {isCollapsed && (
+                      <span className="ml-auto text-[10px] text-gray-400">
+                        {activeCount} actif{activeCount !== 1 ? 's' : ''} · santé moy. {avgHealth}
+                      </span>
+                    )}
+                  </button>
+                  {!isCollapsed && (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                      {list.map((v) => <VehicleCard key={v.id} vehicle={v} />)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       })()}
@@ -414,31 +468,67 @@ export default function VehicleListPage(): React.JSX.Element {
           if (!b) return -1;
           return a.localeCompare(b);
         });
+        const allCollapsed = sorted.every(([k]) => collapsedDeliveryPoints.has(k || '_none'));
         return (
           <div className="space-y-4">
-            {sorted.map(([point, list]) => (
-              <div key={point || '_none'}>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{point || 'Non assigné'}</p>
-                <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-                  <table className="w-full text-left">
-                    <thead className="border-b border-gray-200 bg-gray-50">
-                      <tr>
-                        <SortVehicleTh k="licensePlate" label="Immatriculation" />
-                        <SortVehicleTh k="make" label="Marque / Modèle" />
-                        <SortVehicleTh k="year" label="Année" />
-                        <SortVehicleTh k="currentMileage" label="Kilométrage" />
-                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Santé</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Statut</th>
-                        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {list.map((v) => <VehicleTableRow key={v.id} vehicle={v} />)}
-                    </tbody>
-                  </table>
-                </div>
+            {sorted.length >= 3 && (
+              <div className="flex justify-end">
+                <button type="button"
+                  onClick={() => allCollapsed
+                    ? setCollapsedDeliveryPoints(new Set())
+                    : setCollapsedDeliveryPoints(new Set(sorted.map(([k]) => k || '_none')))
+                  }
+                  className="text-xs text-gray-500 hover:text-gray-700 transition-colors">
+                  {allCollapsed ? 'Tout déplier' : 'Tout replier'}
+                </button>
               </div>
-            ))}
+            )}
+            {sorted.map(([point, list]) => {
+              const key = point || '_none';
+              const isCollapsed = collapsedDeliveryPoints.has(key);
+              const avgHealth = list.length > 0 ? Math.round(list.reduce((s, v) => s + v.healthScore, 0) / list.length) : 0;
+              const activeCount = list.filter(v => v.isActive).length;
+              return (
+                <div key={key}>
+                  <button type="button" onClick={() => toggleDeliveryPoint(key)}
+                    className="mb-1 flex w-full items-center gap-1.5 text-left group">
+                    <svg className={`h-3.5 w-3.5 text-gray-400 transition-transform shrink-0 ${isCollapsed ? '' : 'rotate-90'}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 group-hover:text-gray-600">
+                      {point || 'Non assigné'}
+                    </p>
+                    <span className="ml-1 rounded-full bg-gray-100 px-1.5 text-[10px] font-medium text-gray-500">{list.length}</span>
+                    {isCollapsed && (
+                      <span className="ml-auto text-[10px] text-gray-400">
+                        {activeCount} actif{activeCount !== 1 ? 's' : ''} · santé moy. {avgHealth}
+                      </span>
+                    )}
+                  </button>
+                  {!isCollapsed && (
+                    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                      <table className="w-full text-left">
+                        <thead className="border-b border-gray-200 bg-gray-50">
+                          <tr>
+                            <SortVehicleTh k="licensePlate" label="Immatriculation" />
+                            <SortVehicleTh k="make" label="Marque / Modèle" />
+                            <SortVehicleTh k="year" label="Année" />
+                            <SortVehicleTh k="currentMileage" label="Kilométrage" />
+                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Santé</th>
+                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Statut</th>
+                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {list.map((v) => <VehicleTableRow key={v.id} vehicle={v} />)}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       })()}

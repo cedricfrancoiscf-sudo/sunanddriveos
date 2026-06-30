@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
 import NpsModal, { useNpsModal } from '../NpsModal';
@@ -8,6 +8,9 @@ import { api } from '../../utils/api';
 
 export default function AppLayout(): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+  const { pathname } = useLocation();
+  useEffect(() => { mainRef.current?.scrollTo(0, 0); }, [pathname]);
   const { show: showNps, dismiss: dismissNps, snooze: snoozeNps } = useNpsModal();
   const { data: billingData } = useQuery({
     queryKey: ['billing-status'],
@@ -89,7 +92,7 @@ export default function AppLayout(): React.JSX.Element {
         )}
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        <main ref={mainRef} className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>

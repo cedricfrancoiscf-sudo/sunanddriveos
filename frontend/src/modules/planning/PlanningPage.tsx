@@ -45,6 +45,13 @@ interface PlanningUnavailability {
   endsAt: string;
 }
 
+function getRowHeight(visibleVehicleCount: number): number {
+  if (visibleVehicleCount <= 10) return 28;
+  if (visibleVehicleCount <= 18) return 20;
+  if (visibleVehicleCount <= 30) return 16;
+  return 13;
+}
+
 const BLOCKING_LABELS: Record<string, string> = {
   maintenance: 'Maintenance',
   incident: 'Incident',
@@ -73,20 +80,25 @@ function formatHour(iso: string): string {
   return format(parseISO(iso), 'HH:mm');
 }
 
-function RentalBar({ rental, periodStart, totalDays, onClick, isBlacklisted }: { rental: PlanningRental; periodStart: Date; totalDays: number; onClick: () => void; isBlacklisted: boolean }) {
+function RentalBar({ rental, periodStart, totalDays, onClick, isBlacklisted, rowHeight }: {
+  rental: PlanningRental; periodStart: Date; totalDays: number; onClick: () => void; isBlacklisted: boolean; rowHeight: number;
+}) {
   const hasCarSeat = rental.carSeatRequests.length > 0;
   const hasAccessory = rental._count.accessoryReservations > 0;
   const tooltip = `${rental.driverName}${isBlacklisted ? ' ⛔' : ''}\n${format(parseISO(rental.startAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(rental.endAt), 'dd/MM HH:mm', { locale: fr })}${hasCarSeat ? '\n🪑 Siège auto' : ''}${hasAccessory ? '\n📦 Accessoire' : ''}`;
   const durationMin = differenceInMinutes(parseISO(rental.endAt), parseISO(rental.startAt));
-  const isShort = durationMin < 120; // moins de 2h — barre courte, pas de texte
+  const isShort = durationMin < 120;
   const isPast = parseISO(rental.endAt) < startOfDay(new Date());
-
+  const isTiny = rowHeight < 16;
   const returnSoon = rental.status === 'active' && differenceInMinutes(parseISO(rental.endAt), new Date()) < 720 && differenceInMinutes(parseISO(rental.endAt), new Date()) > 0;
+  const barH = Math.max(8, rowHeight - 4);
   return (
     <div
-      className={`absolute top-1.5 h-7 rounded flex items-center overflow-hidden cursor-pointer group z-10 transition-opacity hover:opacity-90 ${isPast ? 'opacity-50' : ''}`}
+      className={`absolute rounded flex items-center overflow-hidden cursor-pointer group z-10 transition-opacity hover:opacity-90 ${isPast ? 'opacity-50' : ''}`}
       style={{
         ...getBarStyle(rental.startAt, rental.endAt, periodStart, totalDays),
+        top: '2px',
+        height: `${barH}px`,
         backgroundColor: hasCarSeat
           ? (rental.status === 'active' ? '#c2600a' : '#c2600aaa')
           : (rental.status === 'active' ? '#01696e' : '#01696eaa'),
@@ -96,23 +108,25 @@ function RentalBar({ rental, periodStart, totalDays, onClick, isBlacklisted }: {
       onClick={onClick}
     >
       {!isShort && (
-        <span className="flex flex-col justify-center pl-1.5 min-w-0 flex-1 overflow-hidden">
-          <span className="flex items-center gap-0.5 text-[10px] text-white font-medium truncate">
+        <span className="flex flex-col justify-center pl-1 min-w-0 flex-1 overflow-hidden">
+          <span className={`flex items-center gap-0.5 font-medium text-white truncate ${isTiny ? 'text-[8px]' : 'text-[10px]'}`}>
             {isBlacklisted && <span className="shrink-0 text-[9px]">⛔</span>}
             <span className="truncate">{formatHour(rental.startAt)} {rental.driverName}</span>
-            {hasCarSeat && <span className="shrink-0 text-[9px] ml-0.5 opacity-90">🪑</span>}
-            {hasAccessory && <span className="shrink-0 text-[9px] opacity-90">📦</span>}
+            {hasCarSeat && !isTiny && <span className="shrink-0 text-[9px] ml-0.5 opacity-90">🪑</span>}
+            {hasAccessory && !isTiny && <span className="shrink-0 text-[9px] opacity-90">📦</span>}
           </span>
-          <span className="text-[9px] text-white/70 truncate self-end">→ {formatHour(rental.endAt)}</span>
+          {!isTiny && (
+            <span className="text-[9px] text-white/70 truncate leading-tight self-end">{formatHour(rental.endAt)}</span>
+          )}
         </span>
       )}
-      {isShort && (hasCarSeat || hasAccessory) && (
+      {isShort && (hasCarSeat || hasAccessory) && !isTiny && (
         <span className="flex items-center gap-0.5 pl-0.5 text-[9px]">
           {hasCarSeat && <span>🪑</span>}
           {hasAccessory && <span>📦</span>}
         </span>
       )}
-      {returnSoon && (
+      {returnSoon && !isTiny && (
         <span className="shrink-0 pr-0.5 text-[9px] text-orange-300" title="Retour imminent">◀</span>
       )}
       {/* Tooltip riche au survol */}
@@ -129,20 +143,22 @@ function RentalBar({ rental, periodStart, totalDays, onClick, isBlacklisted }: {
   );
 }
 
-function BlockingBar({ blocking, onDelete, periodStart, totalDays }: {
+function BlockingBar({ blocking, onDelete, periodStart, totalDays, rowHeight }: {
   blocking: PlanningBlocking;
   onDelete: (id: string) => void;
   periodStart: Date;
   totalDays: number;
+  rowHeight: number;
 }) {
   const colorClass = BLOCKING_COLORS[blocking.type] ?? 'bg-gray-400';
   const label = blocking.reason ?? BLOCKING_LABELS[blocking.type];
   const tooltip = `${BLOCKING_LABELS[blocking.type]}${blocking.reason ? ` — ${blocking.reason}` : ''}\n${format(parseISO(blocking.startAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(blocking.endAt), 'dd/MM HH:mm', { locale: fr })}`;
+  const barH = Math.max(8, rowHeight - 4);
 
   return (
     <div
-      className={`absolute top-1.5 h-7 rounded flex items-center overflow-hidden group z-10 ${colorClass}`}
-      style={getBarStyle(blocking.startAt, blocking.endAt, periodStart, totalDays)}
+      className={`absolute rounded flex items-center overflow-hidden group z-10 ${colorClass}`}
+      style={{ ...getBarStyle(blocking.startAt, blocking.endAt, periodStart, totalDays), top: '2px', height: `${barH}px` }}
       title={tooltip}
     >
       <span className="flex-1 truncate pl-1 text-[10px] text-white font-medium">{label}</span>
@@ -163,16 +179,18 @@ function BlockingBar({ blocking, onDelete, periodStart, totalDays }: {
   );
 }
 
-function UnavailabilityBar({ unavailability, periodStart, totalDays }: {
+function UnavailabilityBar({ unavailability, periodStart, totalDays, rowHeight }: {
   unavailability: PlanningUnavailability;
   periodStart: Date;
   totalDays: number;
+  rowHeight: number;
 }) {
   const tooltip = `Indisponible Getaround\n${format(parseISO(unavailability.startsAt), 'dd/MM HH:mm', { locale: fr })} → ${format(parseISO(unavailability.endsAt), 'dd/MM HH:mm', { locale: fr })}`;
+  const barH = Math.max(8, rowHeight - 4);
   return (
     <div
-      className="absolute top-1.5 h-7 rounded flex items-center overflow-hidden bg-gray-400 z-10 opacity-80"
-      style={getBarStyle(unavailability.startsAt, unavailability.endsAt, periodStart, totalDays)}
+      className="absolute rounded flex items-center overflow-hidden bg-gray-400 z-10 opacity-80"
+      style={{ ...getBarStyle(unavailability.startsAt, unavailability.endsAt, periodStart, totalDays), top: '2px', height: `${barH}px` }}
       title={tooltip}
     >
       <span className="flex-1 truncate pl-1 text-[10px] text-white font-medium">Indisponible</span>
@@ -180,15 +198,61 @@ function UnavailabilityBar({ unavailability, periodStart, totalDays }: {
   );
 }
 
-function ZoneHeader({ zone, count }: { zone: string; count: number }) {
+function ZoneHeader({ zone, count, isCollapsed, onToggle }: {
+  zone: string; count: number; isCollapsed: boolean; onToggle: () => void;
+}) {
   return (
-    <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-1.5">
+    <button type="button" onClick={onToggle}
+      className="flex w-full items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-left hover:bg-gray-100 transition-colors">
+      <svg className={`h-3 w-3 text-gray-400 shrink-0 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+        fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      </svg>
       <svg className="h-3.5 w-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
       </svg>
       <span className="text-xs font-semibold text-gray-600">{zone}</span>
       <span className="ml-1 rounded-full bg-gray-200 px-1.5 text-[10px] font-medium text-gray-500">{count}</span>
+    </button>
+  );
+}
+
+function CollapsedZoneRow({ zone, vehicles, rentals, days, rowHeight, onExpand }: {
+  zone: string; vehicles: Vehicle[]; rentals: PlanningRental[];
+  days: Date[]; rowHeight: number; onExpand: () => void;
+}) {
+  const vehicleIds = new Set(vehicles.map(v => v.id));
+  const zoneRentals = rentals.filter(r => vehicleIds.has(r.vehicleId));
+  const dailyPct = days.map(day => {
+    const dayEnd = addDays(day, 1);
+    const occupied = new Set(
+      zoneRentals
+        .filter(r => parseISO(r.startAt) < dayEnd && parseISO(r.endAt) > day)
+        .map(r => r.vehicleId)
+    ).size;
+    return vehicles.length > 0 ? (occupied / vehicles.length) * 100 : 0;
+  });
+  const avgPct = Math.round(dailyPct.reduce((s, p) => s + p, 0) / (dailyPct.length || 1));
+  const rowH = rowHeight + 8;
+  return (
+    <div className="flex border-b border-gray-200 cursor-pointer hover:bg-blue-50/30 transition-colors" onClick={onExpand}
+      style={{ height: `${rowH}px` }} title="Cliquer pour déplier">
+      <div className="w-[90px] sm:w-44 shrink-0 border-r border-gray-200 px-2 sm:px-3 flex flex-col justify-center">
+        <p className="text-[10px] font-semibold text-gray-700 truncate">{zone}</p>
+        <p className="text-[9px] text-gray-400">{vehicles.length} véh. · {avgPct}% occ.</p>
+      </div>
+      <div className="flex flex-1 min-w-[500px]" style={{ height: `${rowH}px` }}>
+        {days.map((day, i) => {
+          const pct = dailyPct[i] ?? 0;
+          const isLow = pct < 45;
+          const opacity = Math.max(0.15, Math.min(1, 0.2 + (pct / 100) * 0.8));
+          return (
+            <div key={day.toISOString()} className="flex-1 border-r border-gray-50 last:border-r-0"
+              style={{ backgroundColor: isLow ? '#f59e0b' : '#01696e', opacity }} />
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -205,6 +269,22 @@ export default function PlanningPage(): React.JSX.Element {
   const periodEnd = addDays(periodStart, viewMode - 1);
 
   const [zoneFilter, setZoneFilter] = useState<string>(() => localStorage.getItem('planning_zone_filter') ?? '');
+  const [collapsedZones, setCollapsedZones] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('planning-collapsed-zones');
+      return saved ? new Set(JSON.parse(saved) as string[]) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+  useEffect(() => {
+    localStorage.setItem('planning-collapsed-zones', JSON.stringify([...collapsedZones]));
+  }, [collapsedZones]);
+  function toggleZone(zone: string): void {
+    setCollapsedZones(prev => {
+      const next = new Set(prev);
+      if (next.has(zone)) next.delete(zone); else next.add(zone);
+      return next;
+    });
+  }
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ vehicleId: '', type: 'maintenance', reason: '', startAt: '', endAt: '', syncToGetaround: true });
 
@@ -276,6 +356,16 @@ export default function PlanningPage(): React.JSX.Element {
 
   const zones = useMemo(() => Object.keys(vehiclesByZone).sort(), [vehiclesByZone]);
 
+  const visibleVehicleCount = useMemo(() => {
+    let count = 0;
+    for (const [zone, list] of Object.entries(vehiclesByZone)) {
+      if (!collapsedZones.has(zone)) count += list.length;
+    }
+    return count;
+  }, [vehiclesByZone, collapsedZones]);
+
+  const rowHeight = getRowHeight(visibleVehicleCount);
+
   const filteredVehiclesByZone = useMemo(() => {
     if (!zoneFilter) return vehiclesByZone;
     const filtered: Record<string, Vehicle[]> = {};
@@ -340,6 +430,17 @@ export default function PlanningPage(): React.JSX.Element {
           <option value="">Tous les points</option>
           {zones.map(z => <option key={z} value={z}>{z}</option>)}
         </select>
+
+        {zones.length >= 3 && (
+          <button type="button"
+            onClick={() => {
+              const allCollapsed = zones.every(z => collapsedZones.has(z));
+              setCollapsedZones(allCollapsed ? new Set() : new Set(zones));
+            }}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+            {zones.every(z => collapsedZones.has(z)) ? '↕ Déplier tout' : '↕ Replier tout'}
+          </button>
+        )}
 
         <button type="button" onClick={() => setShowForm(true)}
           className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white"
@@ -487,68 +588,85 @@ export default function PlanningPage(): React.JSX.Element {
           </div>
 
           {/* Zones + véhicules */}
-          {Object.keys(filteredVehiclesByZone).sort().map(zone => (
-            <React.Fragment key={zone}>
-              {/* En-tête zone */}
-              <div className="flex border-b border-gray-200 sticky top-[41px] z-10">
-                <div className="w-[90px] sm:w-44 shrink-0 border-r border-gray-200" />
-                <div className="flex-1 min-w-[500px]">
-                  <ZoneHeader zone={zone} count={filteredVehiclesByZone[zone]?.length ?? 0} />
+          {Object.keys(filteredVehiclesByZone).sort().map(zone => {
+            const isCollapsed = collapsedZones.has(zone);
+            const zoneVehicles = filteredVehiclesByZone[zone] ?? [];
+            const rowH = rowHeight + 8;
+            return (
+              <React.Fragment key={zone}>
+                {/* En-tête zone (cliquable) */}
+                <div className="flex border-b border-gray-200 sticky top-[41px] z-10">
+                  <div className="w-[90px] sm:w-44 shrink-0 border-r border-gray-200" />
+                  <div className="flex-1 min-w-[500px]">
+                    <ZoneHeader zone={zone} count={zoneVehicles.length} isCollapsed={isCollapsed} onToggle={() => toggleZone(zone)} />
+                  </div>
                 </div>
-              </div>
 
-              {/* Lignes véhicules */}
-              {(filteredVehiclesByZone[zone] ?? []).map(v => {
-                const vRentals = rentals.filter(r => r.vehicleId === v.id);
-                const vBlockings = blockings.filter(b => b.vehicleId === v.id);
-                const vUnavailabilities = unavailabilities.filter(u => u.vehicleId === v.id);
-                return (
-                  <div key={v.id} className="flex border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
-                    {/* Infos véhicule */}
-                    <div className="w-[90px] sm:w-44 shrink-0 border-r border-gray-200 px-2 sm:px-3 py-2.5 flex flex-col justify-center">
-                      <p className="text-xs font-semibold text-gray-800 truncate">
-                        <span className="sm:hidden">{v.model}</span>
-                        <span className="hidden sm:inline">{v.make} {v.model}</span>
-                      </p>
-                      <p className="text-[11px] text-gray-400 tracking-wide truncate">{v.licensePlate}</p>
-                    </div>
+                {/* Zone repliée : 1 ligne heatmap */}
+                {isCollapsed && (
+                  <CollapsedZoneRow
+                    zone={zone}
+                    vehicles={zoneVehicles}
+                    rentals={rentals}
+                    days={days}
+                    rowHeight={rowHeight}
+                    onExpand={() => toggleZone(zone)}
+                  />
+                )}
 
-                    {/* Barre timeline */}
-                    <div className="relative flex-1 min-w-[500px] h-12">
-                      {/* Grille verticale des jours */}
-                      <div className="absolute inset-0 flex pointer-events-none">
-                        {days.map(day => (
-                          <div key={day.toISOString()}
-                            className={`flex-1 border-r border-gray-100 ${isSameDay(day, today) ? 'bg-[#01696e]/5' : ''}`} />
-                        ))}
+                {/* Zone dépliée : lignes véhicules */}
+                {!isCollapsed && zoneVehicles.map(v => {
+                  const vRentals = rentals.filter(r => r.vehicleId === v.id);
+                  const vBlockings = blockings.filter(b => b.vehicleId === v.id);
+                  const vUnavailabilities = unavailabilities.filter(u => u.vehicleId === v.id);
+                  return (
+                    <div key={v.id} className="flex border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors"
+                      style={{ height: `${rowH}px` }}>
+                      <div className="w-[90px] sm:w-44 shrink-0 border-r border-gray-200 px-2 sm:px-3 flex flex-col justify-center">
+                        <p className={`font-semibold text-gray-800 truncate ${rowHeight < 16 ? 'text-[9px]' : 'text-xs'}`}>
+                          <span className="sm:hidden">{v.model}</span>
+                          <span className="hidden sm:inline">{v.make} {v.model}</span>
+                        </p>
+                        {rowHeight >= 16 && <p className="text-[11px] text-gray-400 tracking-wide truncate">{v.licensePlate}</p>}
+                        {rowHeight < 16 && <p className="text-[8px] text-gray-400 truncate">{v.licensePlate}</p>}
                       </div>
 
-                      {/* Ligne "maintenant" */}
-                      {todayVisible && (
-                        <div className="absolute top-0 bottom-0 w-px bg-[#01696e]/40 z-20 pointer-events-none"
-                          style={{ left: `${todayPct}%` }} />
-                      )}
+                      <div className="relative flex-1 min-w-[500px]" style={{ height: `${rowH}px` }}>
+                        <div className="absolute inset-0 flex pointer-events-none">
+                          {days.map(day => (
+                            <div key={day.toISOString()}
+                              className={`flex-1 border-r border-gray-100 ${isSameDay(day, today) ? 'bg-[#01696e]/5' : ''}`} />
+                          ))}
+                        </div>
 
-                      {/* Barres locations */}
-                      {vRentals.map(r => (
-                        <RentalBar key={r.id} rental={r} periodStart={periodStart} totalDays={viewMode} onClick={() => navigate(`/rentals/${r.id}`)} isBlacklisted={!!(r.driverGetaroundId && blacklistedIds.has(r.driverGetaroundId))} />
-                      ))}
+                        {todayVisible && (
+                          <div className="absolute top-0 bottom-0 w-px bg-[#01696e]/40 z-20 pointer-events-none"
+                            style={{ left: `${todayPct}%` }} />
+                        )}
 
-                      {/* Barres blocages */}
-                      {vBlockings.map(b => (
-                        <BlockingBar key={b.id} blocking={b} onDelete={id => deleteBlocking.mutate(id)} periodStart={periodStart} totalDays={viewMode} />
-                      ))}
+                        {vRentals.map(r => (
+                          <RentalBar key={r.id} rental={r} periodStart={periodStart} totalDays={viewMode}
+                            onClick={() => navigate(`/rentals/${r.id}`)}
+                            isBlacklisted={!!(r.driverGetaroundId && blacklistedIds.has(r.driverGetaroundId))}
+                            rowHeight={rowHeight} />
+                        ))}
 
-                      {/* Indisponibilités Getaround */}
-                      {vUnavailabilities.map(u => (
-                        <UnavailabilityBar key={u.id} unavailability={u} periodStart={periodStart} totalDays={viewMode} />
-                      ))}
+                        {vBlockings.map(b => (
+                          <BlockingBar key={b.id} blocking={b} onDelete={id => deleteBlocking.mutate(id)}
+                            periodStart={periodStart} totalDays={viewMode} rowHeight={rowHeight} />
+                        ))}
+
+                        {vUnavailabilities.map(u => (
+                          <UnavailabilityBar key={u.id} unavailability={u}
+                            periodStart={periodStart} totalDays={viewMode} rowHeight={rowHeight} />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </React.Fragment>
-          ))}
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
         </div>
       )}
     </div>

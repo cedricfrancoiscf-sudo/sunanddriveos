@@ -25,12 +25,15 @@ const RENTAL_STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Annulées' },
 ];
 
+type MsgTab = 'traiter' | 'ia' | 'traites' | 'tous';
+
 export default function MessageListPage(): React.JSX.Element {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   useEffect(() => { void trackEvent('messages', 'view'); }, []);
   const rentalIdFilter = searchParams.get('rentalId') ?? '';
 
+  const [activeTab, setActiveTab] = useState<MsgTab>('tous');
   const [vehicleId, setVehicleId] = useState('');
   const [rentalStatus, setRentalStatus] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -115,6 +118,18 @@ export default function MessageListPage(): React.JSX.Element {
     return Array.from(map.values());
   }, [messages]);
 
+  const traiterCount = conversations.filter(c => c.isUnanswered).length;
+  const iaCount = conversations.filter(c => c.hasPending).length;
+
+  const filteredConversations = useMemo<Conversation[]>(() => {
+    switch (activeTab) {
+      case 'traiter': return conversations.filter(c => c.isUnanswered);
+      case 'ia': return conversations.filter(c => c.hasPending);
+      case 'traites': return conversations.filter(c => !c.isUnanswered && !c.hasPending);
+      default: return conversations;
+    }
+  }, [conversations, activeTab]);
+
   return (
     <div className="p-4 lg:p-6">
       {/* En-tête */}
@@ -139,6 +154,30 @@ export default function MessageListPage(): React.JSX.Element {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Onglets */}
+      <div className="mb-4 flex border-b border-gray-200">
+        {([
+          { key: 'traiter' as MsgTab, label: 'À traiter', count: traiterCount, accent: true },
+          { key: 'ia' as MsgTab, label: 'En attente IA', count: iaCount, accent: false },
+          { key: 'traites' as MsgTab, label: 'Traités', count: null, accent: false },
+          { key: 'tous' as MsgTab, label: 'Tous', count: conversations.length, accent: false },
+        ]).map(tab => (
+          <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === tab.key
+                ? 'border-[#01696e] text-[#01696e]'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}>
+            {tab.label}
+            {tab.count != null && tab.count > 0 && (
+              <span className={`rounded-full px-1.5 py-0.5 text-xs font-semibold ${
+                tab.accent ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'
+              }`}>{tab.count}</span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Barre de filtres */}
@@ -200,16 +239,18 @@ export default function MessageListPage(): React.JSX.Element {
             style={{ borderColor: '#01696e', borderTopColor: 'transparent' }}
           />
         </div>
-      ) : conversations.length === 0 ? (
+      ) : filteredConversations.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <p className="font-medium text-gray-500">Aucune conversation</p>
           <p className="mt-1 text-sm text-gray-400">
-            Les messages apparaissent quand les locataires vous contactent via Getaround.
+            {activeTab === 'tous'
+              ? 'Les messages apparaissent quand les locataires vous contactent via Getaround.'
+              : 'Aucune conversation dans cet onglet.'}
           </p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          {conversations.map((conv, idx) => (
+          {filteredConversations.map((conv, idx) => (
             <button
               key={conv.rentalId}
               type="button"

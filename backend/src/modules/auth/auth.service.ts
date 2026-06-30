@@ -99,6 +99,10 @@ export async function loginSuperAdmin(
   };
 }
 
+export function verifyPassword(plain: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(plain, hash);
+}
+
 export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
 }

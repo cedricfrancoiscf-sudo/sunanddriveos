@@ -185,6 +185,38 @@ router.get('/ical-info', requireRole('admin'), async (req: Request, res: Respons
   } catch (err: unknown) { next(err); }
 });
 
+// POST /api/v1/settings/clean-vehicle-instructions — nettoyage one-shot du markdown stocké en base
+// (à appeler une fois après déploiement si les données contiennent encore des * ou **)
+router.post('/clean-vehicle-instructions', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    function stripMd(text: string): string {
+      return text
+        .replace(/^#{1,6}\s+/gm, '')
+        .replace(/\*\*(.*?)\*\*/g, '$1')
+        .replace(/\*(.*?)\*/g, '$1')
+        .replace(/^[*\-]\s+/gm, '• ')
+        .replace(/__([^_]*)__/g, '$1')
+        .replace(/_([^_]*)_/g, '$1')
+        .trim();
+    }
+    const db = getTenantClient(req.tenantDbUrl!);
+    const vehicles = await db.vehicle.findMany({
+      where: { OR: [{ pickupInstructions: { contains: '*' } }, { returnInstructions: { contains: '*' } }] },
+      select: { id: true, licensePlate: true, pickupInstructions: true, returnInstructions: true },
+    });
+    const fixed: string[] = [];
+    for (const v of vehicles) {
+      const newPickup = v.pickupInstructions ? stripMd(v.pickupInstructions) : null;
+      const newReturn = v.returnInstructions ? stripMd(v.returnInstructions) : null;
+      if (newPickup !== v.pickupInstructions || newReturn !== v.returnInstructions) {
+        await db.vehicle.update({ where: { id: v.id }, data: { pickupInstructions: newPickup, returnInstructions: newReturn } });
+        fixed.push(v.licensePlate);
+      }
+    }
+    res.json({ fixed: fixed.length, vehicles: fixed });
+  } catch (err: unknown) { next(err); }
+});
+
 // POST /api/v1/settings/ical-regenerate — (re)génère le token iCal
 router.post('/ical-regenerate', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
   try {

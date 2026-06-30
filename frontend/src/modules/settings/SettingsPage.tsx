@@ -108,6 +108,75 @@ function CarekeeperVehiclePanel({ userId, allVehicles }: {
   );
 }
 
+function MonCompteSection(): React.JSX.Element {
+  const { user } = useAuth();
+  const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => api.patch('/auth/change-password', {
+      currentPassword: form.currentPassword,
+      newPassword: form.newPassword,
+    }),
+    onSuccess: () => {
+      setMsg({ type: 'ok', text: 'Mot de passe mis à jour avec succès.' });
+      setForm({ currentPassword: '', newPassword: '', confirm: '' });
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: string } } };
+      setMsg({ type: 'err', text: e.response?.data?.error ?? 'Erreur lors du changement de mot de passe.' });
+    },
+  });
+
+  function handleSubmit(e: React.FormEvent): void {
+    e.preventDefault();
+    setMsg(null);
+    if (form.newPassword !== form.confirm) {
+      setMsg({ type: 'err', text: 'Les mots de passe ne correspondent pas.' });
+      return;
+    }
+    if (form.newPassword.length < 8) {
+      setMsg({ type: 'err', text: 'Le nouveau mot de passe doit contenir au moins 8 caractères.' });
+      return;
+    }
+    mutation.mutate();
+  }
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <h2 className="text-sm font-semibold text-gray-900 mb-0.5">Mon compte</h2>
+      <p className="text-xs text-gray-400 mb-4">{user?.name} — {user?.email}</p>
+      <form onSubmit={handleSubmit} className="space-y-3 max-w-sm">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Mot de passe actuel</label>
+          <input type="password" required value={form.currentPassword}
+            onChange={e => setForm(f => ({ ...f, currentPassword: e.target.value }))}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Nouveau mot de passe</label>
+          <input type="password" required minLength={8} value={form.newPassword}
+            onChange={e => setForm(f => ({ ...f, newPassword: e.target.value }))}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Confirmer le nouveau mot de passe</label>
+          <input type="password" required minLength={8} value={form.confirm}
+            onChange={e => setForm(f => ({ ...f, confirm: e.target.value }))}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20" />
+        </div>
+        {msg && (
+          <p className={`text-xs ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</p>
+        )}
+        <button type="submit" disabled={mutation.isPending}
+          className="rounded-xl bg-[#01696e] px-4 py-2 text-sm font-medium text-white hover:bg-[#015a5f] disabled:opacity-50 transition-colors">
+          {mutation.isPending ? 'Mise à jour...' : 'Changer le mot de passe'}
+        </button>
+      </form>
+    </section>
+  );
+}
+
 function UsersSection(): React.JSX.Element {
   const qc = useQueryClient();
   const [showInvite, setShowInvite] = useState(false);
@@ -2226,6 +2295,7 @@ export default function SettingsPage(): React.JSX.Element {
             <p className="mt-0.5 text-xs text-gray-400">Raison sociale, adresse et contacts de votre entreprise</p>
             <p className="mt-3 text-xs text-gray-400 italic">Ces informations sont gérées par le super admin depuis le tableau de bord SuperAdmin.</p>
           </section>
+          <MonCompteSection />
           <UsersSection />
         </div>
       )}

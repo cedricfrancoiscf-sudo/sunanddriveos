@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { requireAuth, requireSuperAdmin } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
-import { loginUser, loginSuperAdmin, hashPassword } from './auth.service';
+import { loginUser, loginSuperAdmin, hashPassword, verifyPassword } from './auth.service';
 import { sendEmail } from '../../utils/mailer';
 
 const router: Router = Router();
@@ -235,5 +235,73 @@ router.post('/reset-password', async (req: Request, res: Response, next: NextFun
     res.json({ message: 'Mot de passe mis à jour' });
   } catch (err: unknown) { next(err); }
 });
+
+// PATCH /api/v1/auth/change-password — changement de mot de passe (utilisateur tenant connecté)
+router.patch(
+  '/change-password',
+  requireAuth,
+  resolveTenant,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = z.object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(8),
+      }).safeParse(req.body);
+      if (!body.success) {
+        res.status(400).json({ error: 'Données invalides', details: body.error.flatten() });
+        return;
+      }
+
+      const db = getTenantClient(req.tenantDbUrl!);
+      const user = await db.user.findUnique({
+        where: { id: req.auth!.userId! },
+        select: { id: true, passwordHash: true },
+      });
+      if (!user || !user.passwordHash) { res.status(404).json({ error: 'Utilisateur introuvable' }); return; }
+
+      const valid = await verifyPassword(body.data.currentPassword, user.passwordHash);
+      if (!valid) { res.status(400).json({ error: 'Mot de passe actuel incorrect' }); return; }
+
+      const newHash = await hashPassword(body.data.newPassword);
+      await db.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+
+      res.json({ message: 'Mot de passe mis à jour' });
+    } catch (err: unknown) { next(err); }
+  },
+);
+
+// PATCH /api/v1/auth/superadmin/change-password — changement de mot de passe super admin
+router.patch(
+  '/superadmin/change-password',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = z.object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(8),
+      }).safeParse(req.body);
+      if (!body.success) {
+        res.status(400).json({ error: 'Données invalides', details: body.error.flatten() });
+        return;
+      }
+
+      const master = getMasterClient();
+      const admin = await master.superAdmin.findUnique({
+        where: { id: req.auth!.superAdminId! },
+        select: { id: true, passwordHash: true },
+      });
+      if (!admin) { res.status(404).json({ error: 'Super admin introuvable' }); return; }
+
+      const valid = await verifyPassword(body.data.currentPassword, admin.passwordHash);
+      if (!valid) { res.status(400).json({ error: 'Mot de passe actuel incorrect' }); return; }
+
+      const newHash = await hashPassword(body.data.newPassword);
+      await master.superAdmin.update({ where: { id: admin.id }, data: { passwordHash: newHash } });
+
+      res.json({ message: 'Mot de passe mis à jour' });
+    } catch (err: unknown) { next(err); }
+  },
+);
 
 export default router;

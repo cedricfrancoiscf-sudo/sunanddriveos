@@ -186,6 +186,9 @@ function DashboardContent(): React.JSX.Element {
   >('companies');
   const [showCompanyForm, setShowCompanyForm] = useState(false);
   const [showAdminForm, setShowAdminForm] = useState(false);
+  const [showChangePwForm, setShowChangePwForm] = useState(false);
+  const [changePwForm, setChangePwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [changePwMsg, setChangePwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [companyForm, setCompanyForm] = useState(EMPTY_COMPANY_FORM);
   const [adminForm, setAdminForm] = useState(EMPTY_ADMIN_FORM);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
@@ -339,6 +342,19 @@ function DashboardContent(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ['sa-admins'] });
       setShowAdminForm(false);
       setAdminForm(EMPTY_ADMIN_FORM);
+    },
+  });
+
+  const changeAdminPassword = useMutation({
+    mutationFn: (data: { currentPassword: string; newPassword: string }) =>
+      saApi.patch('/auth/superadmin/change-password', data),
+    onSuccess: () => {
+      setChangePwMsg({ type: 'ok', text: 'Mot de passe mis à jour.' });
+      setChangePwForm({ currentPassword: '', newPassword: '', confirm: '' });
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: string } } };
+      setChangePwMsg({ type: 'err', text: e.response?.data?.error ?? 'Erreur lors du changement de mot de passe.' });
     },
   });
 
@@ -1493,22 +1509,34 @@ function DashboardContent(): React.JSX.Element {
             <div className="max-w-lg">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-white">Super administrateurs</h2>
-                <button
-                  type="button"
-                  onClick={() => setShowAdminForm(true)}
-                  className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white"
-                  style={{ backgroundColor: '#01696e' }}
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                  Ajouter
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setChangePwMsg(null); setShowChangePwForm(true); }}
+                    className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-300 border border-gray-700 hover:border-gray-500 transition"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                    Mot de passe
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminForm(true)}
+                    className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white"
+                    style={{ backgroundColor: '#01696e' }}
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                    Ajouter
+                  </button>
+                </div>
               </div>
               <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
                 {admins.length === 0 ? (
@@ -1904,6 +1932,67 @@ function DashboardContent(): React.JSX.Element {
                   style={{ backgroundColor: '#01696e' }}
                 >
                   Créer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal changement de mot de passe super admin */}
+      {showChangePwForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-800 px-6 py-4">
+              <h3 className="font-semibold text-white">Changer mon mot de passe</h3>
+              <button type="button" onClick={() => setShowChangePwForm(false)} className="text-gray-500 hover:text-gray-300">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setChangePwMsg(null);
+                if (changePwForm.newPassword !== changePwForm.confirm) {
+                  setChangePwMsg({ type: 'err', text: 'Les mots de passe ne correspondent pas.' });
+                  return;
+                }
+                changeAdminPassword.mutate({ currentPassword: changePwForm.currentPassword, newPassword: changePwForm.newPassword });
+              }}
+              className="p-6 space-y-4"
+            >
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Mot de passe actuel *</label>
+                <input required type="password" value={changePwForm.currentPassword}
+                  onChange={(e) => setChangePwForm((f) => ({ ...f, currentPassword: e.target.value }))}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Nouveau mot de passe * (min. 8 car.)</label>
+                <input required type="password" minLength={8} value={changePwForm.newPassword}
+                  onChange={(e) => setChangePwForm((f) => ({ ...f, newPassword: e.target.value }))}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Confirmer le nouveau mot de passe *</label>
+                <input required type="password" minLength={8} value={changePwForm.confirm}
+                  onChange={(e) => setChangePwForm((f) => ({ ...f, confirm: e.target.value }))}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#01696e]/40" />
+              </div>
+              {changePwMsg && (
+                <p className={`text-xs ${changePwMsg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>{changePwMsg.text}</p>
+              )}
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setShowChangePwForm(false)}
+                  className="rounded-xl border border-gray-700 px-4 py-2 text-sm text-gray-400 hover:text-white">
+                  Annuler
+                </button>
+                <button type="submit" disabled={changeAdminPassword.isPending}
+                  className="rounded-xl px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  style={{ backgroundColor: '#01696e' }}>
+                  {changeAdminPassword.isPending ? 'Mise à jour...' : 'Changer'}
                 </button>
               </div>
             </form>

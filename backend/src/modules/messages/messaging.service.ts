@@ -138,6 +138,38 @@ function detectEmergency(content: string): boolean {
   return URGENCY_PATTERNS.some(p => p.test(content));
 }
 
+function fmtBool(v: boolean | null | undefined): string {
+  return v == null ? 'Non renseigné' : v ? 'Oui' : 'Non';
+}
+
+function buildEquipBlock(equip: {
+  gpsIntegre: boolean | null;
+  androidAutoCarplay: boolean | null;
+  climatisation: boolean | null;
+  regulateurLimiteur: boolean | null;
+  radarRecul: boolean | null;
+  cameraRecul: boolean | null;
+  typeBoite: string | null;
+  bluetoothAudio: boolean | null;
+  particularites: string | null;
+  alertesConnuesNonCritiques: string | null;
+  pickupInstructions: string | null;
+  returnInstructions: string | null;
+}): string {
+  const lines = [
+    'Équipements du véhicule :',
+    `GPS : ${fmtBool(equip.gpsIntegre)} | Android Auto/CarPlay : ${fmtBool(equip.androidAutoCarplay)} | Climatisation : ${fmtBool(equip.climatisation)}`,
+    `Bluetooth : ${fmtBool(equip.bluetoothAudio)} | Radar recul : ${fmtBool(equip.radarRecul)} | Caméra recul : ${fmtBool(equip.cameraRecul)}`,
+    `Boîte : ${equip.typeBoite ?? 'Non renseigné'} | Régulateur/limiteur : ${fmtBool(equip.regulateurLimiteur)}`,
+  ];
+  if (equip.particularites) lines.push(`Particularités : ${equip.particularites}`);
+  if (equip.alertesConnuesNonCritiques) lines.push(`Alertes connues : ${equip.alertesConnuesNonCritiques}`);
+  if (equip.pickupInstructions) lines.push(`Instructions remise : ${equip.pickupInstructions.slice(0, 300)}`);
+  if (equip.returnInstructions) lines.push(`Instructions retour : ${equip.returnInstructions.slice(0, 300)}`);
+  lines.push('RÈGLE : Pour tout équipement "Non renseigné", NE JAMAIS affirmer qu\'il est présent ou absent.');
+  return '\n' + lines.join('\n');
+}
+
 export async function analyzeAndProcessMessage(
   message: { id: string; content: string; importedViaSync?: boolean; createdAt?: Date },
   rental: RentalForMessaging,
@@ -256,6 +288,17 @@ export async function analyzeAndProcessMessage(
   const assistantName = settings.aiName ?? settings.senderName ?? 'notre service';
   const companyName = settings.senderName ?? '';
 
+  // Charger les équipements Fiche IA du véhicule pour enrichir le prompt de suggestion
+  const vehicleEquip = await db.vehicle.findUnique({
+    where: { id: rental.vehicleId },
+    select: {
+      gpsIntegre: true, androidAutoCarplay: true, climatisation: true,
+      regulateurLimiteur: true, radarRecul: true, cameraRecul: true,
+      typeBoite: true, bluetoothAudio: true, particularites: true,
+      alertesConnuesNonCritiques: true, pickupInstructions: true, returnInstructions: true,
+    },
+  });
+
   // 1. Analyse Claude
   let analysis: ProactiveAnalysis;
   try {
@@ -283,7 +326,7 @@ Règles STRICTES pour suggestedReply :
 Véhicule : ${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})
 Lieu : ${rental.vehicle.deliveryPointName ?? rental.vehicle.parkingZone ?? 'Non défini'}
 Début location : ${rental.startAt.toLocaleDateString('fr-FR')}
-Locataire : ${rental.driverName}`,
+Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) : ''}`,
       }],
     });
     const text = resp.content[0]?.type === 'text' ? resp.content[0].text : '{}';

@@ -153,8 +153,11 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
       indispoParType[b.type] = (indispoParType[b.type] ?? 0) + days;
     }
 
+    const lastValuation = vehicleValuations.find(vv => vv.vehicleId === v.id);
     return {
+      id: v.id,
       vehicule: `${v.make} ${v.model} (${v.licensePlate})`,
+      licensePlate: v.licensePlate,
       zone: v.deliveryPointName ?? v.parkingZone ?? 'Non définie',
       annee: v.year,
       km: v.currentMileage,
@@ -171,6 +174,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
       margeAnnuelle: Math.round(vMargeAnnuelle * 100) / 100,
       joursIndispo,
       indispoParType,
+      valeurEstimee: lastValuation?.estimatedValue ?? null,
     };
   });
 

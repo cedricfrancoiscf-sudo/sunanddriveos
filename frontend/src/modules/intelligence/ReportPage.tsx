@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueries } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -11,10 +11,10 @@ const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#1
 // ─── Annual Types ─────────────────────────────────────────────────────────────
 
 interface VehicleStat {
-  vehicule: string; zone: string; annee: number; km: number; scoreSante: number;
+  id?: string; vehicule: string; licensePlate?: string; zone: string; annee: number; km: number; scoreSante: number;
   nbLocations: number; caNet: number; kmTotal: number; kmAnnuelPrevu: number;
   incidents: number; entretiensEnAttente: number; ctExpiration: string | null;
-  valeurEstimee?: number; signal?: string;
+  valeurEstimee?: number | null; signal?: string;
 }
 
 interface SyntheseFinanciere {
@@ -421,6 +421,24 @@ export default function ReportPage(): React.JSX.Element {
   const report = reportData?.report;
   const internal = reportData?.internalData;
   const vehicleStats = reportData?.vehicleStats ?? [];
+
+  // Chargement dynamique du signal ROI par véhicule (utilise les ids stockés depuis la dernière régénération)
+  const vehicleIds = vehicleStats.filter(v => v.id).map(v => v.id!);
+  const roiQueries = useQueries({
+    queries: vehicleIds.map(id => ({
+      queryKey: ['vehicle-roi-report', id],
+      queryFn: () => api.get<{ analysis: { signal: string; valeurMarchandeActuelle: number } }>(`/vehicles/${id}/roi-analysis`)
+        .then(r => r.data.analysis),
+      enabled: Boolean(reportData) && vehicleIds.length > 0,
+      staleTime: 10 * 60_000,
+      retry: false,
+    })),
+  });
+  const roiByVehicleId: Record<string, { signal?: string; valeurMarchandeActuelle?: number }> = {};
+  vehicleIds.forEach((id, i) => {
+    const d = roiQueries[i]?.data;
+    if (d) roiByVehicleId[id] = d;
+  });
 
   const generatedAt = (reportData ?? monthlyData)?.generatedAt;
 
@@ -833,7 +851,11 @@ export default function ReportPage(): React.JSX.Element {
                     </tr>
                   </thead>
                   <tbody>
-                    {vehicleStats.map(v => (
+                    {vehicleStats.map(v => {
+                      const roi = v.id ? roiByVehicleId[v.id] : undefined;
+                      const signal = roi?.signal ?? v.signal;
+                      const valeur = v.valeurEstimee ?? roi?.valeurMarchandeActuelle ?? null;
+                      return (
                       <tr key={v.vehicule} className="border-b border-gray-50 last:border-0">
                         <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{v.vehicule}</td>
                         <td className="px-4 py-3 text-xs text-gray-500">{v.zone}</td>
@@ -841,16 +863,19 @@ export default function ReportPage(): React.JSX.Element {
                         <td className="px-4 py-3 text-gray-600">{v.nbLocations}</td>
                         <td className="px-4 py-3 text-gray-600">{v.kmTotal.toLocaleString('fr-FR')}</td>
                         <td className="px-4 py-3 text-sm text-gray-600">
-                          {v.valeurEstimee != null ? `${v.valeurEstimee.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €` : '—'}
+                          {valeur != null ? `${Math.round(valeur).toLocaleString('fr-FR')} €` : '—'}
                         </td>
                         <td className="px-4 py-3">
-                          {v.signal ? (
+                          {signal ? (
                             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                              v.signal === 'vendre_maintenant' ? 'bg-red-100 text-red-700' :
-                              v.signal === 'conserver' ? 'bg-green-100 text-green-700' :
-                              'bg-gray-100 text-gray-500'
+                              signal === 'vendre_maintenant' ? 'bg-red-100 text-red-700' :
+                              signal === 'bientot' ? 'bg-orange-100 text-orange-700' :
+                              signal === 'optimal' ? 'bg-blue-100 text-blue-700' :
+                              'bg-green-100 text-green-700'
                             }`}>
-                              {v.signal === 'vendre_maintenant' ? 'Vendre' : v.signal === 'conserver' ? 'Conserver' : v.signal}
+                              {signal === 'vendre_maintenant' ? 'Vendre' :
+                               signal === 'bientot' ? 'Bientôt' :
+                               signal === 'optimal' ? 'Fenêtre' : 'Conserver'}
                             </span>
                           ) : <span className="text-gray-300 text-xs">—</span>}
                         </td>
@@ -868,7 +893,8 @@ export default function ReportPage(): React.JSX.Element {
                           )}
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>

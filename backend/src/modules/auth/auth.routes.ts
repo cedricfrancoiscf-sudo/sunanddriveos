@@ -44,7 +44,7 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     const master = getMasterClient();
     const company = await master.company.findUnique({
       where: { slug: companySlug, isActive: true },
-      select: { tenantDbUrl: true },
+      select: { id: true, tenantDbUrl: true },
     });
 
     if (!company) {
@@ -55,13 +55,11 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     const tenantClient = getTenantClient(company.tenantDbUrl);
     const result = await loginUser(tenantClient, companySlug, email, password);
 
-    res.json(result);
+    // Fire-and-forget AVANT res.json pour éviter le second round-trip et les erreurs post-réponse
+    master.tenantEvent.create({ data: { companyId: company.id, module: 'auth', action: 'login' } })
+      .catch(err => console.error('[Auth] login tracking error:', err));
 
-    // Non-bloquant : enregistrer l'événement de connexion
-    const companyWithId = await master.company.findUnique({ where: { slug: companySlug }, select: { id: true } });
-    if (companyWithId) {
-      master.tenantEvent.create({ data: { companyId: companyWithId.id, module: 'auth', action: 'login', occurredAt: new Date() } }).catch(() => {});
-    }
+    res.json(result);
   } catch (err: unknown) {
     next(err);
   }

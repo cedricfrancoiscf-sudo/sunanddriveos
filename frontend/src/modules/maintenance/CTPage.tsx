@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
+import { trackEvent } from '../../utils/tracking';
 import { TaskCard, TaskModal, AlertBanner, type MaintenanceTask, type Maintenance } from './maintenance.shared';
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ const ctApi = {
 // ─── Page CT ─────────────────────────────────────────────────────────────────
 
 export default function CTPage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('ct', 'view'); }, []);
   const qc = useQueryClient();
   const [selectedTask, setSelectedTask] = useState<MaintenanceTask | null>(null);
 

@@ -103,7 +103,7 @@ function RentalBar({ rental, periodStart, totalDays, onClick, isBlacklisted }: {
             {hasCarSeat && <span className="shrink-0 text-[9px] ml-0.5 opacity-90">🪑</span>}
             {hasAccessory && <span className="shrink-0 text-[9px] opacity-90">📦</span>}
           </span>
-          <span className="text-[9px] text-white/70 truncate">→ {formatHour(rental.endAt)}</span>
+          <span className="text-[9px] text-white/70 truncate self-end">→ {formatHour(rental.endAt)}</span>
         </span>
       )}
       {isShort && (hasCarSeat || hasAccessory) && (

@@ -8,6 +8,7 @@ import {
 } from 'recharts';
 import { api } from '../../utils/api';
 import { useAuth } from '../../hooks/useAuth';
+import { trackEvent } from '../../utils/tracking';
 
 interface MileageAnomaly {
   rentalId: string;
@@ -152,6 +153,7 @@ function CATooltip({ active, payload, label }: { active?: boolean; payload?: Arr
 // ── Page principale ────────────────────────────────────────────────────────────
 
 export default function IntelligencePage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('intelligence', 'view'); }, []);
   const navigate = useNavigate();
   const [perfView, setPerfView] = useState<'chart' | 'table'>('chart');
   const [perfMetric, setPerfMetric] = useState<'ca' | 'occupancy'>('ca');
@@ -269,6 +271,10 @@ export default function IntelligencePage(): React.JSX.Element {
         <button type="button" onClick={() => navigate('/intelligence/patterns')}
           className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-[#01696e] hover:text-[#01696e] shadow-sm transition">
           <span>📊</span> Patterns &amp; Heatmap
+        </button>
+        <button type="button" onClick={() => navigate('/intelligence/forecast')}
+          className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-[#01696e] hover:text-[#01696e] shadow-sm transition">
+          <span>🔮</span> Prévisions
         </button>
       </div>
 

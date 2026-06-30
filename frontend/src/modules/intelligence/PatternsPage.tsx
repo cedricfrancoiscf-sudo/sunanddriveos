@@ -16,7 +16,11 @@ interface PatternsData {
   insights: Insight[];
 }
 
-const DAY_COLORS = ['#8b5cf6', '#01696e', '#01696e', '#01696e', '#01696e', '#01696e', '#8b5cf6'];
+function dayColor(count: number, max: number): string {
+  if (max === 0) return '#9ca3af';
+  const r = count / max;
+  return r >= 0.75 ? '#01696e' : r >= 0.4 ? '#5ba8ab' : '#9ca3af';
+}
 const MAX_HEATMAP_COLOR = '#01696e';
 
 function heatmapColor(count: number, max: number): string {
@@ -89,9 +93,7 @@ export default function PatternsPage(): React.JSX.Element {
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: number, name: string) => [v, name === 'count' ? 'départs' : 'CA €']} />
                   <Bar dataKey="count" name="count" radius={[3, 3, 0, 0]}>
-                    {data.parJour.map((_, i) => (
-                      <Cell key={i} fill={DAY_COLORS[i] ?? '#01696e'} />
-                    ))}
+                    {(() => { const max = Math.max(...data.parJour.map(d => d.count), 0); return data.parJour.map((d, i) => <Cell key={i} fill={dayColor(d.count, max)} />); })()}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -145,9 +147,7 @@ export default function PatternsPage(): React.JSX.Element {
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}j`} />
                   <Tooltip formatter={(v: number) => [`${v}j`, 'durée moy.']} />
                   <Bar dataKey="dureeMoy" name="dureeMoy" radius={[3, 3, 0, 0]}>
-                    {data.dureeMoyParJour.map((_, i) => (
-                      <Cell key={i} fill={DAY_COLORS[i] ?? '#01696e'} />
-                    ))}
+                    {(() => { const max = Math.max(...data.dureeMoyParJour.map(d => d.dureeMoy), 0); return data.dureeMoyParJour.map((d, i) => <Cell key={i} fill={dayColor(d.dureeMoy, max)} />); })()}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>

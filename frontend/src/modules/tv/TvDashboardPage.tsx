@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { format, differenceInHours, isPast } from 'date-fns';
+import { format, differenceInHours, differenceInDays, isPast } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
 
@@ -14,6 +14,13 @@ interface Vehicle {
 interface Blocking {
   id: string; vehicleId: string; startAt: string; endAt: string; type: string; reason: string | null;
   vehicle: { id: string; make: string; model: string; licensePlate: string };
+}
+interface MonthStats {
+  totalEncaisse: number; totalPrevisionnel: number; occupancyRate: number; rentalCount: number; totalKm: number;
+}
+interface CtTask {
+  id: string; nextDueDate: string | null;
+  vehicle: { make: string; model: string; licensePlate: string };
 }
 
 const REFETCH_INTERVAL = 60_000;
@@ -54,6 +61,26 @@ export default function TvDashboardPage(): React.JSX.Element {
     refetchInterval: REFETCH_INTERVAL,
   });
 
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const { data: monthStats } = useQuery<MonthStats>({
+    queryKey: ['tv-month-stats', currentMonth],
+    queryFn: () => api.get<MonthStats>('/dashboard/stats', { params: { month: currentMonth } }).then(r => r.data),
+    refetchInterval: 5 * 60_000,
+  });
+
+  const { data: ctTasksData } = useQuery<{ tasks: CtTask[] }>({
+    queryKey: ['tv-ct-tasks'],
+    queryFn: () => api.get<{ tasks: CtTask[] }>('/maintenance/tasks', { params: { type: 'ct' } }).then(r => r.data),
+    refetchInterval: 5 * 60_000,
+  });
+
+  const urgentCt = (ctTasksData?.tasks ?? []).filter(t => {
+    if (!t.nextDueDate) return false;
+    const d = new Date(t.nextDueDate);
+    const days = differenceInDays(d, now);
+    return !isPast(d) && days <= 30;
+  });
+
   const vehicles = vehiclesData ?? [];
   const activeVehicleIds = new Set(activeRentals.map(r => r.vehicle.licensePlate));
   // Blocages actifs en ce moment
@@ -85,6 +112,25 @@ export default function TvDashboardPage(): React.JSX.Element {
           </div>
         </div>
         <div className="flex items-center gap-6 text-right">
+          {monthStats && <>
+            <div>
+              <p className="text-2xl font-bold text-green-400">{Math.round(monthStats.totalEncaisse + monthStats.totalPrevisionnel).toLocaleString('fr-FR')} €</p>
+              <p className="text-xs text-gray-400">CA mois</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-blue-400">{Math.round(monthStats.occupancyRate)} %</p>
+              <p className="text-xs text-gray-400">Occupation</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-300">{monthStats.rentalCount}</p>
+              <p className="text-xs text-gray-400">Locations</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-300">{Math.round(monthStats.totalKm).toLocaleString('fr-FR')} km</p>
+              <p className="text-xs text-gray-400">Km mois</p>
+            </div>
+            <div className="border-l border-gray-700 h-10 self-center" />
+          </>}
           <div>
             <p className="text-3xl font-bold text-[#01696e]">{activeRentals.length}</p>
             <p className="text-xs text-gray-400">En cours</p>
@@ -203,6 +249,27 @@ export default function TvDashboardPage(): React.JSX.Element {
                     </div>
                     <p className="text-xs text-gray-500 shrink-0">
                       jusqu'au {format(new Date(b.endAt), 'dd/MM HH:mm', { locale: fr })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* CT urgents */}
+          {urgentCt.length > 0 && (
+            <div className="mt-6">
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-red-500">CT urgents (≤ 30j)</h2>
+              <div className="space-y-2">
+                {urgentCt.map(t => (
+                  <div key={t.id} className="flex items-center gap-3 rounded-xl border border-red-900 bg-red-950 p-3">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white">{t.vehicle.make} {t.vehicle.model}</p>
+                      <p className="font-mono text-xs text-gray-400">{t.vehicle.licensePlate}</p>
+                    </div>
+                    <p className="text-xs text-red-400 shrink-0">
+                      {t.nextDueDate ? format(new Date(t.nextDueDate), 'dd/MM/yy', { locale: fr }) : ''}
                     </p>
                   </div>
                 ))}

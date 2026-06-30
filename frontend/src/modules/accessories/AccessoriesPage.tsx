@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../utils/api';
 import { useAuth } from '../../hooks/useAuth';
+import { trackEvent } from '../../utils/tracking';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -748,6 +749,7 @@ function MarketplaceTab(): React.JSX.Element {
 // ── Page container ─────────────────────────────────────────────────────────
 
 export default function AccessoriesPage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('accessories', 'view'); }, []);
   const { user } = useAuth();
   const isEnterprise = user?.plan === 'enterprise';
   const [activeTab, setActiveTab] = useState<Tab>('car-seats');

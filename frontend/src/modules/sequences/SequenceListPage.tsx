@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
+import { trackEvent } from '../../utils/tracking';
 import {
   sequencesApi,
   type Sequence,
@@ -366,6 +367,7 @@ function SequenceCard({
 }
 
 export default function SequenceListPage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('sequences', 'view'); }, []);
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState<Sequence | null>(null);

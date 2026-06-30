@@ -56,6 +56,12 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     const result = await loginUser(tenantClient, companySlug, email, password);
 
     res.json(result);
+
+    // Non-bloquant : enregistrer l'événement de connexion
+    const companyWithId = await master.company.findUnique({ where: { slug: companySlug }, select: { id: true } });
+    if (companyWithId) {
+      master.tenantEvent.create({ data: { companyId: companyWithId.id, module: 'auth', action: 'login', occurredAt: new Date() } }).catch(() => {});
+    }
   } catch (err: unknown) {
     next(err);
   }

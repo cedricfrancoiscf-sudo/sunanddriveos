@@ -497,7 +497,7 @@ export default function DashboardPage(): React.JSX.Element {
             <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Pipeline 28 jours</h2>
             <span className="text-xs text-gray-400">{pipelineData.occupationProjetee}% occupation projetée</span>
           </div>
-          <div className="grid gap-3 grid-cols-3 mb-3">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3 mb-3">
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">CA réservé</p>
               <p className="mt-1 text-xl font-bold text-[#01696e]">{pipelineData.caReserve.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}</p>

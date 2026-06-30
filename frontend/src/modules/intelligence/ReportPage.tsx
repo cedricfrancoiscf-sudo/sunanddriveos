@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '../../utils/api';
+import { trackEvent } from '../../utils/tracking';
 
 const CHART_COLORS = ['#01696e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#f97316', '#06b6d4'];
 
@@ -245,7 +246,7 @@ function MonthlyReportView({ data, theme }: { data: MonthlyReportData; theme: { 
                 {analyse_vehicules.map((v, i) => (
                   <tr key={i} className="border-b border-gray-50 last:border-0">
                     <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{v.vehicule}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{v.ca_mois.toFixed(0)} €</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{(v.ca_mois ?? 0).toFixed(0)} €</td>
                     <td className="px-4 py-3"><EvolBadge pct={v.evolution_vs_m1} /></td>
                     <td className="px-4 py-3 text-gray-600">{v.taux_occupation} %</td>
                     <td className={`px-4 py-3 font-semibold ${TENDANCE_COLOR(v.tendance)}`}>
@@ -297,7 +298,7 @@ function MonthlyReportView({ data, theme }: { data: MonthlyReportData; theme: { 
             <div>
               <p className="text-xs font-medium text-blue-400 mb-0.5">CA estimé</p>
               <p className="text-2xl font-bold text-blue-900">
-                {previsionnel_mois_suivant.ca_estime.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €
+                {(previsionnel_mois_suivant.ca_estime ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €
               </p>
             </div>
             <div>
@@ -379,6 +380,7 @@ function MonthlyReportView({ data, theme }: { data: MonthlyReportData; theme: { 
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function ReportPage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('intelligence', 'report'); }, []);
   const currentMonth = new Date().toISOString().slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [mode, setMode] = useState<'annual' | 'monthly'>('annual');
@@ -760,14 +762,15 @@ export default function ReportPage(): React.JSX.Element {
                     { label: 'Investissement total', value: internal.patrimonial.investissementTotal, suffix: '€', color: 'text-gray-900' },
                     { label: 'Valeur flotte estimée', value: internal.patrimonial.valeurFlotte, suffix: '€', color: 'text-blue-700' },
                     { label: 'Capital restant dû', value: internal.patrimonial.capitalRestant, suffix: '€', color: 'text-orange-700' },
-                    { label: 'Position nette', value: internal.patrimonial.positionNette, suffix: '€', color: internal.patrimonial.positionNette >= 0 ? 'text-green-700' : 'text-red-700' },
-                    { label: 'DSCR', value: internal.patrimonial.dscr, suffix: 'x', color: internal.patrimonial.dscr >= 1.2 ? 'text-green-700' : internal.patrimonial.dscr >= 1 ? 'text-yellow-700' : 'text-red-700', decimals: 2 },
-                    { label: 'ROI annualisé', value: internal.patrimonial.roiAnnualise, suffix: '%', color: internal.patrimonial.roiAnnualise >= 8 ? 'text-green-700' : 'text-yellow-700', decimals: 1 },
+                    { label: 'Position nette', value: internal.patrimonial.positionNette, suffix: '€', color: (internal.patrimonial.positionNette ?? -1) >= 0 ? 'text-green-700' : 'text-red-700' },
+                    { label: 'DSCR', value: internal.patrimonial.dscr, suffix: 'x', color: (internal.patrimonial.dscr ?? 0) >= 1.2 ? 'text-green-700' : (internal.patrimonial.dscr ?? 0) >= 1 ? 'text-yellow-700' : 'text-red-700', decimals: 2 },
+                    { label: 'ROI annualisé', value: internal.patrimonial.roiAnnualise, suffix: '%', color: (internal.patrimonial.roiAnnualise ?? 0) >= 8 ? 'text-green-700' : 'text-yellow-700', decimals: 1 },
                   ].map(kpi => (
                     <div key={kpi.label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                       <p className="text-xs text-gray-400 mb-1">{kpi.label}</p>
                       <p className={`text-xl font-bold ${kpi.color}`}>
-                        {kpi.suffix === '€'
+                        {kpi.value == null ? '—'
+                          : kpi.suffix === '€'
                           ? `${kpi.value.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`
                           : kpi.suffix === '%'
                           ? `${kpi.value.toFixed(kpi.decimals ?? 0)} %`
@@ -834,7 +837,7 @@ export default function ReportPage(): React.JSX.Element {
                       <tr key={v.vehicule} className="border-b border-gray-50 last:border-0">
                         <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{v.vehicule}</td>
                         <td className="px-4 py-3 text-xs text-gray-500">{v.zone}</td>
-                        <td className="px-4 py-3 font-medium text-gray-900">{v.caNet.toFixed(0)} €</td>
+                        <td className="px-4 py-3 font-medium text-gray-900">{(v.caNet ?? 0).toFixed(0)} €</td>
                         <td className="px-4 py-3 text-gray-600">{v.nbLocations}</td>
                         <td className="px-4 py-3 text-gray-600">{v.kmTotal.toLocaleString('fr-FR')}</td>
                         <td className="px-4 py-3 text-sm text-gray-600">

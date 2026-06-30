@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { api } from '../../utils/api';
 import { useAuth } from '../../hooks/useAuth';
+import { trackEvent } from '../../utils/tracking';
 
 interface RentabilityEntry {
   vehicleId: string;
@@ -658,6 +659,7 @@ function ObjectifsTab({ entries }: { entries: RentabilityEntry[] }): React.JSX.E
 }
 
 export default function RentabilityPage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('rentability', 'view'); }, []);
   const { user } = useAuth();
   const isEnterprise = (user as unknown as { plan?: string })?.plan === 'enterprise';
   const [tab, setTab] = useState<MainTab>('ce_mois');

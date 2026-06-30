@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth, requireSuperAdmin } from '../../middleware/auth';
 import { getMasterClient, getTenantClient } from '../../prisma/client';
 import { hashPassword } from '../auth/auth.service';
+import jwt from 'jsonwebtoken';
 import { resetCorruptedPayouts } from '../getaround-sync/getaround-sync.service';
 import { analyzeAndProcessMessage, type RentalForMessaging } from '../messages/messaging.service';
 import { createGetaroundClient } from '../getaround-sync/getaround-api';
@@ -962,7 +963,7 @@ router.patch('/companies/:id/subscription', async (req: Request, res: Response, 
     const master = getMasterClient();
     const existing = await master.company.findUnique({
       where: { id: req.params.id as string },
-      select: { subscriptionStatus: true, contactEmail: true, name: true },
+      select: { subscriptionStatus: true, contactEmail: true, name: true, plan: true },
     });
     if (!existing) { res.status(404).json({ error: 'Société introuvable' }); return; }
 
@@ -1002,7 +1003,25 @@ router.patch('/companies/:id/subscription', async (req: Request, res: Response, 
       }
     }
 
+    // Tracker le changement de plan (non bloquant)
+    if (body.data.plan && body.data.plan !== existing.plan) {
+      master.tenantEvent.create({ data: { companyId: req.params.id as string, module: 'plan', action: `${existing.plan}→${body.data.plan}`, occurredAt: new Date() } }).catch(() => {});
+    }
+
     res.json({ company });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/superadmin/companies/:id/plan-history
+router.get('/companies/:id/plan-history', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const events = await master.tenantEvent.findMany({
+      where: { companyId: req.params.id as string, module: 'plan' },
+      orderBy: { occurredAt: 'desc' },
+      take: 20,
+    });
+    res.json({ history: events.map(e => ({ id: e.id, change: e.action, at: e.occurredAt })) });
   } catch (err: unknown) { next(err); }
 });
 
@@ -1031,6 +1050,54 @@ router.post('/companies/:id/notes', async (req: Request, res: Response, next: Ne
       data: { companyId: req.params.id as string, content: body.data.content },
     });
     res.status(201).json({ note });
+  } catch (err: unknown) { next(err); }
+});
+
+// DELETE /api/v1/superadmin/companies/:id/notes/:noteId
+router.delete('/companies/:id/notes/:noteId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    await master.tenantNote.delete({ where: { id: req.params.noteId as string, companyId: req.params.id as string } });
+    res.json({ success: true });
+  } catch (err: unknown) { next(err); }
+});
+
+// ─── Impersonation ────────────────────────────────────────────────────────────
+
+// POST /api/v1/superadmin/companies/:id/impersonate
+router.post('/companies/:id/impersonate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const master = getMasterClient();
+    const company = await master.company.findUnique({
+      where: { id: req.params.id as string },
+      select: { tenantDbUrl: true, slug: true, plan: true, trialEndsAt: true, stripeSubscriptionId: true },
+    });
+    if (!company) { res.status(404).json({ error: 'Société introuvable' }); return; }
+
+    const db = getTenantClient(company.tenantDbUrl);
+    const adminUser = await db.user.findFirst({
+      where: { isActive: true, OR: [{ role: 'admin' }, { roles: { has: 'admin' } }] },
+      select: { id: true, name: true, email: true, role: true, roles: true },
+    });
+    if (!adminUser) { res.status(404).json({ error: 'Aucun admin actif dans cette société' }); return; }
+
+    const jwtSecret = process.env.JWT_SECRET!;
+    const token = jwt.sign(
+      {
+        userId: adminUser.id,
+        tenantSlug: company.slug,
+        role: adminUser.role,
+        roles: adminUser.roles,
+        plan: company.plan,
+        trialEndsAt: company.trialEndsAt?.toISOString() ?? null,
+        hasActiveSubscription: !!company.stripeSubscriptionId,
+        impersonated: true,
+      },
+      jwtSecret,
+      { expiresIn: '2h' },
+    );
+
+    res.json({ token, slug: company.slug, userName: adminUser.name });
   } catch (err: unknown) { next(err); }
 });
 

@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../utils/api';
 import { useAuth } from '../../hooks/useAuth';
+import { trackEvent } from '../../utils/tracking';
 
 interface RentalHistory {
   id: string;
@@ -61,6 +62,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function RenterDetailPage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('renters', 'detail'); }, []);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();

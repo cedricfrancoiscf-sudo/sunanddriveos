@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, isPast, differenceInDays, addMonths } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
+import { trackEvent } from '../../utils/tracking';
 import { DocumentScanner } from '../../components/ui/DocumentScanner';
 import { TaskCard, TaskModal, AlertBanner, type MaintenanceTask, type Maintenance, type Vehicle } from './maintenance.shared';
 
@@ -49,6 +50,7 @@ function StatusDot({ nextDate }: { nextDate: string | null }): React.JSX.Element
 }
 
 export default function MaintenancePage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('maintenance', 'view'); }, []);
   const qc = useQueryClient();
   const [selectedTask, setSelectedTask] = useState<MaintenanceTask | null>(null);
   const [showForm, setShowForm] = useState(false);

@@ -73,6 +73,7 @@ const ThirdPartyOwnersPage = React.lazy(() => import('./modules/third-party-owne
 const SuperAdminLoginPage = React.lazy(() => import('./modules/superadmin/SuperAdminLoginPage'));
 const SuperAdminDashboard = React.lazy(() => import('./modules/superadmin/SuperAdminDashboard'));
 const SuperAdminPlansPage = React.lazy(() => import('./modules/superadmin/SuperAdminPlansPage'));
+const ImpersonateEntryPage = React.lazy(() => import('./modules/superadmin/ImpersonateEntryPage'));
 const OnboardingPage = React.lazy(() => import('./modules/onboarding/OnboardingPage'));
 const OnboardingWizardPage = React.lazy(() => import('./modules/onboarding/OnboardingWizardPage'));
 const BlockedPage = React.lazy(() => import('./modules/billing/BlockedPage'));
@@ -148,6 +149,7 @@ export default function App(): React.JSX.Element {
             <Route path="/superadmin/login" element={<SuperAdminLoginPage />} />
             <Route path="/superadmin/plans" element={<SuperAdminPlansPage />} />
             <Route path="/superadmin" element={<SuperAdminDashboard />} />
+            <Route path="/impersonate-entry" element={<ImpersonateEntryPage />} />
             <Route path="/superadmin/*" element={<SuperAdminDashboard />} />
 
             {/* Routes protégées avec layout */}

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
+import { trackEvent } from '../../utils/tracking';
 
 interface Renter {
   driverGetaroundId: string;
@@ -45,6 +46,7 @@ function ScoreBadge({ score, tier }: { score: number; tier: string }): React.JSX
 }
 
 export default function RentersPage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('renters', 'view'); }, []);
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');

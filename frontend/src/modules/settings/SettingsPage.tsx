@@ -6,6 +6,7 @@ import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
 import { getaroundSyncApi, type GetaroundAccount } from '../vehicles/vehiclesApi';
 import { useAuth } from '../../hooks/useAuth';
+import { trackEvent } from '../../utils/tracking';
 
 // ─── Types utilisateurs ───────────────────────────────────────────────────────
 interface UserItem {
@@ -487,6 +488,15 @@ interface SyncStateData { isRunning: boolean; currentStep: string; progress: num
 
 const EMPTY_ACCOUNT = { name: '', apiKey: '' };
 
+function getSyncErrorMessage(error: string | null | undefined): string | null {
+  if (!error) return null;
+  if (/rate.?limit|429|too many/i.test(error)) return 'Limite d\'appels API atteinte — réessayez dans quelques minutes.';
+  if (/401|unauthorized|api.?key|invalid.*key|key.*invalid/i.test(error)) return 'Clé API invalide ou expirée — vérifiez votre clé Getaround.';
+  if (/network|ECONNREFUSED|fetch|timeout/i.test(error)) return 'Connexion impossible à Getaround — vérifiez votre connexion réseau.';
+  if (/403|forbidden/i.test(error)) return 'Accès refusé — votre compte Getaround n\'a pas les permissions nécessaires.';
+  return error;
+}
+
 function fmtRelative(iso: string | null): string {
   if (!iso) return 'jamais';
   const diff = Date.now() - new Date(iso).getTime();
@@ -861,7 +871,7 @@ function GetaroundSection(): React.JSX.Element {
                       ✎
                     </button>
                   </p>
-                  {acc.syncError && <p className="mt-0.5 text-xs text-red-500">{acc.syncError}</p>}
+                  {acc.syncError && <p className="mt-0.5 text-xs text-red-500">{getSyncErrorMessage(acc.syncError)}</p>}
                   {syncMsg[`v-${acc.id}`] && <p className="mt-0.5 text-xs text-green-600">{syncMsg[`v-${acc.id}`]}</p>}
                   {syncMsg[`r-${acc.id}`] && <p className="mt-0.5 text-xs text-green-600">{syncMsg[`r-${acc.id}`]}</p>}
                 </div>
@@ -2061,6 +2071,7 @@ function ExtraChargesSection(): React.JSX.Element {
 }
 
 export default function SettingsPage(): React.JSX.Element {
+  useEffect(() => { void trackEvent('settings', 'view'); }, []);
   const qc = useQueryClient();
   const logoInputRef = useRef<HTMLInputElement>(null);
 

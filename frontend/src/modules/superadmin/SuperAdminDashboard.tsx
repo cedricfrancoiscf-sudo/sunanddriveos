@@ -253,6 +253,13 @@ function DashboardContent(): React.JSX.Element {
     enabled: Boolean(selectedId) && activeSection === 'companies',
   });
 
+  const { data: planHistoryData } = useQuery<{ history: Array<{ id: string; change: string; at: string }> }>({
+    queryKey: ['sa-plan-history', selectedId],
+    queryFn: () => saApi.get(`/superadmin/companies/${selectedId}/plan-history`).then(r => r.data as never),
+    enabled: Boolean(selectedId) && activeSection === 'companies',
+    staleTime: 5 * 60_000,
+  });
+
   const { data: tenantAnalyticsData } = useQuery<{
     moduleUsage: Array<{ module: string; count: number }>;
     neverUsedModules: string[];
@@ -283,6 +290,7 @@ function DashboardContent(): React.JSX.Element {
   });
 
   const [feedbackFilter, setFeedbackFilter] = useState<string>('');
+  const [npsFilter, setNpsFilter] = useState<'all' | 'promoters' | 'passifs' | 'detracteurs'>('all');
   const { data: feedbacksData, refetch: refetchFeedbacks } = useQuery<{
     feedbacks: TenantFeedback[];
   }>({
@@ -340,6 +348,20 @@ function DashboardContent(): React.JSX.Element {
     onSuccess: () => {
       void refetchNotes();
       setNewNoteContent('');
+    },
+  });
+
+  const deleteNote = useMutation({
+    mutationFn: ({ companyId, noteId }: { companyId: string; noteId: string }) =>
+      saApi.delete(`/superadmin/companies/${companyId}/notes/${noteId}`),
+    onSuccess: () => { void refetchNotes(); },
+  });
+
+  const impersonate = useMutation({
+    mutationFn: (id: string) => saApi.post<{ token: string; slug: string; userName: string }>(`/superadmin/companies/${id}/impersonate`).then(r => r.data),
+    onSuccess: (data) => {
+      const url = `/impersonate-entry?token=${encodeURIComponent(data.token)}&slug=${encodeURIComponent(data.slug)}`;
+      window.open(url, '_blank');
     },
   });
 
@@ -555,24 +577,58 @@ function DashboardContent(): React.JSX.Element {
                 </div>
               )}
 
-              {/* Bouton créer */}
-              <div className="border-b border-gray-800 p-3">
+              {/* NPS réponses */}
+              {npsData && npsData.total > 0 && (
+                <div className="border-b border-gray-800 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-2">Réponses NPS</p>
+                  <div className="flex gap-1 mb-2 flex-wrap">
+                    {([['all', 'Tous', npsData.total], ['promoters', 'Promoteurs', npsData.promoters], ['passifs', 'Passifs', npsData.passifs], ['detracteurs', 'Détracteurs', npsData.detracteurs]] as const).map(([key, label, count]) => (
+                      <button key={key} type="button" onClick={() => setNpsFilter(key)}
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition ${npsFilter === key ? 'bg-[#01696e] text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+                        {label} ({count})
+                      </button>
+                    ))}
+                  </div>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {npsData.responses
+                      .filter(r => npsFilter === 'all' || (npsFilter === 'promoters' && r.score >= 9) || (npsFilter === 'passifs' && r.score >= 7 && r.score <= 8) || (npsFilter === 'detracteurs' && r.score <= 6))
+                      .slice(0, 20)
+                      .map(r => (
+                        <div key={r.id} className="rounded-lg bg-gray-800 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] text-gray-400 truncate">{r.companyName}</span>
+                            <span className={`shrink-0 text-xs font-bold ${r.score >= 9 ? 'text-green-400' : r.score >= 7 ? 'text-yellow-400' : 'text-red-400'}`}>{r.score}/10</span>
+                          </div>
+                          {r.comment && <p className="mt-0.5 text-[10px] text-gray-500 truncate">{r.comment}</p>}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Boutons créer + export CSV */}
+              <div className="border-b border-gray-800 p-3 flex gap-2">
                 <button
                   type="button"
                   onClick={() => setShowCompanyForm(true)}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl py-2 text-sm font-medium text-white"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl py-2 text-sm font-medium text-white"
                   style={{ backgroundColor: '#01696e' }}
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
                   Nouvelle société
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rows = [['Nom','Plan','Actif','Slug','Créé le','Véhicules','Locations'],...companies.map(c => [c.name,c.plan,c.isActive?'oui':'non',c.slug,format(new Date(c.createdAt),'dd/MM/yyyy',{locale:fr}),String(c.tenantStats?.vehicleCount??0),String(c.tenantStats?.rentalCount??0)])];
+                    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+                    const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv); a.download = 'societes.csv'; a.click();
+                  }}
+                  className="rounded-xl border border-gray-700 px-3 py-2 text-xs font-medium text-gray-400 hover:text-white hover:border-gray-500"
+                  title="Exporter CSV"
+                >CSV</button>
               </div>
 
               {/* Liste */}
@@ -656,6 +712,15 @@ function DashboardContent(): React.JSX.Element {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        onClick={() => impersonate.mutate(detail.id)}
+                        disabled={impersonate.isPending}
+                        className="rounded-xl border border-blue-800 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-900/20 transition-colors disabled:opacity-40"
+                        title="Ouvrir ce compte dans un nouvel onglet"
+                      >
+                        {impersonate.isPending ? '...' : 'Accéder'}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() =>
                           updateCompany.mutate({
                             id: detail.id,
@@ -690,6 +755,20 @@ function DashboardContent(): React.JSX.Element {
                           <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Informations légales */}
+                  {(detail.siret || detail.managerName || detail.address) && (
+                    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Informations légales</h3>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        {detail.siret && <div><p className="text-[10px] text-gray-500">SIRET</p><p className="text-gray-300 font-mono text-xs">{detail.siret}</p></div>}
+                        {detail.managerName && <div><p className="text-[10px] text-gray-500">Gérant</p><p className="text-gray-300 text-xs">{detail.managerName}</p></div>}
+                        {detail.phone && <div><p className="text-[10px] text-gray-500">Téléphone</p><p className="text-gray-300 text-xs">{detail.phone}</p></div>}
+                        {detail.contactEmail && <div><p className="text-[10px] text-gray-500">Email</p><p className="text-gray-300 text-xs">{detail.contactEmail}</p></div>}
+                        {detail.address && <div className="col-span-2"><p className="text-[10px] text-gray-500">Adresse</p><p className="text-gray-300 text-xs">{detail.address}{detail.city ? `, ${detail.postalCode ?? ''} ${detail.city}` : ''}</p></div>}
+                      </div>
                     </div>
                   )}
 
@@ -984,6 +1063,21 @@ function DashboardContent(): React.JSX.Element {
                     )}
                   </div>
 
+                  {/* Historique plan */}
+                  {planHistoryData && planHistoryData.history.length > 0 && (
+                    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Historique plan</h3>
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                        {planHistoryData.history.map(h => (
+                          <div key={h.id} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-300 font-mono">{h.change}</span>
+                            <span className="text-gray-600">{format(new Date(h.at), 'dd/MM/yyyy HH:mm', { locale: fr })}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Section Notes commerciales */}
                   <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
@@ -994,11 +1088,19 @@ function DashboardContent(): React.JSX.Element {
                         <p className="text-xs text-gray-600">Aucune note</p>
                       ) : (
                         notesData?.notes.map((note) => (
-                          <div key={note.id} className="rounded-lg bg-gray-800 p-3">
-                            <p className="text-xs text-gray-300">{note.content}</p>
-                            <p className="text-[10px] text-gray-600 mt-1">
-                              {format(new Date(note.createdAt), 'dd/MM/yyyy HH:mm', { locale: fr })}
-                            </p>
+                          <div key={note.id} className="rounded-lg bg-gray-800 p-3 flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-xs text-gray-300">{note.content}</p>
+                              <p className="text-[10px] text-gray-600 mt-1">
+                                {format(new Date(note.createdAt), 'dd/MM/yyyy HH:mm', { locale: fr })}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => deleteNote.mutate({ companyId: detail.id, noteId: note.id })}
+                              className="shrink-0 text-gray-600 hover:text-red-400 text-xs leading-none"
+                              title="Supprimer"
+                            >×</button>
                           </div>
                         ))
                       )}

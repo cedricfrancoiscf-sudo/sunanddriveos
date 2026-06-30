@@ -53,7 +53,7 @@ export interface Maintenance {
 
 // ─── Logique statut ───────────────────────────────────────────────────────────
 
-export type TaskStatus = 'contre_visite' | 'overdue' | 'soon' | 'ok' | 'unknown';
+export type TaskStatus = 'contre_visite' | 'overdue' | 'urgent' | 'soon' | 'ok' | 'unknown';
 
 export function computeTaskStatus(task: MaintenanceTask): TaskStatus {
   if (task.ctCounterVisitDeadline && (task.ctResult === 'defavorable' || task.ctResult === 'contre_visite')) {
@@ -63,8 +63,13 @@ export function computeTaskStatus(task: MaintenanceTask): TaskStatus {
   if (!task.nextDueDate) return 'ok';
   const d = new Date(task.nextDueDate);
   if (isPast(d)) return 'overdue';
-  const threshold = task.type === 'ct' ? 60 : 30;
-  if (differenceInDays(d, new Date()) <= threshold) return 'soon';
+  const days = differenceInDays(d, new Date());
+  if (task.type === 'ct') {
+    if (days <= 60) return 'urgent';
+    if (days <= 90) return 'soon';
+  } else {
+    if (days <= 30) return 'soon';
+  }
   return 'ok';
 }
 
@@ -79,6 +84,9 @@ export function alertMessage(task: MaintenanceTask): { text: string; color: 'red
   if (status === 'overdue' && task.nextDueDate) {
     return { text: `${v} — ${label} en retard, échéance dépassée le ${format(new Date(task.nextDueDate), 'dd/MM/yyyy', { locale: fr })}`, color: 'red' };
   }
+  if (status === 'urgent' && task.nextDueDate) {
+    return { text: `${v} — ${label} urgent, échéance le ${format(new Date(task.nextDueDate), 'dd/MM/yyyy', { locale: fr })}`, color: 'orange' };
+  }
   if (status === 'soon' && task.nextDueDate) {
     return { text: `${v} — ${label} à renouveler avant le ${format(new Date(task.nextDueDate), 'dd/MM/yyyy', { locale: fr })}`, color: 'orange' };
   }
@@ -91,6 +99,7 @@ export function StatusBadge({ status }: { status: TaskStatus }): React.JSX.Eleme
   const map: Record<TaskStatus, string> = {
     contre_visite: 'bg-red-100 text-red-800 border-red-200',
     overdue: 'bg-red-100 text-red-700 border-red-200',
+    urgent: 'bg-orange-100 text-orange-800 border-orange-300',
     soon: 'bg-orange-100 text-orange-700 border-orange-200',
     ok: 'bg-green-100 text-green-700 border-green-200',
     unknown: 'bg-gray-100 text-gray-500 border-gray-200',
@@ -98,6 +107,7 @@ export function StatusBadge({ status }: { status: TaskStatus }): React.JSX.Eleme
   const labels: Record<TaskStatus, string> = {
     contre_visite: 'Contre-visite',
     overdue: 'En retard',
+    urgent: 'Urgent',
     soon: 'Bientôt',
     ok: 'OK',
     unknown: 'Non renseigné',
@@ -107,7 +117,7 @@ export function StatusBadge({ status }: { status: TaskStatus }): React.JSX.Eleme
 
 export function AlertBanner({ tasks }: { tasks: MaintenanceTask[] }): React.JSX.Element | null {
   const redAlerts = tasks.filter(t => { const s = computeTaskStatus(t); return s === 'overdue' || s === 'contre_visite'; });
-  const orangeAlerts = tasks.filter(t => { const s = computeTaskStatus(t); return s === 'soon' || s === 'unknown'; });
+  const orangeAlerts = tasks.filter(t => { const s = computeTaskStatus(t); return s === 'urgent' || s === 'soon' || s === 'unknown'; });
 
   if (redAlerts.length === 0 && orangeAlerts.length === 0) return null;
 
@@ -340,7 +350,7 @@ export function TaskCard({ task, onUpdate, history }: TaskCardProps): React.JSX.
   const typeLabel = isCt ? 'Contrôle technique' : 'Révision';
 
   const borderClass = status === 'overdue' || status === 'contre_visite'
-    ? 'border-red-200' : status === 'soon' ? 'border-orange-200' : 'border-gray-200';
+    ? 'border-red-200' : status === 'urgent' ? 'border-orange-300' : status === 'soon' ? 'border-orange-200' : 'border-gray-200';
 
   const ctResultLabel: Record<CtResult, string> = {
     favorable: 'Favorable ✅',
@@ -364,7 +374,7 @@ export function TaskCard({ task, onUpdate, history }: TaskCardProps): React.JSX.
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className={status === 'overdue' || status === 'contre_visite' ? 'text-red-500' : status === 'soon' ? 'text-orange-500' : 'text-gray-400'}>
+            <span className={status === 'overdue' || status === 'contre_visite' ? 'text-red-500' : status === 'urgent' || status === 'soon' ? 'text-orange-500' : 'text-gray-400'}>
               {icon}
             </span>
             <div>

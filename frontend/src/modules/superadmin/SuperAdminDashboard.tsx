@@ -1219,7 +1219,7 @@ function DashboardContent(): React.JSX.Element {
                                 },
                                 suspendu: {
                                   subject: 'Votre accès SunanddriveOS a été suspendu',
-                                  body: `Bonjour ${tenantName},\n\nVotre accès SunanddriveOS a été suspendu. Contactez-nous pour régulariser votre situation : contact@sunanddrive.fr\n\nCordialement,\nL'équipe Sun and Drive`,
+                                  body: `Bonjour ${tenantName},\n\nVotre accès SunanddriveOS a été suspendu. Contactez-nous pour régulariser votre situation : contact@sunanddrive.com\n\nCordialement,\nL'équipe Sun and Drive`,
                                 },
                                 reactivé: {
                                   subject: 'Votre accès SunanddriveOS a été réactivé',

@@ -670,7 +670,7 @@ router.post('/seed-test-data', async (req: Request, res: Response, next: NextFun
     if (gaAccount) gaClient = createGetaroundClient(decrypt(gaAccount.apiKeyHash));
 
     const driverName = 'Test Playwright';
-    const driverEmail = 'test.playwright@sunanddrive.fr';
+    const driverEmail = 'test.playwright@sunanddrive.com';
     const driverGetaroundId = '999999';
 
     const SEED_CASES = [
@@ -795,7 +795,7 @@ router.post('/seed-test-data', async (req: Request, res: Response, next: NextFun
     }
 
     // Carkeeper test user — idempotent
-    const CARKEEPER_EMAIL = 'carkeeper.test@sunanddrive.fr';
+    const CARKEEPER_EMAIL = 'carkeeper.test@sunanddrive.com';
     let carkeeperCreated = 0;
     try {
       const existingCarkeeper = await db.user.findFirst({
@@ -876,7 +876,7 @@ router.delete('/test-data', async (req: Request, res: Response, next: NextFuncti
     // Supprimer le user carkeeper test
     let deletedUsers = 0;
     try {
-      const result = await db.user.deleteMany({ where: { email: 'carkeeper.test@sunanddrive.fr' } });
+      const result = await db.user.deleteMany({ where: { email: 'carkeeper.test@sunanddrive.com' } });
       deletedUsers = result.count;
     } catch (e) {
       console.error('[DeleteTestData] Erreur suppression carkeeper:', e);
@@ -986,11 +986,11 @@ router.patch('/companies/:id/subscription', async (req: Request, res: Response, 
       const emailMap: Record<string, { subject: string; html: string }> = {
         suspendu: {
           subject: 'Votre accès SunanddriveOS a été suspendu',
-          html: `<p>Bonjour,</p><p>Votre accès à SunanddriveOS pour <strong>${existing.name}</strong> a été suspendu. Contactez-nous pour régulariser votre situation : <a href="mailto:contact@sunanddrive.fr">contact@sunanddrive.fr</a></p>`,
+          html: `<p>Bonjour,</p><p>Votre accès à SunanddriveOS pour <strong>${existing.name}</strong> a été suspendu. Contactez-nous pour régulariser votre situation : <a href="mailto:contact@sunanddrive.com">contact@sunanddrive.com</a></p>`,
         },
         résilié: {
           subject: 'Votre abonnement SunanddriveOS a été résilié',
-          html: `<p>Bonjour,</p><p>Votre abonnement SunanddriveOS pour <strong>${existing.name}</strong> a été résilié. Contactez-nous si vous souhaitez reprendre : <a href="mailto:contact@sunanddrive.fr">contact@sunanddrive.fr</a></p>`,
+          html: `<p>Bonjour,</p><p>Votre abonnement SunanddriveOS pour <strong>${existing.name}</strong> a été résilié. Contactez-nous si vous souhaitez reprendre : <a href="mailto:contact@sunanddrive.com">contact@sunanddrive.com</a></p>`,
         },
         active: {
           subject: 'Votre accès SunanddriveOS a été réactivé',

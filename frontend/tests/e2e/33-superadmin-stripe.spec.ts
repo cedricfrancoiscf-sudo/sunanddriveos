@@ -27,7 +27,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 
-// ─── 1 & 2. Page /billing — tests tenant (admin@sunanddrive.fr) ───────────────
+// ─── 1 & 2. Page /billing — tests tenant (admin@sunanddrive.com) ───────────────
 // Ces tests visitent /billing du TENANT, pas du SuperAdmin.
 // Ils doivent tourner avec le storageState tenant (user.json), pas superadmin.
 test.describe('Billing — page tenant', () => {

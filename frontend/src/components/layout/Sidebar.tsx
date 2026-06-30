@@ -45,7 +45,7 @@ function LockedItem({ label, icon, requiredPlan, collapsed }: {
             <p className="mt-2 text-sm text-gray-500">
               Ce module est disponible avec l'abonnement {requiredPlan === 'pro' ? 'Pro' : 'Enterprise'}. Contactez Sun and Drive pour activer votre abonnement.
             </p>
-            <a href="mailto:contact@sunanddrive.fr"
+            <a href="mailto:contact@sunanddrive.com"
               className="mt-4 flex w-full items-center justify-center rounded-xl py-2.5 text-sm font-semibold text-white"
               style={{ backgroundColor: PRIMARY }}>
               Envoyer un email →

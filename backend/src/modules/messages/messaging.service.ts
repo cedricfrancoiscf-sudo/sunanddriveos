@@ -9,7 +9,7 @@ function getResend(): Resend {
   return new Resend(process.env.RESEND_API_KEY);
 }
 
-const FROM_ADDR = process.env.RESEND_FROM ?? 'noreply@sunanddrive.fr';
+const FROM_ADDR = process.env.RESEND_FROM ?? 'noreply@sunanddrive.com';
 
 function cleanClaudeJson(raw: string): string {
   return raw

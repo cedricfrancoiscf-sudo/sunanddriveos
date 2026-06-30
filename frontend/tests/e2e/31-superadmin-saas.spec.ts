@@ -378,7 +378,7 @@ test.describe('31-B — SuperAdmin Fiche Tenant', () => {
 // SECTION 2 — Padlock & Page blocage (tests tenant)
 // ═════════════════════════════════════════════════════════════════════════════
 test.describe('31-C — Padlock modules Pro/Enterprise', () => {
-  // Le compte admin@sunanddrive.fr est Enterprise → pas de padlock visible
+  // Le compte admin@sunanddrive.com est Enterprise → pas de padlock visible
   // On vérifie que l'infrastructure padlock est bien présente dans la sidebar
 
   test('Padlock — sidebar charge sans erreur', async ({ page }) => {
@@ -409,7 +409,7 @@ test.describe('31-C — Padlock modules Pro/Enterprise', () => {
     }
   })
 
-  test('Padlock — modal padlock contient mailto contact@sunanddrive.fr', async ({ page }) => {
+  test('Padlock — modal padlock contient mailto contact@sunanddrive.com', async ({ page }) => {
     // Vérifier que le code du LockedItem contient bien le mailto
     // On le fait via API puisque le compte admin est Enterprise (pas de padlock visible)
     try {
@@ -424,9 +424,9 @@ test.describe('31-C — Padlock modules Pro/Enterprise', () => {
         // Cliquer sur le premier padlock et vérifier le modal
         await lockedBtns.first().click()
         await page.waitForTimeout(500)
-        const emailLink = page.locator('a[href*="contact@sunanddrive.fr"]')
+        const emailLink = page.locator('a[href*="contact@sunanddrive.com"]')
         if (await emailLink.isVisible({ timeout: 3000 })) {
-          rPass('Padlock — modal contient mailto contact@sunanddrive.fr')
+          rPass('Padlock — modal contient mailto contact@sunanddrive.com')
         } else {
           rFail('Padlock — modal email link', 'Lien mailto non trouvé dans le modal')
         }

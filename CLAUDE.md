@@ -68,7 +68,7 @@ Key routes and their pages:
 
 ### E2E Tests (`frontend/tests/e2e/`)
 - Auth stored in `tests/e2e/.auth/user.json` via setup script — no login needed in specs
-- Test credentials: `admin@sunanddrive.fr` / `password`, carkeeper: `carkeeper.test@sunanddrive.fr`
+- Test credentials: `admin@sunanddrive.com` / `password`, carkeeper: `carkeeper.test@sunanddrive.com`
 - Tenant slug: `sun-and-drive`; base URL: `https://appli.sunanddrive.com`
 - Seed/cleanup helpers in `tests/e2e/helpers/auth.ts`
 - Spec numbering: 00-setup → 28-monkey-admin (exhaustive UI monkey test)

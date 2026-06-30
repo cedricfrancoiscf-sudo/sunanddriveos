@@ -130,9 +130,9 @@ async function init(): Promise<void> {
       if (!existingUser) {
         const passwordHash = await bcrypt.hash('Admin2024!', 12);
         await db.user.create({
-          data: { email: 'admin@sunanddrive.fr', passwordHash, name: 'Administrateur', role: 'admin', isActive: true },
+          data: { email: 'admin@sunanddrive.com', passwordHash, name: 'Administrateur', role: 'admin', isActive: true },
         });
-        console.log(`[Init] Admin créé pour ${c.slug} : admin@sunanddrive.fr / Admin2024!`);
+        console.log(`[Init] Admin créé pour ${c.slug} : admin@sunanddrive.com / Admin2024!`);
       } else {
         console.log(`[Init] Utilisateurs OK pour ${c.slug}`);
       }

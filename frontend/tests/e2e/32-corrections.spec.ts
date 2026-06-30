@@ -273,7 +273,7 @@ test.describe('32-D — BLOC 1 : Profil locataire (API)', () => {
     const tokenRes = await fetch(`${API_URL}/api/v1/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@sunanddrive.fr', password: 'password', slug: TENANT_SLUG }),
+      body: JSON.stringify({ email: 'admin@sunanddrive.com', password: 'password', slug: TENANT_SLUG }),
     })
     const tokenData = await tokenRes.json() as { token?: string }
     if (!tokenData.token) {

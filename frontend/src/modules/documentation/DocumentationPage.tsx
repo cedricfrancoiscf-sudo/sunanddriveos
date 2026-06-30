@@ -74,6 +74,12 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
 function DocBrochure() {
   return (
     <div className="mx-auto max-w-3xl">
+      {/* En-tête visible uniquement à l'impression */}
+      <div className="print-only mb-6 pb-4 border-b-2" style={{ borderColor: PRIMARY }}>
+        <p className="text-sm font-bold" style={{ color: PRIMARY, fontFamily: "'Montserrat', sans-serif" }}>SunanddriveOS — Logiciel de gestion de flotte Getaround</p>
+        <p className="text-xs text-gray-400 mt-0.5">Brochure commerciale · appli.sunanddrive.com</p>
+      </div>
+
       {/* Accroche */}
       <div className="mb-8 rounded-2xl p-8 text-white" style={{ background: `linear-gradient(135deg, ${PRIMARY} 0%, #014a4e 100%)` }}>
         <p className="text-xs font-semibold uppercase tracking-widest opacity-80">SunanddriveOS · Logiciel de gestion de flotte</p>
@@ -110,7 +116,7 @@ function DocBrochure() {
           { icon: '📱', title: 'Rôle Carkeeper mobile', desc: 'Vos gestionnaires sur le terrain avec périmètre limité.' },
           { icon: '🏢', title: 'Rapport CEO mensuel', desc: 'Synthèse exécutive avec IA et données météo corrélées.' },
         ].map(b => (
-          <div key={b.title} className="flex gap-3 rounded-xl border border-gray-200 bg-white p-4">
+          <div key={b.title} className="flex gap-3 rounded-xl border border-gray-200 bg-white p-4 print-avoid-break">
             <span className="text-2xl">{b.icon}</span>
             <div>
               <p className="font-semibold text-gray-900 text-sm">{b.title}</p>
@@ -151,7 +157,7 @@ function DocBrochure() {
           { plan: 'Pro', price: 'Sur devis', hot: true, features: ['Flotte illimitée', 'Intelligence + Forecast', 'Séquences automatiques', 'Export FEC', 'Rapport CEO', 'Score de risque'] },
           { plan: 'Enterprise', price: 'Sur devis', features: ['Tout Pro inclus', 'SLA prioritaire', 'Onboarding dédié', 'API accès', 'Multi-tenants'] },
         ].map(p => (
-          <div key={p.plan} className={`rounded-2xl border p-5 ${p.hot ? 'text-white shadow-lg' : 'bg-white border-gray-200'}`}
+          <div key={p.plan} className={`rounded-2xl border p-5 print-avoid-break ${p.hot ? 'text-white shadow-lg' : 'bg-white border-gray-200'}`}
             style={p.hot ? { backgroundColor: PRIMARY, borderColor: PRIMARY } : {}}>
             <p className={`text-xs font-bold uppercase tracking-widest ${p.hot ? 'text-white/70' : 'text-gray-400'}`}>{p.plan}</p>
             <p className={`mt-1 text-2xl font-bold ${p.hot ? 'text-white' : 'text-gray-900'}`}>{p.price}</p>
@@ -164,7 +170,7 @@ function DocBrochure() {
 
       {/* Témoignage */}
       <H2>Témoignage — Sun and Drive, Marseille/Aix</H2>
-      <blockquote className="my-5 rounded-2xl border-l-4 bg-gray-50 p-5" style={{ borderColor: PRIMARY }}>
+      <blockquote className="my-5 rounded-2xl border-l-4 bg-gray-50 p-5 print-avoid-break" style={{ borderColor: PRIMARY }}>
         <p className="text-sm italic text-gray-700 leading-relaxed">
           "Avant SunanddriveOS, on gérait 7 véhicules avec Excel et 3 onglets Getaround ouverts en permanence.
           On perdait 5 heures par semaine rien qu'à suivre les locations et répondre aux messages.
@@ -183,18 +189,21 @@ function DocBrochure() {
         { q: 'C\'est complexe à mettre en place ?', a: 'La prise en main est guidée : un assistant en 6 étapes vous configure l\'application en moins de 30 minutes. Aucune compétence technique requise.' },
         { q: 'Quel est le prix exact ?', a: 'Le tarif dépend de votre nombre de véhicules et de vos besoins. Contactez-nous pour un devis personnalisé adapté à votre flotte.' },
       ].map(f => (
-        <div key={f.q} className="mb-3 rounded-xl border border-gray-200 bg-white p-4">
+        <div key={f.q} className="mb-3 rounded-xl border border-gray-200 bg-white p-4 print-avoid-break">
           <p className="text-sm font-semibold text-gray-900">❓ {f.q}</p>
           <p className="mt-1 text-sm text-gray-600">{f.a}</p>
         </div>
       ))}
 
       {/* CTA */}
-      <div className="mt-8 rounded-2xl p-8 text-center text-white" style={{ backgroundColor: PRIMARY }}>
+      <div className="mt-8 rounded-2xl p-8 text-center text-white print-avoid-break" style={{ backgroundColor: PRIMARY }}>
         <p className="text-2xl font-bold">Démarrez votre essai gratuit 15 jours</p>
         <p className="mt-2 text-sm opacity-80">Sans engagement · Configuration en 30 minutes · Support inclus</p>
-        <p className="mt-4 font-semibold">contact@sunanddrive.fr</p>
-        <p className="mt-1 text-sm opacity-75">Ou écrivez directement depuis votre tableau de bord</p>
+        <a href="mailto:contact@sunanddrive.com"
+          className="mt-4 inline-block rounded-xl bg-white/20 px-6 py-3 text-sm font-semibold hover:bg-white/30 print:hidden">
+          Nous contacter →
+        </a>
+        <p className="print-only mt-3 text-sm opacity-75">Contactez-nous via votre tableau de bord</p>
       </div>
     </div>
   );
@@ -879,11 +888,44 @@ export default function DocumentationPage(): React.JSX.Element {
       </div>
 
       <style>{`
+        @page {
+          margin: 2cm 2cm 2.5cm 2cm;
+        }
+
+        *, *::before, *::after {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        .print-only {
+          display: none !important;
+        }
+
         @media print {
           body * { visibility: hidden; }
           .print\\:block, .print\\:block * { visibility: visible; }
           .print\\:hidden { display: none !important; }
           .print\\:overflow-visible { overflow: visible !important; }
+
+          .print-only {
+            display: block !important;
+            visibility: visible !important;
+          }
+
+          .print-avoid-break {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          table {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          h2 {
+            break-after: avoid;
+            page-break-after: avoid;
+          }
         }
       `}</style>
     </div>

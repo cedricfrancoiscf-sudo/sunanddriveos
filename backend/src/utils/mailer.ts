@@ -5,7 +5,7 @@ function getResend(): Resend {
   return new Resend(process.env.RESEND_API_KEY);
 }
 
-const FROM_DEFAULT = process.env.RESEND_FROM ?? 'SunanddriveOS <noreply@sunanddrive.fr>';
+const FROM_DEFAULT = process.env.RESEND_FROM ?? 'SunanddriveOS <noreply@sunanddrive.com>';
 
 export interface SendEmailOptions {
   to: string;
@@ -43,7 +43,7 @@ export async function sendAlertEmail(opts: {
     return;
   }
   const fromName = opts.senderName ?? 'SunanddriveOS';
-  const fromAddr = process.env.RESEND_FROM ?? 'noreply@sunanddrive.fr';
+  const fromAddr = process.env.RESEND_FROM ?? 'noreply@sunanddrive.com';
   await getResend().emails.send({
     from: `${fromName} <${fromAddr}>`,
     to: opts.alertEmails,

@@ -84,10 +84,10 @@ export default function BillingPage(): React.JSX.Element {
           <p className="text-sm text-amber-700 mt-1">
             Votre abonnement est géré directement par Sun and Drive. Contactez-nous pour toute question de facturation.
           </p>
-          <a href="mailto:contact@sunanddrive.fr"
+          <a href="mailto:contact@sunanddrive.com"
             className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white"
             style={{ backgroundColor: '#01696e' }}>
-            contact@sunanddrive.fr →
+            contact@sunanddrive.com →
           </a>
         </div>
       )}

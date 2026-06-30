@@ -1,13 +1,13 @@
 import { Page } from '@playwright/test'
 
-export const TEST_EMAIL = process.env.TEST_EMAIL || 'admin@sunanddrive.fr'
+export const TEST_EMAIL = process.env.TEST_EMAIL || 'admin@sunanddrive.com'
 export const TEST_PASSWORD = process.env.TEST_PASSWORD || 'password'
 export const API_URL = process.env.BASE_URL || 'https://appli.sunanddrive.com'
 export const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL || 'admin@sunanddriveos.com'
 export const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD || 'ChangeMe2024!'
 export const TENANT_SLUG = 'sun-and-drive'
 
-export const CARKEEPER_EMAIL = 'carkeeper.test@sunanddrive.fr'
+export const CARKEEPER_EMAIL = 'carkeeper.test@sunanddrive.com'
 export const CARKEEPER_PASSWORD = 'CarTest2026!'
 
 export async function getSuperadminToken(): Promise<string> {

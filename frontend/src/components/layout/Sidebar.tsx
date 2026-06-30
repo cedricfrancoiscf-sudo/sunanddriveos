@@ -81,7 +81,7 @@ function SectionLabel({ label, collapsed }: { label: string; collapsed?: boolean
     );
   }
   if (collapsed) return null;
-  return <li className="mx-3 my-1.5 border-t border-gray-100" />;
+  return <li className="mx-3 my-1 border-t border-gray-100" />;
 }
 
 const VIE_VEHICULE_ITEMS = [
@@ -135,7 +135,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
 
   const navLinkClass = ({ isActive }: { isActive: boolean }): string =>
     `flex items-center rounded-lg text-sm font-medium transition-colors ${
-      collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'
+      collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-1.5'
     } ${isActive ? 'text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`;
 
   const navLinkStyle = ({ isActive }: { isActive: boolean }): React.CSSProperties | undefined =>
@@ -147,38 +147,37 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
   return (
     <div className="flex h-full flex-col bg-white">
       {/* Logo */}
-      <div className={`flex h-16 shrink-0 items-center border-b border-gray-100 ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`}>
+      <div className="flex h-20 shrink-0 items-center border-b border-gray-100 px-3 gap-2">
         {user?.logoUrl ? (
-          <img
-            src={user.logoUrl}
-            alt="Logo"
-            className={`shrink-0 object-contain ${collapsed ? 'h-8 w-8' : 'h-10 max-w-[130px]'}`}
-            onError={e => {
-              // Si l'image ne charge pas, on bascule sur le fallback "S"
-              const target = e.currentTarget;
-              target.style.display = 'none';
-              const fallback = target.nextElementSibling as HTMLElement | null;
-              if (fallback) fallback.style.display = 'flex';
-            }}
-          />
-        ) : null}
-        <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-          style={{ backgroundColor: PRIMARY, display: user?.logoUrl ? 'none' : 'flex' }}
-        >
-          <span className="text-sm font-bold text-white">S</span>
-        </div>
-        {!collapsed && !user?.logoUrl && <span className="font-semibold text-gray-900 truncate flex-1">SunanddriveOS</span>}
+          !collapsed ? (
+            <img src={user.logoUrl} alt="Logo"
+              className="h-12 w-full object-contain object-left"
+              onError={e => { e.currentTarget.style.display = 'none'; }}
+            />
+          ) : (
+            <img src={user.logoUrl} alt="Logo"
+              className="h-10 w-10 object-contain mx-auto"
+              onError={e => { e.currentTarget.style.display = 'none'; }}
+            />
+          )
+        ) : (
+          <>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: PRIMARY }}>
+              <span className="text-sm font-bold text-white">S</span>
+            </div>
+            {!collapsed && <span className="font-semibold text-gray-900 truncate flex-1">SunanddriveOS</span>}
+          </>
+        )}
         {onToggleCollapse && (
           <button type="button" onClick={onToggleCollapse} title={collapsed ? 'Agrandir la sidebar' : 'Réduire la sidebar'}
-            className={`rounded-md p-1 text-gray-400 hover:text-gray-600 hidden lg:block ${collapsed ? '' : 'ml-auto'}`}>
+            className={`rounded-md p-1 text-gray-400 hover:text-gray-600 hidden lg:block shrink-0 ${collapsed ? 'mx-auto' : 'ml-auto'}`}>
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={collapsed ? 'M9 5l7 7-7 7' : 'M15 19l-7-7 7-7'} />
             </svg>
           </button>
         )}
         {onClose && (
-          <button type="button" onClick={onClose} className="ml-auto rounded-md p-1 text-gray-400 hover:text-gray-600 lg:hidden">
+          <button type="button" onClick={onClose} className="ml-auto shrink-0 rounded-md p-1 text-gray-400 hover:text-gray-600 lg:hidden">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -251,7 +250,7 @@ export default function Sidebar({ onClose, collapsed = false, onToggleCollapse }
           {/* Vie du véhicule — collapsible */}
           <li>
             <button type="button" onClick={collapsed ? undefined : toggleVieVehicule} title={collapsed ? 'Vie du véhicule' : undefined}
-              className={`flex w-full items-center rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors ${collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-2'}`}>
+              className={`flex w-full items-center rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors ${collapsed ? 'justify-center p-2' : 'gap-3 px-3 py-1.5'}`}>
               <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
               </svg>

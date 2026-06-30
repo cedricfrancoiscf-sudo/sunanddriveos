@@ -1,8 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { trackEvent } from '../../utils/tracking';
 import { Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../utils/api';
 import { vehiclesApi, getaroundSyncApi, type Vehicle } from './vehiclesApi';
+
+type RoiSignal = 'vendre_maintenant' | 'bientot' | 'optimal' | 'attendre';
+const SIGNAL_BADGE: Record<string, string> = {
+  vendre_maintenant: 'bg-red-100 text-red-700',
+  bientot: 'bg-amber-100 text-amber-700',
+  optimal: 'bg-green-100 text-green-700',
+  attendre: 'bg-gray-100 text-gray-600',
+};
+const SIGNAL_LABEL: Record<string, string> = {
+  vendre_maintenant: '⚠ Vendre',
+  bientot: '→ Bientôt',
+  optimal: '✓ Fenêtre',
+  attendre: 'OK',
+};
 
 type FleetViewMode = 'grid' | 'list';
 
@@ -23,7 +38,7 @@ function HealthBadge({ score }: { score: number }): React.JSX.Element {
   );
 }
 
-function VehicleCard({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
+function VehicleCard({ vehicle, signal }: { vehicle: Vehicle; signal?: RoiSignal | null }): React.JSX.Element {
   const hasGetaround = Boolean(vehicle.getaroundId);
 
   return (
@@ -67,7 +82,14 @@ function VehicleCard({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
             </p>
             <p className="text-sm text-gray-500">{vehicle.year} · {vehicle.color ?? '—'}</p>
           </div>
-          <HealthBadge score={vehicle.healthScore} />
+          <div className="flex flex-col items-end gap-1">
+            <HealthBadge score={vehicle.healthScore} />
+            {signal && (
+              <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${SIGNAL_BADGE[signal] ?? 'bg-gray-100 text-gray-500'}`}>
+                {SIGNAL_LABEL[signal] ?? signal}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
@@ -177,7 +199,7 @@ function SyncModal({
   );
 }
 
-function VehicleTableRow({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
+function VehicleTableRow({ vehicle, signal }: { vehicle: Vehicle; signal?: RoiSignal | null }): React.JSX.Element {
   const statusLabel = vehicle.isActive ? 'Actif' : 'Inactif';
   return (
     <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
@@ -194,6 +216,15 @@ function VehicleTableRow({ vehicle }: { vehicle: Vehicle }): React.JSX.Element {
       <td className="px-4 py-3 text-sm text-gray-600">{vehicle.currentMileage.toLocaleString('fr-FR')} km</td>
       <td className="px-4 py-3">
         <HealthBadge score={vehicle.healthScore} />
+      </td>
+      <td className="px-4 py-3">
+        {signal ? (
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SIGNAL_BADGE[signal] ?? 'bg-gray-100 text-gray-500'}`}>
+            {SIGNAL_LABEL[signal] ?? signal}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-300">—</span>
+        )}
       </td>
       <td className="px-4 py-3">
         <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${vehicle.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -270,6 +301,18 @@ export default function VehicleListPage(): React.JSX.Element {
     queryFn: () => vehiclesApi.list(),
     staleTime: 5 * 60_000,
   });
+
+  const roiResults = useQueries({
+    queries: vehicles.map(v => ({
+      queryKey: ['roi-analysis', v.id],
+      queryFn: () => api.get<{ analysis?: { signal?: RoiSignal } }>(`/vehicles/${v.id}/roi-analysis`).then(r => r.data.analysis?.signal ?? null),
+      staleTime: 10 * 60_000,
+      enabled: Boolean(v.id),
+    })),
+  });
+  const signalByVehicleId = new Map<string, RoiSignal | null>(
+    vehicles.map((v, i) => [v.id, (roiResults[i]?.data ?? null) as RoiSignal | null])
+  );
 
   const filtered = vehicles
     .filter((v) => {
@@ -445,7 +488,7 @@ export default function VehicleListPage(): React.JSX.Element {
                   </button>
                   {!isCollapsed && (
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      {list.map((v) => <VehicleCard key={v.id} vehicle={v} />)}
+                      {list.map((v) => <VehicleCard key={v.id} vehicle={v} signal={signalByVehicleId.get(v.id)} />)}
                     </div>
                   )}
                 </div>
@@ -516,12 +559,13 @@ export default function VehicleListPage(): React.JSX.Element {
                             <SortVehicleTh k="year" label="Année" />
                             <SortVehicleTh k="currentMileage" label="Kilométrage" />
                             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Santé</th>
+                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Signal</th>
                             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Statut</th>
                             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 text-right">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {list.map((v) => <VehicleTableRow key={v.id} vehicle={v} />)}
+                          {list.map((v) => <VehicleTableRow key={v.id} vehicle={v} signal={signalByVehicleId.get(v.id)} />)}
                         </tbody>
                       </table>
                     </div>

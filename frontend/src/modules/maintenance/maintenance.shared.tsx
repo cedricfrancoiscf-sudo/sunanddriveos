@@ -13,6 +13,9 @@ export interface Vehicle {
   licensePlate: string;
   isActive?: boolean;
   vehicleCategory?: string;
+  deliveryPointName?: string | null;
+  parkingZone?: string | null;
+  currentMileage?: number | null;
 }
 
 export type CtResult = 'favorable' | 'defavorable' | 'contre_visite';
@@ -155,16 +158,18 @@ export function TaskModal({ task, onClose, onSubmit, isPending }: TaskModalProps
 
   const [form, setForm] = useState({
     performedAt: today,
-    mileageAtService: String(task.lastMileage ?? ''),
+    mileageAtService: String(task.vehicle.currentMileage ?? task.lastMileage ?? ''),
     cost: '',
     provider: task.lastProvider ?? '',
     notes: '',
     ctResult: '' as '' | CtResult,
-    nextDueDate: !isCt && task.intervalMonths
-      ? format(addMonths(new Date(today), task.intervalMonths), 'yyyy-MM-dd')
-      : '',
-    nextDueMileage: !isCt && task.intervalKm && task.lastMileage
-      ? String(task.lastMileage + task.intervalKm)
+    nextDueDate: isCt
+      ? format(addMonths(new Date(today), ctIntervalMonths), 'yyyy-MM-dd')
+      : task.intervalMonths
+        ? format(addMonths(new Date(today), task.intervalMonths), 'yyyy-MM-dd')
+        : '',
+    nextDueMileage: !isCt && task.intervalKm && (task.vehicle.currentMileage ?? task.lastMileage)
+      ? String((task.vehicle.currentMileage ?? task.lastMileage ?? 0) + task.intervalKm)
       : '',
   });
 
@@ -380,6 +385,12 @@ export function TaskCard({ task, onUpdate, history }: TaskCardProps): React.JSX.
             <div>
               <p className="text-sm font-semibold text-gray-900">{typeLabel}</p>
               <p className="text-xs text-gray-500">{task.vehicle.make} {task.vehicle.model} · <span className="font-mono">{task.vehicle.licensePlate}</span></p>
+              {(task.vehicle.deliveryPointName ?? task.vehicle.parkingZone) && (
+                <p className="text-xs text-gray-400">{task.vehicle.deliveryPointName ?? task.vehicle.parkingZone}</p>
+              )}
+              {task.vehicle.currentMileage != null && (
+                <p className="text-xs text-gray-400">{task.vehicle.currentMileage.toLocaleString('fr-FR')} km</p>
+              )}
             </div>
           </div>
           <StatusBadge status={status} />

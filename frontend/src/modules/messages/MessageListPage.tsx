@@ -2,7 +2,7 @@ import React, { useMemo, useEffect, useState } from 'react';
 import { trackEvent } from '../../utils/tracking';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '../../utils/api';
 import { messagesApi, type Message } from './messagesApi';
@@ -39,6 +39,7 @@ export default function MessageListPage(): React.JSX.Element {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [expandedConversation, setExpandedConversation] = useState<string | null>(null);
 
   const { data: vehiclesData } = useQuery({
     queryKey: ['vehicles-list'],
@@ -250,64 +251,92 @@ export default function MessageListPage(): React.JSX.Element {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          {filteredConversations.map((conv, idx) => (
-            <button
-              key={conv.rentalId}
-              type="button"
-              data-rental-id={conv.rentalId}
-              onClick={() => navigate(`/messages/${conv.lastMessage.id}?rentalId=${conv.rentalId}`)}
-              className={`w-full flex items-start gap-3 px-4 py-4 text-left hover:bg-gray-50 transition-colors ${idx > 0 ? 'border-t border-gray-100' : ''}`}
-            >
-              {/* Avatar initiale conducteur */}
-              <div
-                className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white mt-0.5"
-                style={{ backgroundColor: '#01696e' }}
-              >
-                {conv.driverName.charAt(0).toUpperCase()}
-              </div>
-
-              {/* Contenu */}
-              <div className="min-w-0 flex-1">
-                {/* Ligne 1 : Nom + horodatage */}
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-gray-900 truncate">{conv.driverName}</span>
-                  <span className="shrink-0 text-xs text-gray-400">
-                    {formatDistanceToNow(new Date(conv.lastMessage.createdAt), { addSuffix: true, locale: fr })}
-                  </span>
-                </div>
-
-                {/* Ligne 2 : Badges (leur propre ligne pour éviter la superposition) */}
-                {(conv.isUnanswered || conv.hasPending) && (
-                  <div className="mt-0.5 flex flex-wrap gap-1">
-                    {conv.isUnanswered && (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                        Sans réponse
+          {filteredConversations.map((conv, idx) => {
+            const isExpanded = expandedConversation === conv.rentalId;
+            const threadMessages = messages
+              .filter(m => m.rentalId === conv.rentalId)
+              .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            return (
+              <div key={conv.rentalId} className={idx > 0 ? 'border-t border-gray-100' : ''}>
+                {/* En-tête conversation cliquable */}
+                <button
+                  type="button"
+                  data-rental-id={conv.rentalId}
+                  onClick={() => setExpandedConversation(isExpanded ? null : conv.rentalId)}
+                  className="w-full flex items-start gap-3 px-4 py-4 text-left hover:bg-gray-50 transition-colors"
+                >
+                  <div
+                    className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white mt-0.5"
+                    style={{ backgroundColor: '#01696e' }}
+                  >
+                    {conv.driverName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-gray-900 truncate">{conv.driverName}</span>
+                      <span className="shrink-0 text-xs text-gray-400">
+                        {formatDistanceToNow(new Date(conv.lastMessage.createdAt), { addSuffix: true, locale: fr })}
                       </span>
+                    </div>
+                    {(conv.isUnanswered || conv.hasPending) && (
+                      <div className="mt-0.5 flex flex-wrap gap-1">
+                        {conv.isUnanswered && (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Sans réponse</span>
+                        )}
+                        {conv.hasPending && (
+                          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">En attente</span>
+                        )}
+                      </div>
                     )}
-                    {conv.hasPending && (
-                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
-                        En attente
-                      </span>
+                    <p className="mt-0.5 text-xs text-gray-400 truncate">{conv.vehicleLabel}</p>
+                    {!isExpanded && (
+                      <p className="mt-0.5 text-sm text-gray-600 line-clamp-1">
+                        {conv.lastMessage.direction === 'inbound' ? '← ' : '→ '}
+                        {conv.lastMessage.content.slice(0, 60)}{conv.lastMessage.content.length > 60 ? '…' : ''}
+                      </p>
                     )}
                   </div>
+                  <div className="shrink-0 flex items-center gap-2 pt-0.5">
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">{conv.messageCount}</span>
+                    <svg className={`h-4 w-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </button>
+
+                {/* Thread chat expansé */}
+                {isExpanded && (
+                  <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-2">
+                    {threadMessages.map(msg => (
+                      <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                          msg.direction === 'outbound'
+                            ? msg.status === 'pending_approval'
+                              ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                              : 'bg-[#01696e] text-white'
+                            : 'bg-white text-gray-800 border border-gray-200'
+                        }`}>
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                          <p className={`mt-0.5 text-[10px] ${msg.direction === 'outbound' && msg.status !== 'pending_approval' ? 'text-white/70' : 'text-gray-400'}`}>
+                            {format(new Date(msg.createdAt), 'dd/MM HH:mm', { locale: fr })}
+                            {msg.status === 'pending_approval' && ' · En attente approbation'}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-end pt-1">
+                      <button type="button"
+                        onClick={() => navigate(`/messages/${conv.lastMessage.id}?rentalId=${conv.rentalId}`)}
+                        className="text-xs text-[#01696e] hover:underline">
+                        Ouvrir le détail →
+                      </button>
+                    </div>
+                  </div>
                 )}
-
-                {/* Ligne 3 : Véhicule + aperçu message */}
-                <p className="mt-0.5 text-xs text-gray-400 truncate">{conv.vehicleLabel}</p>
-                <p className="mt-0.5 text-sm text-gray-600 line-clamp-1">
-                  {conv.lastMessage.direction === 'inbound' ? '← ' : '→ '}
-                  {conv.lastMessage.content.slice(0, 60)}{conv.lastMessage.content.length > 60 ? '…' : ''}
-                </p>
               </div>
-
-              {/* Compteur messages */}
-              <div className="shrink-0 pt-0.5">
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
-                  {conv.messageCount}
-                </span>
-              </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

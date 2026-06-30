@@ -62,7 +62,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
       select: { vehicleId: true, type: true, cost: true, createdAt: true },
     }),
     db.maintenance.findMany({
-      where: { nextServiceDate: { lte: nextMonth } },
+      where: { nextServiceDate: { gte: new Date(), lte: nextMonth } },
       select: { vehicleId: true, type: true, cost: true, nextServiceDate: true,
                 vehicle: { select: { make: true, model: true, licensePlate: true } } },
     }),

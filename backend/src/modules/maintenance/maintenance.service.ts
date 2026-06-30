@@ -17,7 +17,7 @@ export type TaskUpdateInput = {
 export async function listTasks(db: PrismaClient) {
   return db.maintenanceTask.findMany({
     include: {
-      vehicle: { select: { id: true, make: true, model: true, licensePlate: true, isActive: true, vehicleCategory: true } },
+      vehicle: { select: { id: true, make: true, model: true, licensePlate: true, isActive: true, vehicleCategory: true, deliveryPointName: true, parkingZone: true, currentMileage: true } },
     },
     orderBy: [{ vehicle: { licensePlate: 'asc' } }, { type: 'asc' }],
   });

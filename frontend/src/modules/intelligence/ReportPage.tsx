@@ -869,13 +869,12 @@ export default function ReportPage(): React.JSX.Element {
                           {signal ? (
                             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                               signal === 'vendre_maintenant' ? 'bg-red-100 text-red-700' :
-                              signal === 'bientot' ? 'bg-orange-100 text-orange-700' :
-                              signal === 'optimal' ? 'bg-blue-100 text-blue-700' :
+                              signal === 'bientot' ? 'bg-amber-100 text-amber-700' :
                               'bg-green-100 text-green-700'
                             }`}>
-                              {signal === 'vendre_maintenant' ? 'Vendre' :
-                               signal === 'bientot' ? 'Bientôt' :
-                               signal === 'optimal' ? 'Fenêtre' : 'Conserver'}
+                              {signal === 'vendre_maintenant' ? '🔴 À vendre' :
+                               signal === 'bientot' ? '🟡 À surveiller' :
+                               '🟢 À conserver'}
                             </span>
                           ) : <span className="text-gray-300 text-xs">—</span>}
                         </td>

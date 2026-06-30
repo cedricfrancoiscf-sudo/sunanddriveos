@@ -156,7 +156,7 @@ function AddCostModal({ vehicleId, make, model, onClose }: {
   );
 }
 
-function CostPanel({ vehicleId, breakEven }: { vehicleId: string; breakEven: number }): React.JSX.Element {
+function CostPanel({ vehicleId, breakEven, onAddCost }: { vehicleId: string; breakEven: number; onAddCost: () => void }): React.JSX.Element {
   const qc = useQueryClient();
   const { data } = useQuery<{ costs: VehicleCost[] }>({
     queryKey: ['vehicle-costs', vehicleId],
@@ -173,14 +173,21 @@ function CostPanel({ vehicleId, breakEven }: { vehicleId: string; breakEven: num
 
   return (
     <div className="border-t border-gray-100 bg-gray-50">
-      <div className="px-5 py-2 border-b border-gray-100">
+      <div className="px-5 py-2 border-b border-gray-100 flex items-center justify-between">
         <p className="text-[11px] text-gray-500">
           Break-even : <span className="font-semibold text-gray-700">{fmtEuro(breakEven)}/mois</span>
         </p>
+        <button type="button" onClick={onAddCost}
+          className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:border-[#01696e] hover:text-[#01696e] transition">
+          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Ajouter un coût
+        </button>
       </div>
       <div className="px-5 py-3 space-y-1.5">
         {costs.length === 0 ? (
-          <p className="text-xs text-gray-400 py-1">Aucun coût — cliquez sur "+ Coût" pour en ajouter</p>
+          <p className="text-xs text-gray-400 py-1">Aucun coût enregistré pour ce véhicule</p>
         ) : costs.map(c => {
           const monthly = c.type === 'onetime' && c.amortizationMonths ? c.amount / c.amortizationMonths : c.amount;
           return (
@@ -249,10 +256,10 @@ const SIGNAL_BADGE: Record<string, string> = {
 };
 const SIGNAL_ICON: Record<string, string> = { vendre_maintenant: '🔴', bientot: '🟡', optimal: '🟢', attendre: '⚪' };
 const SIGNAL_LABEL: Record<string, string> = {
-  vendre_maintenant: 'Revendre maintenant',
-  bientot: 'Revendre bientôt',
-  optimal: 'Fenêtre optimale',
-  attendre: 'Continuer à exploiter',
+  vendre_maintenant: 'À vendre',
+  bientot: 'À surveiller',
+  optimal: 'À conserver',
+  attendre: 'À conserver',
 };
 
 function ReventeTab({ roiFleetData, roiFleetLoading }: { roiFleetData: { fleet: RoiFleetEntry[] } | undefined; roiFleetLoading: boolean }): React.JSX.Element {
@@ -666,6 +673,7 @@ export default function RentabilityPage(): React.JSX.Element {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('caNet');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [viewMode, setViewMode] = useState<'mensuelle' | 'annuelle'>('mensuelle');
   const [addModal, setAddModal] = useState<{ vehicleId: string; make: string; model: string } | null>(null);
   const [outilsOpen, setOutilsOpen] = useState(false);
 
@@ -756,31 +764,42 @@ export default function RentabilityPage(): React.JSX.Element {
           </div>
 
           <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <div className="border-b border-gray-100 px-5 py-3">
-              <h2 className="text-sm font-semibold text-gray-900">Détail par véhicule</h2>
-              <p className="text-xs text-gray-400">Cliquez sur une ligne pour voir les coûts</p>
+            <div className="border-b border-gray-100 px-5 py-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Détail par véhicule</h2>
+                <p className="text-xs text-gray-400">Cliquez sur une ligne pour voir et gérer les coûts</p>
+              </div>
+              <div className="flex gap-1 rounded-lg bg-gray-100 p-0.5 shrink-0">
+                {(['mensuelle', 'annuelle'] as const).map(m => (
+                  <button key={m} type="button" onClick={() => setViewMode(m)}
+                    className={`rounded-md px-3 py-1 text-xs font-medium transition ${viewMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    {m === 'mensuelle' ? 'Mensuelle' : 'Annuelle'}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {!isLoading && entries.length > 0 && (
               <div className="flex items-center gap-4 px-5 py-2 border-b border-gray-100 text-[10px] font-semibold uppercase tracking-wide bg-gray-50">
-                {(['licensePlate', 'caNet', 'totalCosts', 'margin', 'caAnnuel', 'costsAnnuels', 'margeAnnuelle', 'cashflowMensuelNet', 'mensualitePret'] as SortKey[]).map((k, i) => {
+                {(viewMode === 'mensuelle'
+                  ? ['licensePlate', 'caNet', 'totalCosts', 'margin', 'cashflowMensuelNet', 'mensualitePret'] as SortKey[]
+                  : ['licensePlate', 'caAnnuel', 'costsAnnuels', 'margeAnnuelle', 'cashflowMensuelNet', 'mensualitePret'] as SortKey[]
+                ).map((k, i) => {
                   const labels: Record<SortKey, string> = {
-                    licensePlate: 'Véhicule', caNet: 'CA net / mois', totalCosts: 'Coûts / mois',
-                    margin: 'Marge mens.', caAnnuel: 'CA annuel', costsAnnuels: 'Coûts ann.', margeAnnuelle: 'Marge ann.',
-                    cashflowMensuelNet: 'Cashflow net', mensualitePret: 'Mensualité',
+                    licensePlate: 'Véhicule', caNet: 'CA net/mois', totalCosts: 'Coûts/mois',
+                    margin: 'Marge', caAnnuel: 'CA annuel', costsAnnuels: 'Coûts ann.', margeAnnuelle: 'Marge ann.',
+                    cashflowMensuelNet: 'Cashflow', mensualitePret: 'Mensualité',
                   };
                   const active = sortKey === k;
-                  const isGreen = i >= 4 && i <= 6;
                   return (
                     <button key={k} type="button" onClick={() => toggleSort(k)}
-                      className={`cursor-pointer select-none hover:opacity-80 transition flex items-center gap-0.5 ${i === 0 ? 'flex-1 text-left justify-start' : 'text-right min-w-24 justify-end'} ${isGreen ? 'rounded px-1.5 py-0.5' : ''}`}
-                      style={{ color: active ? PRIMARY : '#9ca3af', background: isGreen ? '#f0fdf4' : 'transparent' }}>
+                      className={`cursor-pointer select-none hover:opacity-80 transition flex items-center gap-0.5 ${i === 0 ? 'flex-1 text-left justify-start' : 'text-right min-w-20 justify-end'}`}
+                      style={{ color: active ? PRIMARY : '#9ca3af' }}>
                       {labels[k]}{active ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
                     </button>
                   );
                 })}
                 <div className="text-right text-gray-400 min-w-20 shrink-0">Décision</div>
-                <div className="w-20 shrink-0" />
               </div>
             )}
 
@@ -797,40 +816,39 @@ export default function RentabilityPage(): React.JSX.Element {
                   <div className="flex items-center gap-4 px-5 py-3 text-sm hover:bg-gray-50/50 transition-colors">
                     <button type="button"
                       onClick={() => setExpanded(exp => exp === e.vehicleId ? null : e.vehicleId)}
-                      className="flex-1 min-w-0 text-left flex items-center gap-4">
-                      <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                      className="flex-1 min-w-0 text-left flex items-center gap-3">
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${e.isProfit ? 'bg-green-500' : 'bg-red-500'}`} title={e.status} />
                         <span className="font-mono text-xs font-semibold text-gray-700 bg-gray-100 rounded px-1.5 py-0.5">{e.licensePlate}</span>
-                        <span className="text-gray-600">{e.make} {e.model}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${e.status === 'rentable' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>{e.status}</span>
+                        <span className="text-gray-600 truncate">{e.make} {e.model}</span>
                       </div>
-                      <div className="text-right min-w-24 shrink-0">
-                        <p className="text-[10px] text-gray-400">CA net</p>
-                        <p className="font-semibold text-green-700">{fmtEuro(e.caNet)}</p>
-                      </div>
-                      <div className="text-right min-w-24 shrink-0">
-                        <p className="text-[10px] text-gray-400">Coûts</p>
-                        <p className="font-semibold text-red-600">{fmtEuro(e.totalCosts)}</p>
-                      </div>
-                      <div className="text-right min-w-28 shrink-0">
-                        <p className="text-[10px] text-gray-400">Marge</p>
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${e.isProfit ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                          {e.isProfit ? '+' : ''}{fmtEuro(e.margin)}
-                        </span>
-                      </div>
-                      <div className="text-right min-w-24 shrink-0 rounded px-1.5" style={{ background: '#f0fdf4' }}>
-                        <p className="text-[10px] text-gray-400">CA annuel</p>
-                        <p className="font-semibold text-green-700">{fmtEuro(e.caAnnuel)}</p>
-                      </div>
-                      <div className="text-right min-w-24 shrink-0 rounded px-1.5" style={{ background: '#f0fdf4' }}>
-                        <p className="text-[10px] text-gray-400">Coûts ann.</p>
-                        <p className="font-semibold text-red-600">{fmtEuro(e.costsAnnuels)}</p>
-                      </div>
-                      <div className="text-right min-w-28 shrink-0 rounded px-1.5" style={{ background: '#f0fdf4' }}>
-                        <p className="text-[10px] text-gray-400">Marge ann.</p>
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${e.margeAnnuelle >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                          {e.margeAnnuelle >= 0 ? '+' : ''}{fmtEuro(e.margeAnnuelle)}
-                        </span>
-                      </div>
+                      {viewMode === 'mensuelle' ? (<>
+                        <div className="text-right min-w-20 shrink-0">
+                          <p className="text-[10px] text-gray-400">CA net</p>
+                          <p className="font-semibold text-green-700">{fmtEuro(e.caNet)}</p>
+                        </div>
+                        <div className="text-right min-w-20 shrink-0">
+                          <p className="text-[10px] text-gray-400">Coûts</p>
+                          <p className="font-semibold text-red-600">{fmtEuro(e.totalCosts)}</p>
+                        </div>
+                        <div className="text-right min-w-20 shrink-0">
+                          <p className="text-[10px] text-gray-400">Marge</p>
+                          <p className={`font-semibold ${e.isProfit ? 'text-green-700' : 'text-red-600'}`}>{e.isProfit ? '+' : ''}{fmtEuro(e.margin)}</p>
+                        </div>
+                      </>) : (<>
+                        <div className="text-right min-w-20 shrink-0">
+                          <p className="text-[10px] text-gray-400">CA annuel</p>
+                          <p className="font-semibold text-green-700">{fmtEuro(e.caAnnuel)}</p>
+                        </div>
+                        <div className="text-right min-w-20 shrink-0">
+                          <p className="text-[10px] text-gray-400">Coûts ann.</p>
+                          <p className="font-semibold text-red-600">{fmtEuro(e.costsAnnuels)}</p>
+                        </div>
+                        <div className="text-right min-w-20 shrink-0">
+                          <p className="text-[10px] text-gray-400">Marge ann.</p>
+                          <p className={`font-semibold ${e.margeAnnuelle >= 0 ? 'text-green-700' : 'text-red-600'}`}>{e.margeAnnuelle >= 0 ? '+' : ''}{fmtEuro(e.margeAnnuelle)}</p>
+                        </div>
+                      </>)}
                       {e.cashflowMensuelNet !== null && (
                         <div className="text-right min-w-20 shrink-0">
                           <p className="text-[10px] text-gray-400">Cashflow</p>
@@ -847,10 +865,7 @@ export default function RentabilityPage(): React.JSX.Element {
                         {e.signal
                           ? <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${SIGNAL_BADGE[e.signal] ?? 'bg-gray-100 text-gray-500'}`}>
                               {SIGNAL_ICON[e.signal]}{' '}
-                              {e.signal === 'vendre_maintenant' ? 'Vendre maintenant'
-                                : e.signal === 'bientot' ? 'Bientôt'
-                                : e.signal === 'optimal' ? 'Fenêtre'
-                                : 'OK'}
+                              {SIGNAL_LABEL[e.signal] ?? 'À conserver'}
                             </span>
                           : <span className="text-xs text-gray-300">—</span>}
                       </div>
@@ -858,14 +873,6 @@ export default function RentabilityPage(): React.JSX.Element {
                         fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                       </svg>
-                    </button>
-                    <button type="button"
-                      onClick={() => setAddModal({ vehicleId: e.vehicleId, make: e.make, model: e.model })}
-                      className="shrink-0 flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:border-[#01696e] hover:text-[#01696e] transition">
-                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                      </svg>
-                      Coût
                     </button>
                   </div>
                   {expanded === e.vehicleId && (
@@ -877,7 +884,8 @@ export default function RentabilityPage(): React.JSX.Element {
                           {e.getaroundFees > 0 && <span>Commission Getaround : <strong className="text-gray-600">{fmtEuro(e.getaroundFees)}</strong> (info)</span>}
                         </div>
                       )}
-                      <CostPanel vehicleId={e.vehicleId} breakEven={e.breakEven ?? e.totalCosts} />
+                      <CostPanel vehicleId={e.vehicleId} breakEven={e.breakEven ?? e.totalCosts}
+                        onAddCost={() => setAddModal({ vehicleId: e.vehicleId, make: e.make, model: e.model })} />
                     </>
                   )}
                 </div>

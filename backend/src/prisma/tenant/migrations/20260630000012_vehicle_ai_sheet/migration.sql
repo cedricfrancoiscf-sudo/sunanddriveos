@@ -1,0 +1,25 @@
+-- Migration : Fiche IA & Instructions structurées pour les véhicules
+
+ALTER TABLE "vehicles"
+  ADD COLUMN IF NOT EXISTS "gpsIntegre"                 BOOLEAN,
+  ADD COLUMN IF NOT EXISTS "androidAutoCarplay"         BOOLEAN,
+  ADD COLUMN IF NOT EXISTS "climatisation"              BOOLEAN,
+  ADD COLUMN IF NOT EXISTS "regulateurLimiteur"         BOOLEAN,
+  ADD COLUMN IF NOT EXISTS "radarRecul"                 BOOLEAN,
+  ADD COLUMN IF NOT EXISTS "cameraRecul"                BOOLEAN,
+  ADD COLUMN IF NOT EXISTS "typeBoite"                  TEXT,
+  ADD COLUMN IF NOT EXISTS "bluetoothAudio"             BOOLEAN,
+  ADD COLUMN IF NOT EXISTS "particularites"             TEXT,
+  ADD COLUMN IF NOT EXISTS "alertesConnuesNonCritiques" TEXT,
+  ADD COLUMN IF NOT EXISTS "pickupParkingType"          TEXT,
+  ADD COLUMN IF NOT EXISTS "pickupAddress"              TEXT,
+  ADD COLUMN IF NOT EXISTS "pickupMapsLink"             TEXT,
+  ADD COLUMN IF NOT EXISTS "pickupAccessProcedure"      TEXT,
+  ADD COLUMN IF NOT EXISTS "pickupVehiclePosition"      TEXT,
+  ADD COLUMN IF NOT EXISTS "pickupNotes"                TEXT,
+  ADD COLUMN IF NOT EXISTS "returnParkingType"          TEXT,
+  ADD COLUMN IF NOT EXISTS "returnAddress"              TEXT,
+  ADD COLUMN IF NOT EXISTS "returnMapsLink"             TEXT,
+  ADD COLUMN IF NOT EXISTS "returnAccessProcedure"      TEXT,
+  ADD COLUMN IF NOT EXISTS "returnVehiclePosition"      TEXT,
+  ADD COLUMN IF NOT EXISTS "returnNotes"                TEXT;

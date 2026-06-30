@@ -67,13 +67,10 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
                 vehicle: { select: { make: true, model: true, licensePlate: true } } },
     }),
     db.maintenanceTask.findMany({
-      where: {
-        type: 'ct',
-        vehicle: { isActive: true },
-        nextDueDate: { lte: new Date(Date.now() + 90 * 86_400_000) },
-      },
-      select: { vehicleId: true, nextDueDate: true, ctResult: true, lastCost: true,
+      where: { vehicle: { isActive: true } },
+      select: { vehicleId: true, type: true, nextDueDate: true, ctResult: true, lastCost: true,
                 vehicle: { select: { make: true, model: true, licensePlate: true } } },
+      orderBy: { nextDueDate: 'asc' },
     }),
     db.carSeatRequest.findMany({
       where: { createdAt: { gte: sixMonthsAgo } },
@@ -136,7 +133,7 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     const vKm = vRentals.reduce((s, r) => s + (r.kmDriven ?? 0), 0);
     const vIncidents = incidents.filter(i => i.vehicleId === v.id).length;
     const vMaint = maintenances.filter(m => m.vehicleId === v.id);
-    const vCT = technicalControls.filter(ct => ct.vehicleId === v.id);
+    const vCT = technicalControls.filter(ct => ct.vehicleId === v.id && ct.type === 'ct');
     const vVehicleCosts = vehicleCosts.filter(c => c.vehicleId === v.id);
     const vFixedMonthly = vVehicleCosts.filter(c => c.type === 'fixed').reduce((s, c) => s + c.amount, 0);
     const vVariableMonthly = vVehicleCosts.filter(c => c.type !== 'fixed').reduce((s, c) => s + c.amount, 0);
@@ -240,14 +237,24 @@ async function collectTenantData(db: ReturnType<typeof getTenantClient>) {
     zoneStats: Object.entries(zoneStats).map(([zone, s]) => ({
       zone, ca: Math.round(s.ca * 100) / 100, count: s.count, carSeats: s.carSeats,
     })),
-    interventionsAVenir: maintenances.map(m => ({
-      vehicule: `${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`,
-      type: m.type, echeance: m.nextServiceDate,
-    })),
-    ctExpiration: technicalControls.map(ct => ({
-      vehicule: `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`,
-      expiration: ct.nextDueDate,
-    })),
+    interventionsAVenir: (() => {
+      const cutoff90 = new Date(Date.now() + 90 * 86_400_000);
+      return technicalControls
+        .filter(t => t.nextDueDate !== null && t.nextDueDate <= cutoff90)
+        .slice(0, 10)
+        .map(t => ({
+          vehicule: `${t.vehicle.make} ${t.vehicle.model} (${t.vehicle.licensePlate})`,
+          type: t.type,
+          echeance: t.nextDueDate,
+          isLate: t.nextDueDate! < now,
+        }));
+    })(),
+    ctExpiration: technicalControls
+      .filter(ct => ct.type === 'ct' && ct.nextDueDate !== null && ct.nextDueDate <= new Date(Date.now() + 90 * 86_400_000))
+      .map(ct => ({
+        vehicule: `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`,
+        expiration: ct.nextDueDate,
+      })),
     evolutionMensuelle: Object.entries(monthlyCA)
       .map(([mois, ca]) => ({ mois, ca: Math.round(ca * 100) / 100 })),
     patrimonial: {

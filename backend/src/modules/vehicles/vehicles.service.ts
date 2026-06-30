@@ -30,6 +30,31 @@ export type VehicleUpdateInput = Partial<VehicleCreateInput> & {
   carekeeperUserId?: string | null;
   critAir?: string | null;
   purchasePrice?: number | null;
+  // Fiche IA — équipements
+  gpsIntegre?: boolean | null;
+  androidAutoCarplay?: boolean | null;
+  climatisation?: boolean | null;
+  regulateurLimiteur?: boolean | null;
+  radarRecul?: boolean | null;
+  cameraRecul?: boolean | null;
+  typeBoite?: string | null;
+  bluetoothAudio?: boolean | null;
+  particularites?: string | null;
+  alertesConnuesNonCritiques?: string | null;
+  // Prise en charge structurée
+  pickupParkingType?: string | null;
+  pickupAddress?: string | null;
+  pickupMapsLink?: string | null;
+  pickupAccessProcedure?: string | null;
+  pickupVehiclePosition?: string | null;
+  pickupNotes?: string | null;
+  // Restitution structurée
+  returnParkingType?: string | null;
+  returnAddress?: string | null;
+  returnMapsLink?: string | null;
+  returnAccessProcedure?: string | null;
+  returnVehiclePosition?: string | null;
+  returnNotes?: string | null;
 };
 
 export async function listVehicles(db: PrismaClient, includeInactive = false) {

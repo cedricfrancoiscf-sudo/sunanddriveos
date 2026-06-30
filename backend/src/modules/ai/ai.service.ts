@@ -19,6 +19,31 @@ export interface MessageAnalysis {
   };
 }
 
+export interface VehicleEquipment {
+  gpsIntegre?: boolean | null;
+  androidAutoCarplay?: boolean | null;
+  climatisation?: boolean | null;
+  regulateurLimiteur?: boolean | null;
+  radarRecul?: boolean | null;
+  cameraRecul?: boolean | null;
+  typeBoite?: string | null;
+  bluetoothAudio?: boolean | null;
+  particularites?: string | null;
+  alertesConnuesNonCritiques?: string | null;
+  pickupParkingType?: string | null;
+  pickupAddress?: string | null;
+  pickupMapsLink?: string | null;
+  pickupAccessProcedure?: string | null;
+  pickupVehiclePosition?: string | null;
+  pickupNotes?: string | null;
+  returnParkingType?: string | null;
+  returnAddress?: string | null;
+  returnMapsLink?: string | null;
+  returnAccessProcedure?: string | null;
+  returnVehiclePosition?: string | null;
+  returnNotes?: string | null;
+}
+
 export interface RentalContext {
   driverName: string;
   vehicleMake: string;
@@ -34,6 +59,7 @@ export interface RentalContext {
   endDate: string;
   companyName?: string;
   aiName?: string;
+  equipment?: VehicleEquipment;
 }
 
 export async function analyzeMessage(content: string, platformName = 'Getaround'): Promise<MessageAnalysis> {
@@ -417,8 +443,17 @@ Contexte de la location :
 - Véhicule : ${context.vehicleMake} ${context.vehicleModel}${context.vehicleYear ? ` ${context.vehicleYear}` : ''}${context.vehicleColor ? ` (${context.vehicleColor})` : ''} — ${context.licensePlate}
 ${context.fuelType ? `- Carburant : ${context.fuelType}` : ''}${context.parkingZone ? `\n- Zone : ${context.parkingZone}` : ''}
 - Du ${context.startDate} au ${context.endDate}
-${context.pickupInstructions ? `INSTRUCTIONS DE DÉPART :\n${context.pickupInstructions}` : "INSTRUCTIONS DE DÉPART : Non renseignées — si question sur récupération → transférer à l'équipe"}
-${context.returnInstructions ? `INSTRUCTIONS DE RETOUR :\n${context.returnInstructions}` : "INSTRUCTIONS DE RETOUR : Non renseignées — si question sur restitution → transférer à l'équipe"}
+${context.pickupInstructions ? `INSTRUCTIONS DE DÉPART :\n${context.pickupInstructions}` : context.equipment?.pickupAccessProcedure ? `INSTRUCTIONS DE DÉPART :\n${context.equipment.pickupAccessProcedure}${context.equipment.pickupAddress ? `\nAdresse : ${context.equipment.pickupAddress}` : ''}${context.equipment.pickupVehiclePosition ? `\nPosition : ${context.equipment.pickupVehiclePosition}` : ''}` : "INSTRUCTIONS DE DÉPART : Non renseignées — si question sur récupération → transférer à l'équipe"}
+${context.returnInstructions ? `INSTRUCTIONS DE RETOUR :\n${context.returnInstructions}` : context.equipment?.returnAccessProcedure ? `INSTRUCTIONS DE RETOUR :\n${context.equipment.returnAccessProcedure}${context.equipment.returnAddress ? `\nAdresse : ${context.equipment.returnAddress}` : ''}${context.equipment.returnVehiclePosition ? `\nPosition : ${context.equipment.returnVehiclePosition}` : ''}` : "INSTRUCTIONS DE RETOUR : Non renseignées — si question sur restitution → transférer à l'équipe"}
+${context.equipment ? `ÉQUIPEMENTS DU VÉHICULE (utiliser UNIQUEMENT ces valeurs — si null → ne JAMAIS affirmer ni inventer, répondre : "Je vérifie cette information et reviens vers vous rapidement.") :
+GPS : ${context.equipment.gpsIntegre == null ? 'Non renseigné' : context.equipment.gpsIntegre ? 'Oui' : 'Non'}
+Android Auto/CarPlay : ${context.equipment.androidAutoCarplay == null ? 'Non renseigné' : context.equipment.androidAutoCarplay ? 'Oui' : 'Non'}
+Climatisation : ${context.equipment.climatisation == null ? 'Non renseigné' : context.equipment.climatisation ? 'Oui' : 'Non'}
+Régulateur/Limiteur : ${context.equipment.regulateurLimiteur == null ? 'Non renseigné' : context.equipment.regulateurLimiteur ? 'Oui' : 'Non'}
+Radar de recul : ${context.equipment.radarRecul == null ? 'Non renseigné' : context.equipment.radarRecul ? 'Oui' : 'Non'}
+Caméra de recul : ${context.equipment.cameraRecul == null ? 'Non renseigné' : context.equipment.cameraRecul ? 'Oui' : 'Non'}
+Bluetooth : ${context.equipment.bluetoothAudio == null ? 'Non renseigné' : context.equipment.bluetoothAudio ? 'Oui' : 'Non'}
+Boîte de vitesses : ${context.equipment.typeBoite ?? 'Non renseigné'}${context.equipment.particularites ? `\nParticularités : ${context.equipment.particularites}` : ''}${context.equipment.alertesConnuesNonCritiques ? `\nAlertes non critiques : ${context.equipment.alertesConnuesNonCritiques}` : ''}` : ''}
 ${historyBlock}
 
 Réponds en te présentant comme ${context.aiName ?? "l'équipe"} de ${context.companyName ?? 'notre service'}.

@@ -43,7 +43,7 @@ interface ReportData {
     caNet: number; caBrut: number; tauxOccupation: number; nbLocations: number;
     nbIncidents: number; flotte: number; societe: string;
     evolutionMensuelle: Array<{ mois: string; ca: number }>;
-    interventionsAVenir: Array<{ vehicule: string; type: string; echeance: string | null }>;
+    interventionsAVenir: Array<{ vehicule: string; type: string; echeance: string | null; isLate?: boolean }>;
     ctExpiration: Array<{ vehicule: string; expiration: string }>;
     patrimonial?: {
       investissementTotal: number; valeurFlotte: number; capitalRestant: number;
@@ -904,8 +904,11 @@ export default function ReportPage(): React.JSX.Element {
                   <div className="space-y-1.5">
                     {internal.interventionsAVenir.map((m, i) => (
                       <div key={i} className="flex items-center justify-between text-sm">
-                        <span className="text-orange-700">{m.vehicule} — {m.type}</span>
-                        <span className="text-xs text-orange-500">
+                        <span className={m.isLate ? 'text-red-700 font-medium' : 'text-orange-700'}>
+                          {m.vehicule} — {m.type}
+                          {m.isLate && <span className="ml-2 inline-block rounded-full bg-red-100 px-1.5 py-0.5 text-xs text-red-700">En retard</span>}
+                        </span>
+                        <span className={`text-xs ${m.isLate ? 'text-red-500 font-medium' : 'text-orange-500'}`}>
                           {m.echeance ? format(new Date(m.echeance), 'dd/MM/yyyy', { locale: fr }) : '—'}
                         </span>
                       </div>

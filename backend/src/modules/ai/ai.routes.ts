@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
-import { analyzeMessage, suggestReply, suggestCarSeatReply, forecastCashflow, detectMileageAnomalies, getQualityAlerts } from './ai.service';
+import { analyzeMessage, suggestReply, suggestCarSeatReply, forecastCashflow, detectMileageAnomalies, getQualityAlerts, type VehicleEquipment } from './ai.service';
 import { createOutboundMessage } from '../messages/messages.service';
 
 const router: Router = Router();
@@ -74,7 +74,12 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
     const rental = await db.rental.findUnique({
       where: { id: body.data.rentalId },
       include: {
-        vehicle: { select: { make: true, model: true, licensePlate: true, year: true, color: true, fuelType: true, parkingZone: true, pickupInstructions: true, returnInstructions: true } },
+        vehicle: { select: { make: true, model: true, licensePlate: true, year: true, color: true, fuelType: true, parkingZone: true, pickupInstructions: true, returnInstructions: true,
+          gpsIntegre: true, androidAutoCarplay: true, climatisation: true, regulateurLimiteur: true, radarRecul: true, cameraRecul: true, typeBoite: true, bluetoothAudio: true,
+          particularites: true, alertesConnuesNonCritiques: true,
+          pickupParkingType: true, pickupAddress: true, pickupMapsLink: true, pickupAccessProcedure: true, pickupVehiclePosition: true, pickupNotes: true,
+          returnParkingType: true, returnAddress: true, returnMapsLink: true, returnAccessProcedure: true, returnVehiclePosition: true, returnNotes: true,
+        } },
         messages: {
           orderBy: { createdAt: 'asc' },
           select: { direction: true, content: true },
@@ -110,6 +115,19 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
       parkingZone: rental.vehicle.parkingZone ?? undefined,
       pickupInstructions: rental.vehicle.pickupInstructions ?? undefined,
       returnInstructions: rental.vehicle.returnInstructions ?? undefined,
+      equipment: {
+        gpsIntegre: rental.vehicle.gpsIntegre, androidAutoCarplay: rental.vehicle.androidAutoCarplay,
+        climatisation: rental.vehicle.climatisation, regulateurLimiteur: rental.vehicle.regulateurLimiteur,
+        radarRecul: rental.vehicle.radarRecul, cameraRecul: rental.vehicle.cameraRecul,
+        typeBoite: rental.vehicle.typeBoite, bluetoothAudio: rental.vehicle.bluetoothAudio,
+        particularites: rental.vehicle.particularites, alertesConnuesNonCritiques: rental.vehicle.alertesConnuesNonCritiques,
+        pickupParkingType: rental.vehicle.pickupParkingType, pickupAddress: rental.vehicle.pickupAddress,
+        pickupMapsLink: rental.vehicle.pickupMapsLink, pickupAccessProcedure: rental.vehicle.pickupAccessProcedure,
+        pickupVehiclePosition: rental.vehicle.pickupVehiclePosition, pickupNotes: rental.vehicle.pickupNotes,
+        returnParkingType: rental.vehicle.returnParkingType, returnAddress: rental.vehicle.returnAddress,
+        returnMapsLink: rental.vehicle.returnMapsLink, returnAccessProcedure: rental.vehicle.returnAccessProcedure,
+        returnVehiclePosition: rental.vehicle.returnVehiclePosition, returnNotes: rental.vehicle.returnNotes,
+      } as VehicleEquipment,
       startDate: new Date(rental.startAt).toLocaleDateString('fr-FR'),
       endDate: new Date(rental.endAt).toLocaleDateString('fr-FR'),
       companyName: 'Sun and Drive',

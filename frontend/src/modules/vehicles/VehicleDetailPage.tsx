@@ -729,7 +729,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.isSuperAdmin;
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'costs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'costs' | 'ai-sheet'>('overview');
   const [showQR, setShowQR] = useState(false);
 
   const [costLabel, setCostLabel] = useState('');
@@ -822,6 +822,37 @@ export default function VehicleDetailPage(): React.JSX.Element {
     queryFn: () => api.get<{ users: Array<{ id: string; name: string; email: string; role: string }> }>('/users').then(r => r.data.users),
     enabled: Boolean(isAdmin),
     staleTime: 5 * 60_000,
+  });
+
+  const isPro = user?.plan === 'pro' || user?.plan === 'enterprise' || user?.isSuperAdmin;
+
+  type AiSheetData = {
+    gpsIntegre: boolean | null; androidAutoCarplay: boolean | null; climatisation: boolean | null;
+    regulateurLimiteur: boolean | null; radarRecul: boolean | null; cameraRecul: boolean | null;
+    typeBoite: string | null; bluetoothAudio: boolean | null;
+    particularites: string | null; alertesConnuesNonCritiques: string | null;
+    pickupParkingType: string | null; pickupAddress: string | null; pickupMapsLink: string | null;
+    pickupAccessProcedure: string | null; pickupVehiclePosition: string | null; pickupNotes: string | null;
+    returnParkingType: string | null; returnAddress: string | null; returnMapsLink: string | null;
+    returnAccessProcedure: string | null; returnVehiclePosition: string | null; returnNotes: string | null;
+    pickupInstructions: string | null; returnInstructions: string | null;
+  };
+
+  const { data: aiSheetData, refetch: refetchAiSheet } = useQuery<AiSheetData>({
+    queryKey: ['vehicle-ai-sheet', id],
+    queryFn: () => api.get<{ aiSheet: AiSheetData }>(`/vehicles/${id}/ai-sheet`).then(r => r.data.aiSheet),
+    enabled: Boolean(id) && activeTab === 'ai-sheet',
+    staleTime: 5 * 60_000,
+  });
+
+  const [aiDraft, setAiDraft] = React.useState<Partial<AiSheetData>>({});
+  React.useEffect(() => {
+    if (aiSheetData) setAiDraft(aiSheetData);
+  }, [aiSheetData]);
+
+  const saveAiSheet = useMutation({
+    mutationFn: (data: Partial<AiSheetData>) => api.patch(`/vehicles/${id}`, data),
+    onSuccess: () => { void refetchAiSheet(); },
   });
 
   const carekeeperUsers = allUsers.filter(u => u.role === 'carkeeper');
@@ -1011,7 +1042,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
 
       {/* Tabs */}
       <div className="mb-4 flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 w-fit">
-        {(['overview', 'costs'] as const).map((tab) => (
+        {(['overview', 'costs', 'ai-sheet'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -1020,7 +1051,7 @@ export default function VehicleDetailPage(): React.JSX.Element {
               activeTab === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tab === 'overview' ? 'Vue générale' : 'Coûts'}
+            {tab === 'overview' ? 'Vue générale' : tab === 'costs' ? 'Coûts' : 'IA & Instructions'}
           </button>
         ))}
       </div>
@@ -1140,6 +1171,202 @@ export default function VehicleDetailPage(): React.JSX.Element {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'ai-sheet' && (
+        <div className="space-y-6 mb-6 relative">
+          {!isPro && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-white/80 backdrop-blur-sm border border-gray-200">
+              <div className="text-4xl mb-2">🔒</div>
+              <p className="text-sm font-semibold text-gray-700">Disponible en Pro</p>
+              <p className="text-xs text-gray-400 mt-1">Passez au plan Pro pour accéder à la Fiche IA & Instructions</p>
+            </div>
+          )}
+          {/* Section A — Équipements */}
+          <div className={`rounded-xl border border-gray-200 bg-white p-5 ${!isPro ? 'pointer-events-none opacity-50' : ''}`}>
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Catalogue d'équipements</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {([
+                { key: 'gpsIntegre', label: 'GPS intégré' },
+                { key: 'androidAutoCarplay', label: 'Android Auto / CarPlay' },
+                { key: 'climatisation', label: 'Climatisation' },
+                { key: 'regulateurLimiteur', label: 'Régulateur / limiteur' },
+                { key: 'radarRecul', label: 'Radar de recul' },
+                { key: 'cameraRecul', label: 'Caméra de recul' },
+                { key: 'bluetoothAudio', label: 'Bluetooth audio' },
+              ] as const).map(({ key, label }) => {
+                const val = (aiDraft as Record<string, unknown>)[key] as boolean | null | undefined;
+                return (
+                  <div key={key} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                    <span className="text-sm text-gray-600">{label}</span>
+                    <div className="flex gap-1">
+                      {([['true', 'Oui', 'bg-green-100 text-green-700'], ['false', 'Non', 'bg-red-100 text-red-700'], ['null', 'N/R', 'bg-gray-100 text-gray-500']] as const).map(([v, lbl, cls]) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setAiDraft(d => ({ ...d, [key]: v === 'null' ? null : v === 'true' }))}
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium border transition-all ${
+                            (v === 'null' ? val == null : String(val) === v)
+                              ? cls + ' border-current shadow-sm'
+                              : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Boîte de vitesses</label>
+                <select
+                  value={aiDraft.typeBoite ?? ''}
+                  onChange={(e) => setAiDraft(d => ({ ...d, typeBoite: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30"
+                >
+                  <option value="">Non renseigné</option>
+                  <option value="manuelle">Manuelle</option>
+                  <option value="automatique">Automatique</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Particularités</label>
+                <textarea rows={2} value={aiDraft.particularites ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, particularites: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Ex: régulateur de vitesse adaptatif, toit panoramique..." />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Alertes connues non critiques</label>
+                <textarea rows={2} value={aiDraft.alertesConnuesNonCritiques ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, alertesConnuesNonCritiques: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Ex: voyant pression pneu permanent, bruit moteur à froid..." />
+              </div>
+            </div>
+          </div>
+
+          {/* Section B — Prise en charge */}
+          <div className={`rounded-xl border border-gray-200 bg-white p-5 ${!isPro ? 'pointer-events-none opacity-50' : ''}`}>
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Prise en charge</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Type de parking</label>
+                <select value={aiDraft.pickupParkingType ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, pickupParkingType: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30">
+                  <option value="">Non renseigné</option>
+                  <option value="ouvert">Ouvert</option>
+                  <option value="ferme">Fermé</option>
+                  <option value="rue">Rue</option>
+                  <option value="digicode">Digicode</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Adresse</label>
+                <input type="text" value={aiDraft.pickupAddress ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, pickupAddress: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Ex: 12 rue de la Paix, 75001 Paris" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Lien Google Maps</label>
+                {aiDraft.pickupMapsLink ? (
+                  <div className="flex gap-2 items-center">
+                    <input type="text" value={aiDraft.pickupMapsLink ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, pickupMapsLink: e.target.value || null }))}
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" />
+                    <a href={aiDraft.pickupMapsLink} target="_blank" rel="noreferrer" className="text-xs text-[#01696e] underline whitespace-nowrap">Ouvrir</a>
+                  </div>
+                ) : (
+                  <input type="text" value={aiDraft.pickupMapsLink ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, pickupMapsLink: e.target.value || null }))}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="https://maps.google.com/..." />
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Position du véhicule</label>
+                <input type="text" value={aiDraft.pickupVehiclePosition ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, pickupVehiclePosition: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Ex: niveau P1, place 42" />
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Procédure d'accès</label>
+                <textarea rows={3} value={aiDraft.pickupAccessProcedure ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, pickupAccessProcedure: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Ex: Code boîte à clé : 1234. Entrer par le portail principal..." />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Notes prise en charge</label>
+                <textarea rows={2} value={aiDraft.pickupNotes ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, pickupNotes: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Notes supplémentaires..." />
+              </div>
+            </div>
+          </div>
+
+          {/* Section C — Restitution */}
+          <div className={`rounded-xl border border-gray-200 bg-white p-5 ${!isPro ? 'pointer-events-none opacity-50' : ''}`}>
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-400">Restitution</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Type de parking</label>
+                <select value={aiDraft.returnParkingType ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, returnParkingType: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30">
+                  <option value="">Non renseigné</option>
+                  <option value="ouvert">Ouvert</option>
+                  <option value="ferme">Fermé</option>
+                  <option value="rue">Rue</option>
+                  <option value="digicode">Digicode</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Adresse</label>
+                <input type="text" value={aiDraft.returnAddress ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, returnAddress: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Ex: 12 rue de la Paix, 75001 Paris" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Lien Google Maps</label>
+                {aiDraft.returnMapsLink ? (
+                  <div className="flex gap-2 items-center">
+                    <input type="text" value={aiDraft.returnMapsLink ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, returnMapsLink: e.target.value || null }))}
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" />
+                    <a href={aiDraft.returnMapsLink} target="_blank" rel="noreferrer" className="text-xs text-[#01696e] underline whitespace-nowrap">Ouvrir</a>
+                  </div>
+                ) : (
+                  <input type="text" value={aiDraft.returnMapsLink ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, returnMapsLink: e.target.value || null }))}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="https://maps.google.com/..." />
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Position du véhicule</label>
+                <input type="text" value={aiDraft.returnVehiclePosition ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, returnVehiclePosition: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Ex: niveau P1, place 42" />
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Procédure d'accès</label>
+                <textarea rows={3} value={aiDraft.returnAccessProcedure ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, returnAccessProcedure: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Ex: Garer le véhicule à sa place d'origine. Clés dans la boîte..." />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Notes restitution</label>
+                <textarea rows={2} value={aiDraft.returnNotes ?? ''} onChange={(e) => setAiDraft(d => ({ ...d, returnNotes: e.target.value || null }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#01696e]/30" placeholder="Notes supplémentaires..." />
+              </div>
+            </div>
+          </div>
+
+          {isPro && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => saveAiSheet.mutate(aiDraft)}
+                disabled={saveAiSheet.isPending}
+                className="rounded-lg px-6 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: '#01696e' }}
+              >
+                {saveAiSheet.isPending ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -79,6 +79,31 @@ const updateSchema = createSchema.partial().extend({
   marketValueDate: z.string().datetime().nullable().optional(),
   marketValueJ0: z.number().min(0).nullable().optional(),
   depreciationRate: z.number().min(0).nullable().optional(),
+  // Fiche IA — équipements
+  gpsIntegre:                 z.boolean().nullable().optional(),
+  androidAutoCarplay:         z.boolean().nullable().optional(),
+  climatisation:              z.boolean().nullable().optional(),
+  regulateurLimiteur:         z.boolean().nullable().optional(),
+  radarRecul:                 z.boolean().nullable().optional(),
+  cameraRecul:                z.boolean().nullable().optional(),
+  typeBoite:                  z.enum(['manuelle', 'automatique']).nullable().optional(),
+  bluetoothAudio:             z.boolean().nullable().optional(),
+  particularites:             z.string().nullable().optional(),
+  alertesConnuesNonCritiques: z.string().nullable().optional(),
+  // Prise en charge structurée
+  pickupParkingType:          z.enum(['ouvert', 'ferme', 'rue', 'digicode']).nullable().optional(),
+  pickupAddress:              z.string().nullable().optional(),
+  pickupMapsLink:             z.string().nullable().optional(),
+  pickupAccessProcedure:      z.string().nullable().optional(),
+  pickupVehiclePosition:      z.string().nullable().optional(),
+  pickupNotes:                z.string().nullable().optional(),
+  // Restitution structurée
+  returnParkingType:          z.enum(['ouvert', 'ferme', 'rue', 'digicode']).nullable().optional(),
+  returnAddress:              z.string().nullable().optional(),
+  returnMapsLink:             z.string().nullable().optional(),
+  returnAccessProcedure:      z.string().nullable().optional(),
+  returnVehiclePosition:      z.string().nullable().optional(),
+  returnNotes:                z.string().nullable().optional(),
 });
 
 // GET /api/v1/vehicles
@@ -127,6 +152,30 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const vehicle = await getVehicle(db, (req.params.id as string));
     if (!vehicle) { res.status(404).json({ error: 'Véhicule introuvable' }); return; }
     res.json({ vehicle });
+  } catch (err: unknown) { next(err); }
+});
+
+// GET /api/v1/vehicles/:id/ai-sheet — champs Fiche IA uniquement
+router.get('/:id/ai-sheet', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const vehicle = await db.vehicle.findUnique({
+      where: { id: req.params.id as string },
+      select: {
+        id: true,
+        gpsIntegre: true, androidAutoCarplay: true, climatisation: true,
+        regulateurLimiteur: true, radarRecul: true, cameraRecul: true,
+        typeBoite: true, bluetoothAudio: true,
+        particularites: true, alertesConnuesNonCritiques: true,
+        pickupParkingType: true, pickupAddress: true, pickupMapsLink: true,
+        pickupAccessProcedure: true, pickupVehiclePosition: true, pickupNotes: true,
+        returnParkingType: true, returnAddress: true, returnMapsLink: true,
+        returnAccessProcedure: true, returnVehiclePosition: true, returnNotes: true,
+        pickupInstructions: true, returnInstructions: true,
+      },
+    });
+    if (!vehicle) { res.status(404).json({ error: 'Véhicule introuvable' }); return; }
+    res.json({ aiSheet: vehicle });
   } catch (err: unknown) { next(err); }
 });
 

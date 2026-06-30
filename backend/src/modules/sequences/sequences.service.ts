@@ -1,5 +1,16 @@
 ﻿import type { PrismaClient } from '../../generated/tenant';
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^[*\-]\s+/gm, '• ')
+    .replace(/__([^_]*)__/g, '$1')
+    .replace(/_([^_]*)_/g, '$1')
+    .trim();
+}
+
 const TRIGGER_EVENTS = ['rental.booked', 'rental.car_checked_in', 'rental.car_checked_out', 'rental.before_checkin', 'rental.before_checkout'] as const;
 export type TriggerEvent = typeof TRIGGER_EVENTS[number];
 
@@ -188,8 +199,8 @@ export async function executePendingSequences(
         startAt: fmtDT(new Date(exec.rental.startAt)),
         endAt: fmtDT(new Date(exec.rental.endAt)),
         deliveryPoint: exec.rental.vehicle.deliveryPointName ?? '',
-        pickupInstructions: exec.rental.vehicle.pickupInstructions ?? '',
-        returnInstructions: exec.rental.vehicle.returnInstructions ?? '',
+        pickupInstructions: stripMarkdown(exec.rental.vehicle.pickupInstructions ?? ''),
+        returnInstructions: stripMarkdown(exec.rental.vehicle.returnInstructions ?? ''),
       };
 
       const content = renderTemplate(exec.sequence.content, vars);

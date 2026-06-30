@@ -122,6 +122,14 @@ export async function sendCarSeatEmail(
   });
 }
 
+const URGENCY_PATTERNS = [
+  /\b(panne|accident|urgence|danger|bless[eé]|immobilis[eé]|ne d[eé]marre pas)\b/i,
+];
+
+function detectEmergency(content: string): boolean {
+  return URGENCY_PATTERNS.some(p => p.test(content));
+}
+
 export async function analyzeAndProcessMessage(
   message: { id: string; content: string },
   rental: RentalForMessaging,
@@ -129,6 +137,87 @@ export async function analyzeAndProcessMessage(
   ga: GetaroundClient,
 ): Promise<void> {
   console.log(`[Messaging] IA analyse message ${message.id} — rental ${rental.id} (${rental.driverName})`);
+
+  // Détection d'urgence avant toute analyse IA
+  if (detectEmergency(message.content)) {
+    console.log(`[Messaging] 🚨 Urgence détectée — message ${message.id} rental ${rental.id}`);
+
+    const settings = await db.companySettings.findFirst({
+      select: { aiTone: true, aiName: true, senderName: true, alertEmails: true },
+    });
+    const tone = settings?.aiTone === 'tutoiement' ? 'tutoiement' : 'vouvoiement';
+    const assistantName = settings?.aiName ?? settings?.senderName ?? 'notre équipe';
+
+    const civility = tone === 'tutoiement' ? 'Nous sommes désolés pour ce désagrément.' : 'Nous sommes désolés pour ce désagrément.';
+    const emergencyReply = `${civility} Pour une prise en charge rapide en cas de panne ou d'accident, merci de contacter directement l'assistance Getaround depuis votre page de location. — ${assistantName}`;
+
+    // Marquer le message inbound comme traité en urgence
+    await db.message.update({
+      where: { id: message.id },
+      data: { aiAnalysis: { isEmergency: true } },
+    });
+
+    // Envoi immédiat du message de redirection (status='sent', bypass approval)
+    if (rental.getaroundId) {
+      try {
+        await ga.sendMessage(parseInt(rental.getaroundId, 10), emergencyReply);
+        await db.message.create({
+          data: {
+            rentalId: rental.id,
+            direction: 'outbound',
+            content: emergencyReply,
+            sentAt: new Date(),
+            status: 'sent',
+            aiSuggestion: emergencyReply,
+          },
+        });
+        console.log(`[Messaging] ✅ Message urgence envoyé rental ${rental.id}`);
+      } catch (e) {
+        console.error('[Messaging] Erreur envoi urgence:', e);
+      }
+    }
+
+    // Alerte aux admins
+    const admins = await db.user.findMany({
+      where: { isActive: true, OR: [{ role: 'admin' }, { roles: { has: 'admin' } }] },
+      select: { id: true, email: true },
+    });
+    if (admins.length > 0) {
+      await db.notification.createMany({
+        data: admins.map(a => ({
+          userId: a.id,
+          type: 'urgence_locataire',
+          title: `🚨 Urgence — ${rental.driverName}`,
+          body: message.content.slice(0, 120),
+          relatedEntityType: 'rental',
+          relatedEntityId: rental.id,
+          targetUrl: `/rentals/${rental.id}`,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    // Email si alertEmails configurés
+    const alertEmails = settings?.alertEmails ?? [];
+    if (alertEmails.length > 0 && process.env.RESEND_API_KEY) {
+      try {
+        await getResend().emails.send({
+          from: `${assistantName} <${FROM_ADDR}>`,
+          to: alertEmails,
+          subject: `🚨 Urgence locataire — ${rental.driverName} (${rental.vehicle.licensePlate})`,
+          html: `<p><strong>Urgence signalée</strong> par <strong>${rental.driverName}</strong>.</p>
+<p>Véhicule&nbsp;: ${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})</p>
+<p>Message&nbsp;: ${message.content}</p>
+<p><a href="https://appli.sunanddrive.com/rentals/${rental.id}">Voir la conversation</a></p>`,
+        });
+      } catch (e) {
+        console.error('[Messaging] Erreur email urgence:', e);
+      }
+    }
+
+    return;
+  }
+
   const settings = await db.companySettings.findFirst({
     select: {
       aiModeCarSeat: true, aiModeIncident: true, aiModeGeneral: true,

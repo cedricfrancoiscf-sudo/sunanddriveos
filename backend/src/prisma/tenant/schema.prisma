@@ -140,6 +140,34 @@ model Vehicle {
   deliveryPostalCode String?           // Code postal du point de livraison
   pickupInstructions String?           // Instructions de départ : adresse, code, boîte à clé...
   returnInstructions String?           // Instructions de retour : où garer, clés, carburant...
+
+  // Catalogue équipements (Fiche IA)
+  gpsIntegre                 Boolean?
+  androidAutoCarplay         Boolean?
+  climatisation              Boolean?
+  regulateurLimiteur         Boolean?
+  radarRecul                 Boolean?
+  cameraRecul                Boolean?
+  typeBoite                  String?   // "manuelle" | "automatique"
+  bluetoothAudio             Boolean?
+  particularites             String?   @db.Text
+  alertesConnuesNonCritiques String?   @db.Text
+
+  // Prise en charge structurée
+  pickupParkingType          String?   // "ouvert" | "ferme" | "rue" | "digicode"
+  pickupAddress              String?
+  pickupMapsLink             String?
+  pickupAccessProcedure      String?   @db.Text
+  pickupVehiclePosition      String?
+  pickupNotes                String?   @db.Text
+
+  // Restitution structurée
+  returnParkingType          String?
+  returnAddress              String?
+  returnMapsLink             String?
+  returnAccessProcedure      String?   @db.Text
+  returnVehiclePosition      String?
+  returnNotes                String?   @db.Text
   critAir            String?           // "0"|"1"|"2"|"3"|"4"|"5"|"NC"
   purchasePrice      Float?            // Prix d'achat TTC
   purchaseDate       DateTime?         // Date d'achat

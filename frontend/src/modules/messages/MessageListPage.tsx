@@ -25,7 +25,7 @@ const RENTAL_STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Annulées' },
 ];
 
-type MsgTab = 'traiter' | 'ia' | 'traites' | 'tous';
+type MsgTab = 'traiter' | 'ia' | 'traites' | 'cloture' | 'tous';
 
 export default function MessageListPage(): React.JSX.Element {
   const navigate = useNavigate();
@@ -110,9 +110,12 @@ export default function MessageListPage(): React.JSX.Element {
     const delay = summary?.unansweredDelayMs ?? 30 * 60_000;
     for (const conv of map.values()) {
       const last = conv.lastMessage;
+      // Fil non répondu : inbound sans outbound sent/approved après lui, non clôturé, et délai dépassé
       conv.isUnanswered =
-        last.direction === 'inbound' &&
-        Date.now() - new Date(last.createdAt).getTime() > delay;
+        !last.isThreadAnswered &&
+        last.lastInboundAt != null &&
+        !last.threadDismissedAt &&
+        Date.now() - new Date(last.lastInboundAt).getTime() > delay;
     }
 
     // L'ordre vient du backend (groupBy _max createdAt desc)
@@ -121,12 +124,14 @@ export default function MessageListPage(): React.JSX.Element {
 
   const traiterCount = conversations.filter(c => c.isUnanswered).length;
   const iaCount = conversations.filter(c => c.hasPending).length;
+  const clotureCount = conversations.filter(c => Boolean(c.lastMessage.threadDismissedAt)).length;
 
   const filteredConversations = useMemo<Conversation[]>(() => {
     switch (activeTab) {
-      case 'traiter': return conversations.filter(c => c.isUnanswered);
-      case 'ia': return conversations.filter(c => c.hasPending);
-      case 'traites': return conversations.filter(c => !c.isUnanswered && !c.hasPending);
+      case 'traiter': return conversations.filter(c => c.isUnanswered && !c.lastMessage.threadDismissedAt);
+      case 'ia': return conversations.filter(c => c.hasPending && !c.lastMessage.threadDismissedAt);
+      case 'traites': return conversations.filter(c => !c.isUnanswered && !c.hasPending && !c.lastMessage.threadDismissedAt);
+      case 'cloture': return conversations.filter(c => Boolean(c.lastMessage.threadDismissedAt));
       default: return conversations;
     }
   }, [conversations, activeTab]);
@@ -163,6 +168,7 @@ export default function MessageListPage(): React.JSX.Element {
           { key: 'traiter' as MsgTab, label: 'À traiter', count: traiterCount, accent: true },
           { key: 'ia' as MsgTab, label: 'En attente IA', count: iaCount, accent: false },
           { key: 'traites' as MsgTab, label: 'Traités', count: null, accent: false },
+          { key: 'cloture' as MsgTab, label: 'Clôturé', count: clotureCount || null, accent: false },
           { key: 'tous' as MsgTab, label: 'Tous', count: conversations.length, accent: false },
         ]).map(tab => (
           <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)}

@@ -299,6 +299,26 @@ export async function analyzeAndProcessMessage(
     },
   });
 
+  // BLOC 2 — contexte fil complet (ordre chronologique, tous messages récents)
+  const recentThread = await db.message.findMany({
+    where: { rentalId: rental.id },
+    orderBy: { createdAt: 'asc' },
+    take: 20,
+    select: { direction: true, content: true, status: true, createdAt: true },
+  });
+  // Construire le fil pour le prompt : locataire / nous (envoyé) / messages système écartés
+  const threadLines = recentThread
+    .map(m => {
+      if (m.direction === 'inbound') return `[LOCATAIRE] ${m.content}`;
+      // Inclure seulement les outbound réellement envoyés pour que l'IA sache ce qui a été répondu
+      if (m.direction === 'outbound' && m.status === 'sent') return `[NOUS - réponse envoyée] ${m.content}`;
+      return null;
+    })
+    .filter((l): l is string => l !== null);
+  const threadContext = threadLines.length > 1
+    ? `\nHistorique de la conversation :\n${threadLines.slice(0, -1).join('\n')}\n\nDernier message du locataire : "${message.content}"`
+    : `Message du locataire : "${message.content}"`;
+
   // 1. Analyse Claude
   let analysis: ProactiveAnalysis;
   try {
@@ -307,6 +327,7 @@ export async function analyzeAndProcessMessage(
       max_tokens: 512,
       system: `Tu es ${assistantName}, assistant d'un opérateur de location de voitures sur Getaround.
 Tu analyses les messages de locataires et génères une réponse courte et professionnelle.
+Tiens compte de TOUT l'historique de la conversation pour contextualiser ta réponse.
 
 Réponds en JSON uniquement, sans markdown :
 {"type":"car_seat"|"remise"|"incident"|"general"|"remerciement","urgent":boolean,"details":{"childAge":number|null,"question":string|null,"incidentType":string|null},"suggestedReply":string}
@@ -322,7 +343,7 @@ Règles STRICTES pour suggestedReply :
 - Se concentrer sur l'essentiel : répondre à la question ou confirmer l'information demandée`,
       messages: [{
         role: 'user',
-        content: `Message du locataire : "${message.content}"
+        content: `${threadContext}
 Véhicule : ${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})
 Lieu : ${rental.vehicle.deliveryPointName ?? rental.vehicle.parkingZone ?? 'Non défini'}
 Début location : ${rental.startAt.toLocaleDateString('fr-FR')}
@@ -347,7 +368,7 @@ Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) :
   if (analysis.type === 'car_seat') {
     mode = settings.aiModeCarSeat ?? 'manual';
   } else if (analysis.type === 'incident') {
-    mode = settings.aiModeIncident ?? 'approval';
+    mode = settings.aiModeIncident ?? 'manual';
   } else {
     mode = settings.aiModeGeneral ?? 'manual';
   }
@@ -437,6 +458,19 @@ Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) :
   }
 
   if (mode === 'approval') {
+    // BLOC 2 — régénération : annuler tout brouillon pending existant (non approuvé/envoyé)
+    const existingPending = await db.message.findFirst({
+      where: { rentalId: rental.id, direction: 'outbound', status: 'pending_approval' },
+      select: { id: true },
+    });
+    if (existingPending) {
+      await db.message.update({
+        where: { id: existingPending.id },
+        data: { status: 'cancelled', cancelledAt: new Date() },
+      });
+      console.log(`[Messaging] Brouillon périmé remplacé — ${existingPending.id} → nouveau contexte`);
+    }
+
     await db.message.create({
       data: {
         rentalId: rental.id,

@@ -5,7 +5,7 @@ import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { messagesApi, type Message } from './messagesApi';
 
-function Bubble({ msg, isLast }: { msg: { direction: string; content: string; sentAt: string | null; status: string; aiSuggestion: string | null; createdAt: string }; isLast: boolean }): React.JSX.Element {
+function Bubble({ msg }: { msg: { direction: string; content: string; sentAt: string | null; status: string; aiSuggestion: string | null; createdAt: string } }): React.JSX.Element {
   const isInbound = msg.direction === 'inbound';
 
   return (
@@ -15,9 +15,11 @@ function Bubble({ msg, isLast }: { msg: { direction: string; content: string; se
           className={`rounded-2xl px-4 py-3 text-sm ${
             isInbound
               ? 'rounded-tl-sm bg-gray-100 text-gray-800'
+              : msg.status === 'cancelled'
+              ? 'rounded-tr-sm bg-gray-200 text-gray-400 line-through'
               : 'rounded-tr-sm text-white'
           }`}
-          style={!isInbound ? { backgroundColor: '#01696e' } : undefined}
+          style={!isInbound && msg.status !== 'cancelled' ? { backgroundColor: '#01696e' } : undefined}
         >
           {msg.content}
         </div>
@@ -30,6 +32,8 @@ function Bubble({ msg, isLast }: { msg: { direction: string; content: string; se
               <span title="Envoyé sur Getaround" style={{ fontSize: 10 }}>✅</span>
             ) : msg.status === 'pending_approval' ? (
               <span title="En attente" style={{ fontSize: 10 }}>🕐</span>
+            ) : msg.status === 'cancelled' ? (
+              <span title="Annulé" className="text-gray-300 text-[10px]">annulé</span>
             ) : null
           )}
         </p>
@@ -67,39 +71,103 @@ export default function MessageDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const [replyContent, setReplyContent] = useState('');
-  const { data: message, isLoading } = useQuery({
+  const [manualMode, setManualMode] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
+  const { data: message, isLoading } = useQuery({
     queryKey: ['message', id],
     queryFn: () => messagesApi.get(id!),
     enabled: Boolean(id),
     staleTime: 30_000,
   });
 
-  // Brouillon IA : outbound pending_approval avec aiSuggestion dans le thread
-  const aiDraft = (message?.rental.messages ?? []).find(
+  const thread = message?.rental.messages ?? [];
+
+  // Brouillon IA : outbound pending_approval dans le fil
+  const activeDraft = thread.find(
     m => m.direction === 'outbound' && m.status === 'pending_approval' && m.aiSuggestion != null,
   );
 
+  // Dernier message inbound du fil
+  const lastInbound = [...thread].reverse().find(m => m.direction === 'inbound');
+
+  // Le fil est répondu si au moins un outbound sent existe APRÈS le dernier inbound
+  const hasReplyAfterLastInbound = lastInbound
+    ? thread.some(
+        m =>
+          m.direction === 'outbound' &&
+          m.status === 'sent' &&
+          new Date(m.createdAt) > new Date(lastInbound.createdAt),
+      )
+    : false;
+
+  // BLOC 3 — brouillon périmé : nouveau inbound arrivé depuis la génération du brouillon
+  const isDraftStale =
+    activeDraft != null &&
+    lastInbound != null &&
+    new Date(lastInbound.createdAt) > new Date(activeDraft.createdAt);
+
+  // BLOC 1 — composer visible si : inbound sans réponse envoyée OU mode manuel forcé
+  const showComposer = (!hasReplyAfterLastInbound && lastInbound != null && !activeDraft) || manualMode;
+
+  const isThreadDismissed = Boolean(message?.rental.threadDismissedAt);
+
+  // Pré-remplir le textarea avec le brouillon IA quand il arrive
   useEffect(() => {
-    const suggestion = aiDraft?.content ?? message?.aiSuggestion;
-    if (suggestion && !replyContent) setReplyContent(suggestion);
+    const suggestion = activeDraft?.content ?? message?.aiSuggestion;
+    if (suggestion && !replyContent && !manualMode) setReplyContent(suggestion);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiDraft?.id, message?.aiSuggestion]);
+  }, [activeDraft?.id, message?.aiSuggestion]);
+
+  const invalidateAll = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['message', id] }),
+      qc.invalidateQueries({ queryKey: ['messages'] }),
+      qc.invalidateQueries({ queryKey: ['inbox-summary'] }),
+    ]);
+  };
 
   const approveMutation = useMutation({
     mutationFn: ({ msgId, content }: { msgId: string; content?: string }) =>
       messagesApi.approve(msgId, content || undefined),
+    onSuccess: () => { void invalidateAll(); setSendError(null); },
+    onError: (err: Error) => setSendError(err.message),
+  });
+
+  // "Répondre autrement" — écarte le brouillon IA, ouvre le composer manuel
+  const cancelDraftMutation = useMutation({
+    mutationFn: (msgId: string) => messagesApi.cancel(msgId),
     onSuccess: () => {
+      setManualMode(true);
+      setReplyContent('');
       void qc.invalidateQueries({ queryKey: ['message', id] });
-      void qc.invalidateQueries({ queryKey: ['messages'] });
-      void qc.invalidateQueries({ queryKey: ['inbox-summary'] });
     },
   });
 
-  const cancelMutation = useMutation({
-    mutationFn: () => messagesApi.cancel(id!),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['message', id] }); },
+  // "Clôturer sans réponse"
+  const dismissMutation = useMutation({
+    mutationFn: () => messagesApi.dismiss(message!.rentalId),
+    onSuccess: () => { void invalidateAll(); },
   });
+
+  // Réouvrir un fil clôturé
+  const undismissMutation = useMutation({
+    mutationFn: () => messagesApi.undismiss(message!.rentalId),
+    onSuccess: () => { void invalidateAll(); },
+  });
+
+  // BLOC 3 — régénérer un brouillon périmé
+  const regenerateMutation = useMutation({
+    mutationFn: () => messagesApi.regenerate(message!.rentalId),
+    onSuccess: () => {
+      setManualMode(false);
+      void qc.invalidateQueries({ queryKey: ['message', id] });
+    },
+  });
+
+  const aiSuggestDisabled =
+    message?.rental.status === 'completed' &&
+    differenceInDays(new Date(), new Date(message.rental.endAt)) > 7;
 
   if (isLoading) {
     return (
@@ -121,13 +189,6 @@ export default function MessageDetailPage(): React.JSX.Element {
     );
   }
 
-  const thread = message.rental.messages ?? [];
-  const isPending = message.status === 'pending_approval';
-  const isApproved = message.status === 'approved';
-  const aiSuggestDisabled =
-    message.rental.status === 'completed' &&
-    differenceInDays(new Date(), new Date(message.rental.endAt)) > 7;
-
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -144,6 +205,9 @@ export default function MessageDetailPage(): React.JSX.Element {
               {message.rental.vehicle.make} {message.rental.vehicle.model} · {message.rental.vehicle.licensePlate} ·{' '}
               {format(new Date(message.rental.startAt), 'dd/MM', { locale: fr })} →{' '}
               {format(new Date(message.rental.endAt), 'dd/MM/yy', { locale: fr })}
+              {isThreadDismissed && (
+                <span className="ml-2 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Clôturé</span>
+              )}
             </p>
           </div>
           <Link
@@ -158,72 +222,111 @@ export default function MessageDetailPage(): React.JSX.Element {
       {/* Thread */}
       <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6">
         <div className="mx-auto max-w-2xl space-y-3">
-          {thread.map((m, i) => (
-            <Bubble key={m.id} msg={m} isLast={i === thread.length - 1} />
+          {thread.map((m) => (
+            <Bubble key={m.id} msg={m} />
           ))}
         </div>
       </div>
 
-      {/* Zone réponse / approbation */}
+      {/* Zone réponse */}
       <div className="shrink-0 border-t border-gray-200 bg-white p-4 lg:p-6">
         <div className="mx-auto max-w-2xl space-y-3">
+
           {/* Analyse IA du dernier message entrant */}
           {message.direction === 'inbound' && message.aiAnalysis && (
             <AnalysisCard analysis={message.aiAnalysis} />
           )}
 
-          {/* Message en attente d'approbation — on affiche le contenu éditable */}
-          {(isPending || isApproved) && (
+          {sendError && (
+            <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{sendError}</p>
+          )}
+
+          {/* Fil clôturé */}
+          {isThreadDismissed && (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-center">
+              <p className="text-sm text-gray-500 mb-2">Ce fil a été clôturé sans réponse.</p>
+              <button
+                type="button"
+                onClick={() => undismissMutation.mutate()}
+                disabled={undismissMutation.isPending}
+                className="text-sm text-[#01696e] hover:underline disabled:opacity-60"
+              >
+                Réouvrir le fil
+              </button>
+            </div>
+          )}
+
+          {/* Brouillon IA en attente d'approbation */}
+          {!isThreadDismissed && activeDraft && !manualMode && (
             <>
-              <div data-testid="ai-draft-zone">
-                <div className="mb-1 flex items-center justify-between">
-                  <label className="text-xs font-medium text-gray-500">
-                    {isPending ? 'Suggestion à approuver' : 'Message approuvé'}
-                  </label>
+              {/* BLOC 3 — bannière brouillon périmé */}
+              {isDraftStale && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                  <span className="text-amber-600">⚠️</span>
+                  <span className="flex-1 text-amber-700">Le contexte a évolué depuis ce brouillon.</span>
+                  <button
+                    type="button"
+                    onClick={() => regenerateMutation.mutate()}
+                    disabled={regenerateMutation.isPending}
+                    className="shrink-0 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                  >
+                    {regenerateMutation.isPending ? 'Régénération...' : 'Régénérer'}
+                  </button>
                 </div>
+              )}
+
+              <div data-testid="ai-draft-zone">
+                <label className="mb-1 block text-xs font-medium text-gray-500">
+                  Suggestion IA à approuver
+                </label>
                 <textarea
-                  value={replyContent || (aiDraft?.content ?? '')}
+                  value={replyContent || activeDraft.content}
                   onChange={(e) => setReplyContent(e.target.value)}
                   placeholder="L'IA génère une suggestion..."
                   rows={4}
-                  readOnly={isApproved}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20 read-only:bg-gray-50 read-only:text-gray-500"
+                  disabled={isDraftStale}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20 disabled:bg-gray-50 disabled:text-gray-400"
                 />
               </div>
 
               <div className="flex gap-2">
-                {isPending && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => approveMutation.mutate({ msgId: id!, content: replyContent || message.content })}
-                      disabled={approveMutation.isPending}
-                      className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
-                      style={{ backgroundColor: '#01696e' }}
-                    >
-                      {approveMutation.isPending ? 'Approbation...' : 'Approuver'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => cancelMutation.mutate()}
-                      disabled={cancelMutation.isPending}
-                      className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
-                    >
-                      Annuler
-                    </button>
-                  </>
-                )}
-                {isApproved && (
-                  <p className="w-full text-center text-xs text-gray-400 py-2">En attente d'envoi sur Getaround</p>
-                )}
+                <button
+                  type="button"
+                  onClick={() => approveMutation.mutate({ msgId: activeDraft.id, content: replyContent || activeDraft.content })}
+                  disabled={approveMutation.isPending || isDraftStale}
+                  title={isDraftStale ? 'Régénérez le brouillon avant d\'approuver' : undefined}
+                  className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-60"
+                  style={{ backgroundColor: isDraftStale ? '#9ca3af' : '#01696e' }}
+                >
+                  {approveMutation.isPending ? 'Envoi...' : 'Approuver et envoyer'}
+                </button>
+                {/* BLOC 1 — "Répondre autrement" */}
+                <button
+                  type="button"
+                  onClick={() => cancelDraftMutation.mutate(activeDraft.id)}
+                  disabled={cancelDraftMutation.isPending}
+                  className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  Répondre autrement
+                </button>
+                {/* BLOC 1 — "Clôturer sans réponse" */}
+                <button
+                  type="button"
+                  onClick={() => dismissMutation.mutate()}
+                  disabled={dismissMutation.isPending}
+                  className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-medium text-gray-400 hover:bg-gray-50 disabled:opacity-60"
+                  title="Clôturer ce fil sans répondre"
+                >
+                  Clôturer
+                </button>
               </div>
             </>
           )}
 
-          {/* Réponse libre si le message est entrant et envoyé/aucun brouillon */}
-          {message.direction === 'inbound' && message.status === 'sent' && (
+          {/* Composer manuel — visible après "Répondre autrement" ou quand pas de brouillon ni réponse */}
+          {!isThreadDismissed && showComposer && !aiSuggestDisabled && (
             <div className="space-y-2">
-              {(aiDraft ?? message.aiSuggestion) && (
+              {activeDraft == null && (message.aiSuggestion) && !manualMode && (
                 <div className="flex items-center gap-1.5 text-xs font-medium text-[#01696e]">
                   <span>✨</span>
                   <span>Brouillon IA — modifiable avant envoi</span>
@@ -234,52 +337,57 @@ export default function MessageDetailPage(): React.JSX.Element {
                 onChange={(e) => setReplyContent(e.target.value)}
                 placeholder="Rédiger une réponse..."
                 rows={3}
+                autoFocus={manualMode}
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
               />
               <div className="flex gap-2">
-                {replyContent && (
+                {replyContent.trim() && (
                   <button
                     type="button"
                     onClick={() => {
-                      if (aiDraft) {
-                        approveMutation.mutate({ msgId: aiDraft.id, content: replyContent });
-                        setReplyContent('');
-                      } else {
-                        const content = replyContent;
-                        setReplyContent('');
-                        void (async () => {
-                          try {
-                            const newMsg = await messagesApi.create(message.rentalId, content);
-                            await messagesApi.approve(newMsg.id, content);
-                            await qc.invalidateQueries({ queryKey: ['message', id] });
-                            await qc.invalidateQueries({ queryKey: ['messages'] });
-                            await qc.invalidateQueries({ queryKey: ['inbox-summary'] });
-                          } catch (e) {
-                            console.error('[Envoyer] Erreur:', e);
-                          }
-                        })();
-                      }
+                      const content = replyContent.trim();
+                      setSendError(null);
+                      setReplyContent('');
+                      void (async () => {
+                        try {
+                          const newMsg = await messagesApi.create(message.rentalId, content);
+                          await messagesApi.approve(newMsg.id, content);
+                          await invalidateAll();
+                          setManualMode(false);
+                        } catch (e) {
+                          setSendError(e instanceof Error ? e.message : 'Erreur envoi');
+                        }
+                      })();
                     }}
-                    disabled={approveMutation.isPending}
                     className="flex-1 rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-60"
                     style={{ backgroundColor: '#01696e' }}
                   >
                     Envoyer
                   </button>
                 )}
+                {/* BLOC 1 — "Clôturer sans réponse" depuis le composer */}
+                {!hasReplyAfterLastInbound && (
+                  <button
+                    type="button"
+                    onClick={() => dismissMutation.mutate()}
+                    disabled={dismissMutation.isPending}
+                    className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-400 hover:bg-gray-50 disabled:opacity-60"
+                    title="Clôturer ce fil sans répondre"
+                  >
+                    Clôturer
+                  </button>
+                )}
               </div>
             </div>
           )}
 
-          {/* Message envoyé ou annulé — lecture seule */}
-          {(message.status === 'sent' && message.direction === 'outbound') && (
+          {/* Fil traité : dernier outbound envoyé */}
+          {hasReplyAfterLastInbound && !activeDraft && !manualMode && (
             <p className="text-center text-xs text-gray-400">
-              Message envoyé le {message.sentAt ? format(new Date(message.sentAt), 'dd/MM/yyyy à HH:mm', { locale: fr }) : '—'}
+              Réponse envoyée ✓
             </p>
           )}
-          {message.status === 'cancelled' && (
-            <p className="text-center text-xs text-gray-400">Message annulé</p>
-          )}
+
         </div>
       </div>
     </div>

@@ -16,7 +16,6 @@ export type MessageFilters = {
 export async function listMessages(db: PrismaClient, filters: MessageFilters = {}) {
   const { rentalId, vehicleId, vehicleIds, rentalStatus, startDate, endDate, direction, sortOrder = 'desc', page = 1, limit = 50 } = filters;
 
-  // Étape 1 : si filtres sur la location, résoudre les rentalIds éligibles
   let eligibleRentalIds: string[] | null = null;
   if (vehicleId || vehicleIds || rentalStatus || startDate || endDate) {
     const matchingRentals = await db.rental.findMany({
@@ -39,7 +38,6 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
     ...(eligibleRentalIds ? { rentalId: { in: eligibleRentalIds } } : {}),
   } as never;
 
-  // Étape 2 : groupBy rentalId → conversations distinctes triées par dernier message
   const rentalGroups = await db.message.groupBy({
     by: ['rentalId'],
     _max: { sentAt: true },
@@ -56,33 +54,58 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
     return { messages: [], total, page, limit };
   }
 
-  // Étape 3 : message le plus récent par conversation (distinct rentalId)
-  const messages = await db.message.findMany({
-    where: { rentalId: { in: rentalIds } },
-    include: {
-      rental: {
-        select: {
-          id: true,
-          driverName: true,
-          startAt: true,
-          endAt: true,
-          status: true,
-          vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
+  const [messages, answeredRows, lastInboundRows] = await Promise.all([
+    db.message.findMany({
+      where: { rentalId: { in: rentalIds } },
+      include: {
+        rental: {
+          select: {
+            id: true,
+            driverName: true,
+            startAt: true,
+            endAt: true,
+            status: true,
+            threadDismissedAt: true,
+            vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
+          },
         },
+        approvedBy: { select: { id: true, name: true } },
       },
-      approvedBy: { select: { id: true, name: true } },
-    },
-    orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
-    distinct: ['rentalId'],
-  });
+      orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
+      distinct: ['rentalId'],
+    }),
+    // Per-rental: has at least one sent/approved outbound?
+    db.message.findMany({
+      where: { rentalId: { in: rentalIds }, direction: 'outbound', status: { in: ['sent', 'approved'] } },
+      select: { rentalId: true },
+      distinct: ['rentalId'],
+    }),
+    // Per-rental: timestamp of the last inbound message
+    db.message.findMany({
+      where: { rentalId: { in: rentalIds }, direction: 'inbound' },
+      select: { rentalId: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      distinct: ['rentalId'],
+    }),
+  ]);
 
-  // Étape 4 : réordonner selon l'ordre des groupes
+  const answeredSet = new Set(answeredRows.map(m => m.rentalId).filter((id): id is string => id !== null));
+  const lastInboundMap = new Map(lastInboundRows.map(m => [m.rentalId, m.createdAt]));
+
   const messageMap = new Map(messages.map(m => [m.rentalId, m]));
   const ordered = rentalIds.map(rid => messageMap.get(rid)).filter((m): m is NonNullable<typeof m> => m != null);
 
+  // Enrich with computed fields — no schema mutation needed
+  const enriched = ordered.map(m => ({
+    ...m,
+    isThreadAnswered: answeredSet.has(m.rentalId ?? ''),
+    lastInboundAt: lastInboundMap.get(m.rentalId ?? '') ?? null,
+    threadDismissedAt: m.rental.threadDismissedAt ?? null,
+  }));
+
   const total = await db.message.groupBy({ by: ['rentalId'], where: msgWhere }).then(g => g.length);
 
-  return { messages: ordered, total, page, limit };
+  return { messages: enriched, total, page, limit };
 }
 
 export async function getMessage(db: PrismaClient, id: string) {
@@ -96,6 +119,8 @@ export async function getMessage(db: PrismaClient, id: string) {
           driverEmail: true,
           startAt: true,
           endAt: true,
+          status: true,
+          threadDismissedAt: true,
           vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
           messages: {
             orderBy: { createdAt: 'asc' },
@@ -108,6 +133,7 @@ export async function getMessage(db: PrismaClient, id: string) {
               aiSuggestion: true,
               aiAnalysis: true,
               createdAt: true,
+              importedViaSync: true,
             },
           },
         },
@@ -142,9 +168,7 @@ export async function approveMessage(db: PrismaClient, id: string, approverId: s
     approvedById: approverId,
     approvedAt: new Date(),
   };
-  // Permet de modifier le contenu avant approbation
   if (content) data.content = content;
-
   return db.message.update({ where: { id }, data });
 }
 
@@ -166,6 +190,22 @@ export async function cancelMessage(db: PrismaClient, id: string) {
   });
 }
 
+export async function dismissThread(db: PrismaClient, rentalId: string) {
+  return db.rental.update({
+    where: { id: rentalId },
+    data: { threadDismissedAt: new Date() },
+    select: { id: true, threadDismissedAt: true },
+  });
+}
+
+export async function undismissThread(db: PrismaClient, rentalId: string) {
+  return db.rental.update({
+    where: { id: rentalId },
+    data: { threadDismissedAt: null },
+    select: { id: true, threadDismissedAt: true },
+  });
+}
+
 export async function getInboxSummary(db: PrismaClient, vehicleIds?: string[]) {
   const settings = await db.companySettings.findFirst({ select: { messageUnansweredMinutes: true } });
   const delayMin = settings?.messageUnansweredMinutes ?? 30;
@@ -183,6 +223,7 @@ export async function getInboxSummary(db: PrismaClient, vehicleIds?: string[]) {
     db.rental.count({
       where: {
         ...vFilter,
+        threadDismissedAt: null,
         messages: {
           some: { direction: 'inbound' },
           none: { direction: 'outbound', status: { in: ['approved', 'sent'] } },
@@ -193,6 +234,7 @@ export async function getInboxSummary(db: PrismaClient, vehicleIds?: string[]) {
     db.rental.findMany({
       where: {
         ...vFilter,
+        threadDismissedAt: null,
         status: { in: ['booked', 'active'] },
         messages: {
           some: { direction: 'inbound', createdAt: { lt: cutoff } },
@@ -231,7 +273,6 @@ export async function getInboxSummary(db: PrismaClient, vehicleIds?: string[]) {
     createdAt: m.createdAt.toISOString(),
   }));
 
-  // Brouillons IA en attente de validation (outbound pending_approval avec aiSuggestion)
   const pendingApprovalMsgs = await db.message.findMany({
     where: {
       direction: 'outbound',

@@ -23,13 +23,19 @@ export interface Message {
   approvedBy: { id: string; name: string } | null;
   approvedAt: string | null;
   cancelledAt: string | null;
+  importedViaSync?: boolean;
   createdAt: string;
+  // Computed by listMessages backend
+  isThreadAnswered?: boolean;
+  lastInboundAt?: string | null;
+  threadDismissedAt?: string | null;
   rental: {
     id: string;
     driverName: string;
     startAt: string;
     endAt: string;
     status: string;
+    threadDismissedAt?: string | null;
     vehicle: { id: string; make: string; model: string; licensePlate: string };
     messages?: Array<{
       id: string;
@@ -38,7 +44,9 @@ export interface Message {
       sentAt: string | null;
       status: string;
       aiSuggestion: string | null;
+      aiAnalysis?: unknown;
       createdAt: string;
+      importedViaSync?: boolean;
     }>;
   };
 }
@@ -60,13 +68,22 @@ export const messagesApi = {
     api.post<{ message: Message }>('/messages', { rentalId, content, aiSuggestion }).then((r) => r.data.message),
 
   approve: (id: string, content?: string) =>
-    api.post<{ message: Message }>(`/messages/${id}/approve`, { content }).then((r) => r.data.message),
+    api.post<{ success: boolean; status?: string }>(`/messages/${id}/approve`, { content }).then((r) => r.data),
 
   markSent: (id: string, getaroundMessageId?: string) =>
     api.post<{ message: Message }>(`/messages/${id}/mark-sent`, { getaroundMessageId }).then((r) => r.data.message),
 
   cancel: (id: string) =>
     api.post<{ message: Message }>(`/messages/${id}/cancel`).then((r) => r.data.message),
+
+  dismiss: (rentalId: string) =>
+    api.post<{ success: boolean }>(`/messages/rental/${rentalId}/dismiss`).then((r) => r.data),
+
+  undismiss: (rentalId: string) =>
+    api.post<{ success: boolean }>(`/messages/rental/${rentalId}/undismiss`).then((r) => r.data),
+
+  regenerate: (rentalId: string) =>
+    api.post<{ success: boolean; message?: string }>(`/messages/rental/${rentalId}/regenerate`).then((r) => r.data),
 
   inboxSummary: () =>
     api.get<InboxSummary>('/messages/inbox-summary').then((r) => r.data),

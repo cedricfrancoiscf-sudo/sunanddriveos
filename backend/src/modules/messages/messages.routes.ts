@@ -1,4 +1,4 @@
-﻿import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, isOnlyCarkeeper, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
@@ -11,7 +11,12 @@ import {
   markAsSent,
   cancelMessage,
   getInboxSummary,
+  dismissThread,
+  undismissThread,
 } from './messages.service';
+import { analyzeAndProcessMessage } from './messaging.service';
+import { decrypt } from '../../utils/crypto';
+import { createGetaroundClient } from '../getaround-sync/getaround-api';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -61,7 +66,7 @@ router.get('/inbox-summary', async (req: Request, res: Response, next: NextFunct
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
-    const message = await getMessage(db, (req.params.id as string));
+    const message = await getMessage(db, req.params.id as string);
     if (!message) { res.status(404).json({ error: 'Message introuvable' }); return; }
     res.json({ message });
   } catch (err: unknown) { next(err); }
@@ -90,7 +95,6 @@ router.post('/:id/approve', requireAuth, resolveTenant, async (req: Request, res
     const body = z.object({ content: z.string().optional() }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
 
-    // Récupérer le message avec sa location et son compte Getaround
     const message = await db.message.findUnique({
       where: { id: req.params.id as string },
       include: {
@@ -111,14 +115,9 @@ router.post('/:id/approve', requireAuth, resolveTenant, async (req: Request, res
 
     const content = body.data.content ?? message.content;
 
-    // 1. Approuver en base
     await approveMessage(db, req.params.id as string, req.auth!.userId!, content);
 
-    // 2. Envoyer via API Getaround
     try {
-      const { createGetaroundClient } = await import('../getaround-sync/getaround-api');
-      const { decrypt } = await import('../../utils/crypto');
-
       const apiKeyHash = message.rental.vehicle.getaroundAccount?.apiKeyHash;
       if (!apiKeyHash) throw new Error('Compte Getaround introuvable');
 
@@ -128,7 +127,6 @@ router.post('/:id/approve', requireAuth, resolveTenant, async (req: Request, res
 
       const sent = await ga.sendMessage(rentalId, content);
 
-      // 3. Marquer comme envoyé avec l'ID Getaround
       await markAsSent(db, req.params.id as string, String(sent.id));
 
       console.log(`[Messages] Message ${req.params.id as string} approuvé et envoyé (rental ${rentalId})`);
@@ -145,7 +143,7 @@ router.post('/:id/mark-sent', async (req: Request, res: Response, next: NextFunc
   try {
     const body = z.object({ getaroundMessageId: z.string().optional() }).safeParse(req.body);
     const db = getTenantClient(req.tenantDbUrl!);
-    const message = await markAsSent(db, (req.params.id as string), body.success ? body.data.getaroundMessageId : undefined);
+    const message = await markAsSent(db, req.params.id as string, body.success ? body.data.getaroundMessageId : undefined);
     res.json({ message });
   } catch (err: unknown) { next(err); }
 });
@@ -154,8 +152,110 @@ router.post('/:id/mark-sent', async (req: Request, res: Response, next: NextFunc
 router.post('/:id/cancel', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
-    const message = await cancelMessage(db, (req.params.id as string));
+    const message = await cancelMessage(db, req.params.id as string);
     res.json({ message });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/messages/rental/:rentalId/dismiss — clôturer le fil sans réponse
+router.post('/rental/:rentalId/dismiss', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const result = await dismissThread(db, req.params.rentalId as string);
+    res.json({ success: true, ...result });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/messages/rental/:rentalId/undismiss — réouvrir un fil clôturé
+router.post('/rental/:rentalId/undismiss', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const result = await undismissThread(db, req.params.rentalId as string);
+    res.json({ success: true, ...result });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/messages/rental/:rentalId/regenerate — régénérer le brouillon IA
+router.post('/rental/:rentalId/regenerate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const rentalId = req.params.rentalId as string;
+
+    // Annuler le brouillon pending existant
+    await db.message.updateMany({
+      where: { rentalId, direction: 'outbound', status: 'pending_approval' },
+      data: { status: 'cancelled', cancelledAt: new Date() },
+    });
+
+    // Trouver le dernier message inbound pour le contexte
+    const lastInbound = await db.message.findFirst({
+      where: { rentalId, direction: 'inbound' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, content: true, importedViaSync: true, createdAt: true },
+    });
+
+    if (!lastInbound) {
+      res.json({ success: true, message: 'Aucun message inbound trouvé' });
+      return;
+    }
+
+    // Construire le contexte de la location
+    const rental = await db.rental.findUnique({
+      where: { id: rentalId },
+      select: {
+        id: true, vehicleId: true, driverName: true, driverGetaroundId: true,
+        getaroundId: true, startAt: true, endAt: true, status: true,
+        vehicle: {
+          select: {
+            make: true, model: true, licensePlate: true,
+            parkingZone: true, deliveryPointName: true, getaroundAccountId: true,
+          },
+        },
+      },
+    });
+
+    if (!rental?.vehicle.getaroundAccountId) {
+      res.json({ success: true, message: 'Compte Getaround introuvable' });
+      return;
+    }
+
+    const account = await db.getaroundAccount.findUnique({
+      where: { id: rental.vehicle.getaroundAccountId },
+      select: { apiKeyHash: true },
+    });
+
+    if (!account) {
+      res.json({ success: true, message: 'Compte Getaround introuvable' });
+      return;
+    }
+
+    const ga = createGetaroundClient(decrypt(account.apiKeyHash));
+
+    // Lancer la régénération en arrière-plan (pas de blocage HTTP)
+    void analyzeAndProcessMessage(
+      { ...lastInbound, importedViaSync: false },
+      {
+        id: rental.id,
+        vehicleId: rental.vehicleId,
+        driverName: rental.driverName,
+        driverGetaroundId: rental.driverGetaroundId,
+        getaroundId: rental.getaroundId,
+        startAt: rental.startAt,
+        endAt: rental.endAt,
+        status: rental.status,
+        vehicle: {
+          make: rental.vehicle.make,
+          model: rental.vehicle.model,
+          licensePlate: rental.vehicle.licensePlate,
+          parkingZone: rental.vehicle.parkingZone,
+          deliveryPointName: rental.vehicle.deliveryPointName,
+        },
+      },
+      db,
+      ga,
+    ).catch(e => console.error('[Regenerate] Erreur:', e));
+
+    res.json({ success: true, message: 'Régénération lancée' });
   } catch (err: unknown) { next(err); }
 });
 

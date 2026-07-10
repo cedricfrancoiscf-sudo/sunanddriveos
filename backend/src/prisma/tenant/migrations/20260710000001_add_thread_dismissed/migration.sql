@@ -1,0 +1,1 @@
+﻿ALTER TABLE "rentals" ADD COLUMN IF NOT EXISTS "threadDismissedAt" TIMESTAMP(3);

@@ -10,7 +10,7 @@ import cron from 'node-cron';
 import { createApp } from './app';
 import { disconnectAll, getMasterClient, getTenantClient } from './prisma/client';
 import { executePendingSequences, cleanupObsoleteSequences } from './modules/sequences/sequences.service';
-import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayouts, syncUnavailabilitiesForTenant } from './modules/getaround-sync/getaround-sync.service';
+import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayouts, syncUnavailabilitiesForTenant, syncAccountMessages } from './modules/getaround-sync/getaround-sync.service';
 import { generateCeoReportAsync } from './modules/intelligence/report.routes';
 import { analyzeAndProcessMessage, morningConversationReview, type RentalForMessaging } from './modules/messages/messaging.service';
 import { decrypt } from './utils/crypto';
@@ -226,6 +226,43 @@ async function runRecentWindowSyncForAllTenants(): Promise<void> {
 // Premier passage Getaround après 120s (fenêtre glissante), puis toutes les heures
 setTimeout(() => void runRecentWindowSyncForAllTenants(), 120_000);
 cron.schedule('0 * * * *', () => void runRecentWindowSyncForAllTenants());
+
+// ─── Sync messages prioritaire (cron toutes les 15 min) ──────────────────────
+// Job indépendant : ne polled que les locations actives/réservées/complétées <7j
+// Évite la saturation du rate-limit en découplant messages des payouts/invoices.
+
+let isMessageSyncRunning = false;
+
+async function runMessageSyncForAllTenants(): Promise<void> {
+  if (isMessageSyncRunning) { console.log('[MessageSync] Déjà en cours, skip'); return; }
+  isMessageSyncRunning = true;
+  try {
+    const master = getMasterClient();
+    const companies = await master.company.findMany({
+      where: { isActive: true },
+      select: { tenantDbUrl: true, slug: true },
+    });
+    for (const company of companies) {
+      const db = getTenantClient(company.tenantDbUrl);
+      const accounts = await db.getaroundAccount.findMany({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      for (const account of accounts) {
+        await syncAccountMessages(db, account.id, company.slug)
+          .catch(err => console.error(`[MessageSync] ${company.slug} compte ${account.id}:`, err instanceof Error ? err.message : err));
+      }
+    }
+  } catch (err: unknown) {
+    console.error('[MessageSync] Erreur générale :', err);
+  } finally {
+    isMessageSyncRunning = false;
+  }
+}
+
+// Premier passage messages après 60s, puis toutes les 15 min
+setTimeout(() => void runMessageSyncForAllTenants(), 60_000);
+cron.schedule('*/15 * * * *', () => void runMessageSyncForAllTenants());
 
 // ─── Messagerie proactive (cron 30 min) ──────────────────────────────────────
 

@@ -1,7 +1,7 @@
 import type { PrismaClient } from '../../generated/tenant';
 import { Prisma } from '../../generated/tenant';
 import { decrypt, encrypt } from '../../utils/crypto';
-import { createGetaroundClient, type GetaroundRental, parseInvoiceCharges } from './getaround-api';
+import { createGetaroundClient, type GetaroundRental, type ApiCallCounters, parseInvoiceCharges } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
 import { analyzeMessage, suggestReply } from '../ai/ai.service';
 import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
@@ -22,6 +22,8 @@ interface SyncState {
   lastSyncResult: { created: number; updated: number } | null;
   error: string | null;
   isTrialLimited: boolean;
+  apiCallCounts: ApiCallCounters | null;
+  lastMessageSyncAt: Date | null;
 }
 
 const syncStateMap: Record<string, SyncState> = {};
@@ -37,11 +39,28 @@ export function getSyncState(tenantSlug: string): SyncState {
     lastSyncResult: null,
     error: null,
     isTrialLimited: false,
+    apiCallCounts: null,
+    lastMessageSyncAt: null,
   };
 }
 
 export function updateSyncState(tenantSlug: string, update: Partial<SyncState>): void {
   syncStateMap[tenantSlug] = { ...getSyncState(tenantSlug), ...update };
+}
+
+// ─── Cache fraîcheur messages : évite de re-fetcher des messages déjà récents ─
+// Clé : `${tenantSlug}:${rentalGetaroundId}` → timestamp du dernier fetch
+const messageFreshnessCache = new Map<string, number>();
+const MESSAGE_FRESHNESS_MS = 15 * 60_000; // 15 min
+
+function isMessageFresh(tenantSlug: string, rentalGetaroundId: string): boolean {
+  const key = `${tenantSlug}:${rentalGetaroundId}`;
+  const last = messageFreshnessCache.get(key) ?? 0;
+  return Date.now() - last < MESSAGE_FRESHNESS_MS;
+}
+
+function markMessageFetched(tenantSlug: string, rentalGetaroundId: string): void {
+  messageFreshnessCache.set(`${tenantSlug}:${rentalGetaroundId}`, Date.now());
 }
 
 export interface SyncResult {
@@ -321,6 +340,7 @@ export async function syncRecentWindowForAccount(
   } catch (e) { console.error(`[Invoices][${tenantSlug}] Erreur sync invoices:`, e); }
 
   console.log(`[Cron][${tenantSlug}] Fenêtre glissante terminée — +${result.created} créés, ${result.updated} mis à jour`);
+  updateSyncState(tenantSlug, { apiCallCounts: { ...ga.counters }, lastSyncAt: new Date() });
   return result;
 }
 
@@ -680,6 +700,10 @@ async function syncMessagesForWindow(
     if (!rental.getaroundId) continue;
     if (rental.getaroundId.startsWith('test_')) continue;
     const gaRentalId = parseInt(rental.getaroundId, 10);
+
+    // Skip si ce rental a été sync'd il y a moins de MESSAGE_FRESHNESS_MS
+    if (isMessageFresh(tenantSlug, rental.getaroundId)) continue;
+    markMessageFetched(tenantSlug, rental.getaroundId);
 
     try {
       const messages = await ga.getMessages(gaRentalId);
@@ -1242,6 +1266,10 @@ export async function syncAccountMessages(
     if (!rental.getaroundId) continue;
     const gaRentalId = parseInt(rental.getaroundId, 10);
 
+    // Skip si ce rental a été sync'd il y a moins de MESSAGE_FRESHNESS_MS
+    if (isMessageFresh(tenantSlug, rental.getaroundId)) continue;
+    markMessageFetched(tenantSlug, rental.getaroundId);
+
     try {
       // /rentals/{rental_id}/messages.json → [{id}] puis /messages/{id}.json pour chaque
       const messages = await ga.getMessages(gaRentalId);
@@ -1310,6 +1338,7 @@ export async function syncAccountMessages(
     await sleep(500); // toujours exécuté, même en cas d'erreur
   }
 
+  updateSyncState(tenantSlug, { lastMessageSyncAt: new Date(), apiCallCounts: { ...ga.counters } });
   return result;
 }
 

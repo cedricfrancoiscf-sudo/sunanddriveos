@@ -1,26 +1,62 @@
-﻿import axios, { type AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 
 const BASE_URL = 'https://api-eu.getaround.com/owner/v1';
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } }).response?.status;
-      if (status === 429) {
-        const wait = Math.pow(2, attempt) * 2000;
-        console.log(`[RateLimit] 429 — attente ${wait / 1000}s (tentative ${attempt + 1}/${maxRetries})`);
-        await sleep(wait);
-        continue;
-      }
-      throw err;
-    }
+// ─── Token-bucket rate limiter ───────────────────────────────────────────────
+
+class RateLimiter {
+  private tokens: number;
+  private readonly maxTokens: number;
+  private lastRefill: number;
+  private readonly refillRatePerMs: number; // tokens per millisecond
+
+  constructor(maxPerMinute: number) {
+    this.maxTokens = maxPerMinute;
+    this.tokens = maxPerMinute;
+    this.lastRefill = Date.now();
+    this.refillRatePerMs = maxPerMinute / 60_000;
   }
-  throw new Error(`[RateLimit] Max ${maxRetries} tentatives atteint`);
+
+  async acquire(): Promise<void> {
+    this.refill();
+    if (this.tokens >= 1) {
+      this.tokens -= 1;
+      return;
+    }
+    // Wait until we have a token
+    const waitMs = Math.ceil((1 - this.tokens) / this.refillRatePerMs);
+    await sleep(waitMs);
+    this.refill();
+    this.tokens = Math.max(0, this.tokens - 1);
+  }
+
+  private refill(): void {
+    const now = Date.now();
+    const elapsed = now - this.lastRefill;
+    this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRatePerMs);
+    this.lastRefill = now;
+  }
 }
+
+// ─── Per-run API call counters ────────────────────────────────────────────────
+
+export interface ApiCallCounters {
+  total: number;
+  cars: number;
+  rentals: number;
+  messages: number;
+  payouts: number;
+  invoices: number;
+  checkins: number;
+  unavailabilities: number;
+  rateLimitHits: number;
+  firstRateLimitAt: string | null;
+  firstRateLimitResource: string | null;
+}
+
+// ─── Interfaces API Getaround ─────────────────────────────────────────────────
 
 // GET /cars/{id}.json — champs exacts selon OpenAPI spec
 export interface GetaroundCar {
@@ -191,38 +227,8 @@ function splitInto30DayWindows(start: Date, end: Date): Array<{ start: Date; end
   return windows;
 }
 
-// Récupère toutes les pages d'un endpoint paginé (retourne des éléments partiels {id} ou {rental_id})
-// Les params sont injectés directement dans l'URL (pas via axios params) pour éviter
-// l'encodage des ":" en "%3A" qui provoque des 422 sur l'API Getaround.
-async function fetchAllPages<T>(
-  client: AxiosInstance,
-  url: string,
-  params: Record<string, string>,
-): Promise<T[]> {
-  const all: T[] = [];
-  let page = 1;
-  while (true) {
-    const allParams = { ...params, page: String(page), per_page: '30' };
-    const qs = Object.entries(allParams).map(([k, v]) => `${k}=${v}`).join('&');
-    const fullUrl = `${url}?${qs}`;
-    console.log(`[API] GET ${url} (page ${page})`);
-    const res = await withRetry(() => client.get<T[]>(fullUrl));
-    await sleep(300);
-    if (!Array.isArray(res.data)) {
-      console.error('[API] Réponse inattendue (non-array):', res.status, JSON.stringify(res.data).slice(0, 200));
-      break;
-    }
-    const items = res.data;
-    all.push(...items);
-    const linkHeader = res.headers['link'] as string | undefined;
-    if (!linkHeader?.includes('rel="next"')) break;
-    page++;
-  }
-  return all;
-}
-
 export function createGetaroundClient(apiKey: string) {
-  const client = axios.create({
+  const client: AxiosInstance = axios.create({
     baseURL: BASE_URL,
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -232,21 +238,92 @@ export function createGetaroundClient(apiKey: string) {
     timeout: 15_000,
   });
 
+  // 250 req/min — marge de 50 req/min sous la limite Getaround (300/min)
+  const limiter = new RateLimiter(250);
+
+  const counters: ApiCallCounters = {
+    total: 0,
+    cars: 0,
+    rentals: 0,
+    messages: 0,
+    payouts: 0,
+    invoices: 0,
+    checkins: 0,
+    unavailabilities: 0,
+    rateLimitHits: 0,
+    firstRateLimitAt: null,
+    firstRateLimitResource: null,
+  };
+
+  // Appel throttlé avec retry exponentiel sur 429 — le run reprend, n'est pas abandonné
+  async function callApi<T>(resource: keyof Omit<ApiCallCounters, 'total' | 'rateLimitHits' | 'firstRateLimitAt' | 'firstRateLimitResource'>, fn: () => Promise<T>, maxRetries = 5): Promise<T> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      await limiter.acquire();
+      counters.total++;
+      counters[resource]++;
+      try {
+        return await fn();
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } }).response?.status;
+        if (status === 429) {
+          counters.rateLimitHits++;
+          if (!counters.firstRateLimitAt) {
+            counters.firstRateLimitAt = new Date().toISOString();
+            counters.firstRateLimitResource = resource;
+            console.warn(`[RateLimit] PREMIER 429 — ressource: ${resource}, appel #${counters.total}`);
+          }
+          const wait = Math.pow(2, attempt) * 2_000;
+          console.log(`[RateLimit] 429 — ${resource}, attente ${wait / 1000}s (tentative ${attempt + 1}/${maxRetries})`);
+          await sleep(wait);
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error(`[RateLimit] Max ${maxRetries} tentatives atteint — ressource: ${resource}`);
+  }
+
+  async function fetchPages<T>(
+    resource: keyof Omit<ApiCallCounters, 'total' | 'rateLimitHits' | 'firstRateLimitAt' | 'firstRateLimitResource'>,
+    url: string,
+    params: Record<string, string>,
+  ): Promise<T[]> {
+    const all: T[] = [];
+    let page = 1;
+    while (true) {
+      const allParams = { ...params, page: String(page), per_page: '30' };
+      const qs = Object.entries(allParams).map(([k, v]) => `${k}=${v}`).join('&');
+      const fullUrl = `${url}?${qs}`;
+      console.log(`[API] GET ${url} (page ${page})`);
+      const res = await callApi(resource, () => client.get<T[]>(fullUrl));
+      if (!Array.isArray(res.data)) {
+        console.error('[API] Réponse inattendue (non-array):', res.status, JSON.stringify(res.data).slice(0, 200));
+        break;
+      }
+      all.push(...res.data);
+      const linkHeader = res.headers['link'] as string | undefined;
+      if (!linkHeader?.includes('rel="next"')) break;
+      page++;
+    }
+    return all;
+  }
+
   return {
-    // /cars.json retourne uniquement [{id}] — il faut appeler /cars/{id}.json pour chaque
+    /** Compteurs d'appels API pour le diagnostic — mutable, reflète l'état en temps réel */
+    counters,
+
     async getCars(): Promise<GetaroundCar[]> {
-      const ids = await fetchAllPages<{ id: number }>(client, '/cars.json', {});
+      const ids = await fetchPages<{ id: number }>('cars', '/cars.json', {});
       const cars: GetaroundCar[] = [];
       for (const { id } of ids) {
-        const res = await withRetry(() => client.get<GetaroundCar>(`/cars/${id}.json`));
+        const res = await callApi('cars', () => client.get<GetaroundCar>(`/cars/${id}.json`));
         cars.push(res.data);
-        await sleep(300);
       }
       return cars;
     },
 
     async getCar(id: number): Promise<GetaroundCar> {
-      const res = await withRetry(() => client.get<GetaroundCar>(`/cars/${id}.json`));
+      const res = await callApi('cars', () => client.get<GetaroundCar>(`/cars/${id}.json`));
       return res.data;
     },
 
@@ -256,12 +333,11 @@ export function createGetaroundClient(apiKey: string) {
     async getRentals(startDate: Date, endDate: Date): Promise<GetaroundRental[]> {
       const windows = splitInto30DayWindows(startDate, endDate);
 
-      // Collecter tous les IDs uniques sur toutes les fenêtres
       const seenIds = new Set<number>();
       for (const w of windows) {
         console.log(`[Sync] Fenêtre : ${toGetaroundDate(w.start)} → ${toGetaroundDate(w.end)}`);
         try {
-          const chunk = await fetchAllPages<{ id: number }>(client, '/rentals.json', {
+          const chunk = await fetchPages<{ id: number }>('rentals', '/rentals.json', {
             start_date: toGetaroundDate(w.start),
             end_date: toGetaroundDate(w.end),
           });
@@ -276,14 +352,12 @@ export function createGetaroundClient(apiKey: string) {
         }
       }
 
-      // Récupérer le détail de chaque location
       console.log('[Sync] IDs locations collectés:', seenIds.size);
       const rentals: GetaroundRental[] = [];
       for (const id of seenIds) {
         try {
           console.log('[Sync] Appel détail location:', id);
-          const res = await withRetry(() => client.get<GetaroundRental>(`/rentals/${id}.json`));
-          await sleep(300);
+          const res = await callApi('rentals', () => client.get<GetaroundRental>(`/rentals/${id}.json`));
           rentals.push(res.data);
           console.log('[Sync] Location récupérée:', id);
         } catch (err: unknown) {
@@ -294,58 +368,56 @@ export function createGetaroundClient(apiKey: string) {
     },
 
     async getRental(id: number): Promise<GetaroundRental> {
-      const res = await withRetry(() => client.get<GetaroundRental>(`/rentals/${id}.json`));
+      const res = await callApi('rentals', () => client.get<GetaroundRental>(`/rentals/${id}.json`));
       return res.data;
     },
 
     async getUser(id: number): Promise<GetaroundUser> {
-      const res = await withRetry(() => client.get<GetaroundUser>(`/users/${id}.json`));
+      // Les utilisateurs ne comptent pas dans un bucket dédié — on les loge sous 'rentals'
+      const res = await callApi('rentals', () => client.get<GetaroundUser>(`/users/${id}.json`));
       return res.data;
     },
 
     async getCheckin(rentalId: number): Promise<GetaroundCheckin> {
-      const res = await withRetry(() => client.get<GetaroundCheckin>(`/rentals/${rentalId}/checkin.json`));
+      const res = await callApi('checkins', () => client.get<GetaroundCheckin>(`/rentals/${rentalId}/checkin.json`));
       return res.data;
     },
 
     async getCheckout(rentalId: number): Promise<GetaroundCheckout> {
-      const res = await withRetry(() => client.get<GetaroundCheckout>(`/rentals/${rentalId}/checkout.json`));
+      const res = await callApi('checkins', () => client.get<GetaroundCheckout>(`/rentals/${rentalId}/checkout.json`));
       return res.data;
     },
 
     // /rentals/{rental_id}/messages.json → [{id}] seulement, puis /messages/{id}.json pour chaque
     async getMessages(rentalId: number): Promise<GetaroundMessage[]> {
-      const ids = await fetchAllPages<{ id: number }>(client, `/rentals/${rentalId}/messages.json`, {});
+      const ids = await fetchPages<{ id: number }>('messages', `/rentals/${rentalId}/messages.json`, {});
       const messages: GetaroundMessage[] = [];
       for (const { id } of ids) {
-        const res = await withRetry(() => client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`));
+        const res = await callApi('messages', () => client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`));
         messages.push(res.data);
-        await sleep(300);
       }
       return messages;
     },
 
     async getMessage(rentalId: number, id: number): Promise<GetaroundMessage> {
-      const res = await withRetry(() => client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`));
+      const res = await callApi('messages', () => client.get<GetaroundMessage>(`/rentals/${rentalId}/messages/${id}.json`));
       return res.data;
     },
 
     async sendMessage(rentalId: number, content: string): Promise<GetaroundMessage> {
-      const res = await withRetry(() => client.post<GetaroundMessage>(
+      const res = await callApi('messages', () => client.post<GetaroundMessage>(
         `/rentals/${rentalId}/messages.json`,
         { content },
       ));
       return res.data;
     },
 
-    // Crée une indisponibilité sur Getaround, découpe automatiquement en tranches de 30 jours.
-    // Retourne l'ID Getaround de la première tranche (ou null si échec).
     async createUnavailability(carId: number, startsAt: Date, endsAt: Date, reason: string): Promise<number | null> {
       const windows = splitInto30DayWindows(startsAt, endsAt);
       let firstId: number | null = null;
       for (const w of windows) {
         try {
-          const res = await withRetry(() => client.post<{ id?: number }>(`/cars/${carId}/unavailabilities.json`, {
+          const res = await callApi('unavailabilities', () => client.post<{ id?: number }>(`/cars/${carId}/unavailabilities.json`, {
             starts_at: toGetaroundDate(w.start),
             ends_at: toGetaroundDate(w.end),
             reason,
@@ -362,7 +434,7 @@ export function createGetaroundClient(apiKey: string) {
       const windows = splitInto30DayWindows(startsAt, endsAt);
       for (const w of windows) {
         try {
-          await withRetry(() => client.delete(`/cars/${carId}/unavailabilities.json`, {
+          await callApi('unavailabilities', () => client.delete(`/cars/${carId}/unavailabilities.json`, {
             data: { starts_at: toGetaroundDate(w.start), ends_at: toGetaroundDate(w.end) },
           }));
         } catch (err: unknown) {
@@ -380,7 +452,7 @@ export function createGetaroundClient(apiKey: string) {
         const url = `/cars/${carId}/unavailabilities.json?start_date=${toDay(w.start)}&end_date=${toDay(w.end)}`;
         console.log('[Unavailabilities] URL:', url);
         try {
-          const res = await withRetry(() => client.get<Array<{ id: number; starts_at: string; ends_at: string }>>(url));
+          const res = await callApi('unavailabilities', () => client.get<Array<{ id: number; starts_at: string; ends_at: string }>>(url));
           for (const item of Array.isArray(res.data) ? res.data : []) {
             if (!seenIds.has(item.id)) { seenIds.add(item.id); allResults.push(item); }
           }
@@ -397,21 +469,21 @@ export function createGetaroundClient(apiKey: string) {
     },
 
     async getRentalInvoices(rentalId: number): Promise<GetaroundInvoiceApi[]> {
-      return fetchAllPages<GetaroundInvoiceApi>(client, `/rentals/${rentalId}/invoices.json`, {});
+      return fetchPages<GetaroundInvoiceApi>('invoices', `/rentals/${rentalId}/invoices.json`, {});
     },
 
     async getInvoices(): Promise<GetaroundInvoiceApi[]> {
-      return fetchAllPages<GetaroundInvoiceApi>(client, '/invoices.json', {});
+      return fetchPages<GetaroundInvoiceApi>('invoices', '/invoices.json', {});
     },
 
     async getPayoutsAll(): Promise<GetaroundPayoutApi[]> {
-      return fetchAllPages<GetaroundPayoutApi>(client, '/payouts.json', {});
+      return fetchPages<GetaroundPayoutApi>('payouts', '/payouts.json', {});
     },
 
     async getPayouts(startDate: Date, endDate: Date): Promise<Array<{ id: number }>> {
       const qs = `start_date=${toGetaroundDate(startDate)}&end_date=${toGetaroundDate(endDate)}`;
       console.log('[Payouts API] URL:', `/payouts.json?${qs}`);
-      const res = await withRetry(() => client.get<Array<{ id: number }>>(`/payouts.json?${qs}`));
+      const res = await callApi('payouts', () => client.get<Array<{ id: number }>>(`/payouts.json?${qs}`));
       return res.data ?? [];
     },
 
@@ -422,7 +494,7 @@ export function createGetaroundClient(apiKey: string) {
       currency: string;
       invoices: Array<{ id: number }>;
     }> {
-      const res = await withRetry(() => client.get<{
+      const res = await callApi('payouts', () => client.get<{
         id: number;
         amount: number;
         completed_at: string;
@@ -441,7 +513,7 @@ export function createGetaroundClient(apiKey: string) {
       pdf_url: string;
       charges: Array<{ type: string; amount: number }>;
     }> {
-      const res = await withRetry(() => client.get<{
+      const res = await callApi('invoices', () => client.get<{
         id: number;
         product_type: string;
         product_id: number;
@@ -454,3 +526,5 @@ export function createGetaroundClient(apiKey: string) {
     },
   };
 }
+
+export type GetaroundClient = ReturnType<typeof createGetaroundClient>;

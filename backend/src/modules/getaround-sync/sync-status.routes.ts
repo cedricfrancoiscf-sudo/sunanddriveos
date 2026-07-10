@@ -12,12 +12,39 @@ router.get('/status', async (req: Request, res: Response, next: NextFunction) =>
   try {
     const tenantSlug = req.auth?.tenantSlug ?? 'default';
     const state = getSyncState(tenantSlug);
+    const db = getTenantClient(req.tenantDbUrl!);
     const master = getMasterClient();
-    const company = await master.company.findUnique({
-      where: { slug: tenantSlug },
-      select: { plan: true },
+
+    const [company, lastInbound, activeRentals] = await Promise.all([
+      master.company.findUnique({
+        where: { slug: tenantSlug },
+        select: { plan: true },
+      }),
+      db.message.findFirst({
+        where: { direction: 'inbound' },
+        orderBy: { sentAt: 'desc' },
+        select: { sentAt: true },
+      }),
+      db.rental.count({
+        where: { status: { in: ['booked', 'active'] } },
+      }),
+    ]);
+
+    const lastInboundAt = lastInbound?.sentAt ?? null;
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const alertStaleMessages =
+      activeRentals > 0 &&
+      (lastInboundAt === null || lastInboundAt < twentyFourHoursAgo);
+
+    res.json({
+      state,
+      plan: company?.plan ?? 'starter',
+      monitoring: {
+        lastInboundMessageAt: lastInboundAt,
+        activeRentalsCount: activeRentals,
+        alertStaleMessages,
+      },
     });
-    res.json({ state, plan: company?.plan ?? 'starter' });
   } catch (err: unknown) { next(err); }
 });
 

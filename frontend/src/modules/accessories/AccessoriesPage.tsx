@@ -467,7 +467,10 @@ function CarSeatsTab(): React.JSX.Element {
   });
 
   const recomputeStockMutation = useMutation({
-    mutationFn: () => api.post<{ updated: number }>('/car-seats/recompute-stock').then(r => r.data),
+    mutationFn: () => api.post<{
+      updated: number;
+      details: Array<{ seatName: string; heldCount: number; availableStock: number; neutralized: number }>;
+    }>('/car-seats/recompute-stock').then(r => r.data),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['car-seats'] }),
   });
 
@@ -518,12 +521,22 @@ function CarSeatsTab(): React.JSX.Element {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => recomputeStockMutation.mutate()}
-            disabled={recomputeStockMutation.isPending}
-            title="Recalcule le stock disponible à partir des sièges réellement en location"
-            className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40">
-            {recomputeStockMutation.isPending ? 'Recalcul...' : 'Recalculer le stock'}
-          </button>
+          <div className="flex flex-col items-end">
+            <button type="button" onClick={() => recomputeStockMutation.mutate()}
+              disabled={recomputeStockMutation.isPending}
+              title="Recalcule le stock disponible à partir des sièges réellement en location"
+              className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+              {recomputeStockMutation.isPending ? 'Recalcul...' : 'Recalculer le stock'}
+            </button>
+            {recomputeStockMutation.data && (
+              <p className="mt-1 text-[11px] text-gray-400">
+                {recomputeStockMutation.data.updated} siège(s) recalculé(s)
+                {recomputeStockMutation.data.details.some(d => d.neutralized > 0) && (
+                  <> · {recomputeStockMutation.data.details.reduce((s, d) => s + d.neutralized, 0)} demande(s) périmée(s) neutralisée(s)</>
+                )}
+              </p>
+            )}
+          </div>
           <button type="button" onClick={() => { setShowForm(true); setEditId(null); setForm(EMPTY_SEAT); }}
             className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: '#01696e' }}>
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>

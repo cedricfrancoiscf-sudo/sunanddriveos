@@ -459,12 +459,11 @@ async function runMorningRebalayage(): Promise<void> {
         // ─── Alertes ROI fenêtre de revente optimale ────────────────────────
         await runRoiAlerts(db, company.slug);
 
-        // ─── Auto-clôture des fils non répondus sur locations terminées ────
+        // ─── Auto-clôture des fils non répondus sur locations terminées/annulées ─
         try {
           const settings = await db.companySettings.findFirst({ select: { threadAutoCloseDays: true } });
           const autoCloseDays = settings?.threadAutoCloseDays ?? 7;
-          const { closed } = await autoCloseStaleThreads(db, autoCloseDays);
-          if (closed > 0) console.log(`[Cron 7h] ${company.slug} : ${closed} fil(s) clôturé(s) automatiquement`);
+          await autoCloseStaleThreads(db, autoCloseDays, company.slug);
         } catch (e) { console.error(`[AutoClose] Erreur tenant ${company.slug}:`, e); }
       } catch (e) { console.error(`[Rebalayage] Erreur tenant ${company.slug}:`, e); }
     }

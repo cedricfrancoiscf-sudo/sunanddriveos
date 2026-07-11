@@ -2199,7 +2199,10 @@ export default function SettingsPage(): React.JSX.Element {
   });
 
   const autoCloseRunMutation = useMutation({
-    mutationFn: () => api.post<{ success: boolean; closed: number; autoCloseDays: number }>('/messages/auto-close/run').then(r => r.data),
+    mutationFn: () => api.post<{
+      success: boolean; examined: number; closed: number; skippedNoInbound: number;
+      skippedAnswered: number; skippedAnsweredByOrigin: Record<string, number>; autoCloseDays: number;
+    }>('/messages/auto-close/run').then(r => r.data),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['inbox-summary'] }); void qc.invalidateQueries({ queryKey: ['messages'] }); },
   });
 
@@ -2398,10 +2401,20 @@ export default function SettingsPage(): React.JSX.Element {
                 </button>
                 {autoCloseRunMutation.data && (
                   <span className="text-xs text-gray-400">
-                    {autoCloseRunMutation.data.closed} fil(s) clôturé(s) (seuil : {autoCloseRunMutation.data.autoCloseDays} j)
+                    {autoCloseRunMutation.data.closed} clôturé(s) / {autoCloseRunMutation.data.examined} examiné(s)
+                    (seuil : {autoCloseRunMutation.data.autoCloseDays} j)
                   </span>
                 )}
               </div>
+              {autoCloseRunMutation.data && (autoCloseRunMutation.data.skippedAnswered > 0 || autoCloseRunMutation.data.skippedNoInbound > 0) && (
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Ignorés : {autoCloseRunMutation.data.skippedAnswered} déjà répondu
+                  {Object.keys(autoCloseRunMutation.data.skippedAnsweredByOrigin).length > 0 && (
+                    <> ({Object.entries(autoCloseRunMutation.data.skippedAnsweredByOrigin).map(([origin, count]) => `${origin}: ${count}`).join(', ')})</>
+                  )}
+                  {autoCloseRunMutation.data.skippedNoInbound > 0 && `, ${autoCloseRunMutation.data.skippedNoInbound} sans message entrant`}
+                </p>
+              )}
             </div>
           </section>
 

@@ -66,17 +66,20 @@ type ThreadMessage = {
 // getMessage, autoCloseStaleThreads et getInboxSummary pour qu'ils ne puissent
 // jamais diverger. Trie explicitement par createdAt (ne jamais compter sur
 // l'ordre de retour de la requête pour déterminer le dernier inbound).
-export function computeThreadAnswered(thread: ThreadMessage[]): { isAnswered: boolean; lastInbound: ThreadMessage | undefined } {
+// Expose `answeredBy` (le message qui a fait basculer isAnswered) pour le
+// diagnostic — notamment repérer les cas où origin=null retombe sur le
+// fallback de contenu (cf. isRealReplyOrigin) plutôt qu'une origin explicite.
+export function computeThreadAnswered(thread: ThreadMessage[]): { isAnswered: boolean; lastInbound: ThreadMessage | undefined; answeredBy: ThreadMessage | undefined } {
   const sorted = [...thread].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   const lastInbound = [...sorted].reverse().find(m => m.direction === 'inbound');
-  const isAnswered = sorted.some(
+  const answeredBy = sorted.find(
     m =>
       m.direction === 'outbound' &&
       (m.status === 'sent' || m.status === 'approved') &&
       isRealReplyOrigin(m) &&
       (!lastInbound || m.createdAt > lastInbound.createdAt),
   );
-  return { isAnswered, lastInbound };
+  return { isAnswered: answeredBy != null, lastInbound, answeredBy };
 }
 
 export type MessageFilters = {
@@ -325,17 +328,29 @@ export async function reopenThreadIfDismissed(db: PrismaClient, rentalId: string
   }
 }
 
+export interface AutoCloseResult {
+  examined: number;
+  closed: number;
+  skippedNoInbound: number;
+  skippedAnswered: number;
+  // Répartition des skips "répondu" par origine du message qui a compté comme
+  // réponse — utile pour repérer un fallback origin=null trop permissif
+  // (cf. isRealReplyOrigin) plutôt qu'une vraie réponse manual/ai_approved.
+  skippedAnsweredByOrigin: Record<string, number>;
+}
+
 // Auto-clôture différée : un fil non répondu dont la location est terminée
-// depuis plus de `autoCloseDays` jours est clôturé automatiquement — jamais
-// sur une location en cours/à venir (filtré par status='completed'), et jamais
-// sur un fil épinglé par un opérateur (operatorPinned=true) quel que soit l'âge.
+// depuis plus de `autoCloseDays` jours est clôturé automatiquement — sur les
+// locations completed ET cancelled (une annulation n'appelle plus de réponse),
+// jamais sur booked/active, et jamais sur un fil épinglé par un opérateur
+// (operatorPinned=true) quel que soit l'âge.
 // Aucune suppression : threadDismissedAt + dismissedReason='auto_rental_ended'.
-export async function autoCloseStaleThreads(db: PrismaClient, autoCloseDays: number): Promise<{ closed: number }> {
+export async function autoCloseStaleThreads(db: PrismaClient, autoCloseDays: number, tenantSlug = 'default'): Promise<AutoCloseResult> {
   const cutoff = new Date(Date.now() - autoCloseDays * 86_400_000);
 
   const candidates = await db.rental.findMany({
     where: {
-      status: 'completed',
+      status: { in: ['completed', 'cancelled'] },
       endAt: { lt: cutoff },
       threadDismissedAt: null,
       operatorPinned: false,
@@ -350,9 +365,19 @@ export async function autoCloseStaleThreads(db: PrismaClient, autoCloseDays: num
   });
 
   let closed = 0;
+  let skippedNoInbound = 0;
+  let skippedAnswered = 0;
+  const skippedAnsweredByOrigin: Record<string, number> = {};
+
   for (const rental of candidates) {
-    const { isAnswered, lastInbound } = computeThreadAnswered(rental.messages);
-    if (!lastInbound || isAnswered) continue;
+    const { isAnswered, lastInbound, answeredBy } = computeThreadAnswered(rental.messages);
+    if (!lastInbound) { skippedNoInbound++; continue; }
+    if (isAnswered) {
+      skippedAnswered++;
+      const key = answeredBy?.origin ?? 'null';
+      skippedAnsweredByOrigin[key] = (skippedAnsweredByOrigin[key] ?? 0) + 1;
+      continue;
+    }
 
     await db.rental.update({
       where: { id: rental.id },
@@ -361,7 +386,9 @@ export async function autoCloseStaleThreads(db: PrismaClient, autoCloseDays: num
     closed++;
   }
 
-  return { closed };
+  const result = { examined: candidates.length, closed, skippedNoInbound, skippedAnswered, skippedAnsweredByOrigin };
+  console.log(`[AutoClose][${tenantSlug}] examinés=${result.examined} clôturés=${result.closed} déjà répondu=${result.skippedAnswered} (${JSON.stringify(skippedAnsweredByOrigin)}) sans inbound=${result.skippedNoInbound}`);
+  return result;
 }
 
 export async function getInboxSummary(db: PrismaClient, vehicleIds?: string[]) {

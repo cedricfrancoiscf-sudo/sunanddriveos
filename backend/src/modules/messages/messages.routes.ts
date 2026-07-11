@@ -70,7 +70,7 @@ router.post('/auto-close/run', requireRole('admin'), async (req: Request, res: R
     const db = getTenantClient(req.tenantDbUrl!);
     const settings = await db.companySettings.findFirst({ select: { threadAutoCloseDays: true } });
     const autoCloseDays = settings?.threadAutoCloseDays ?? 7;
-    const result = await autoCloseStaleThreads(db, autoCloseDays);
+    const result = await autoCloseStaleThreads(db, autoCloseDays, req.auth?.tenantSlug ?? 'default');
     res.json({ success: true, ...result, autoCloseDays });
   } catch (err: unknown) { next(err); }
 });

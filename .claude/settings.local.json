@@ -121,7 +121,8 @@
       "Skill(code-review)",
       "Bash(xargs -I{} sh -c 'echo ---{}---; cat \"{}\"')",
       "Bash(npm run *)",
-      "Bash(awk -F: '$1 < 2400')"
+      "Bash(awk -F: '$1 < 2400')",
+      "Bash(awk 'NR==246,/^model [A-Za-z]+ \\\\{/{if\\(NR>246 && /^model /\\) exit; print NR\": \"$0}' \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend\\\\src\\\\prisma\\\\tenant\\\\schema.prisma\")"
     ]
   }
 }

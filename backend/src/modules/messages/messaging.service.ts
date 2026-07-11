@@ -171,7 +171,7 @@ function buildEquipBlock(equip: {
 }
 
 export async function analyzeAndProcessMessage(
-  message: { id: string; content: string; importedViaSync?: boolean; createdAt?: Date },
+  message: { id: string; content: string; sentAt?: Date | null },
   rental: RentalForMessaging,
   db: PrismaClient,
   ga: GetaroundClient,
@@ -184,15 +184,11 @@ export async function analyzeAndProcessMessage(
     return;
   }
 
-  // ── Guard 2 : message importé en batch via sync — pas d'action automatique ─
-  if (message.importedViaSync) {
-    console.log(`[Messaging] Ignoré — message importé via sync (message ${message.id})`);
-    return;
-  }
-
-  // ── Guard 3 : fraîcheur du message — 24h max ─────────────────────────────
-  if (message.createdAt && Date.now() - message.createdAt.getTime() > MESSAGE_FRESHNESS_MS) {
-    console.log(`[Messaging] Ignoré — message trop ancien (message ${message.id}, créé le ${message.createdAt.toISOString()})`);
+  // ── Guard 2 : fraîcheur du message — 24h max, basée sur sentAt (envoi
+  // Getaround) et non createdAt (ingestion en base) — un re-fetch de la sync
+  // ne doit jamais générer de brouillon sur un message ancien.
+  if (message.sentAt && Date.now() - message.sentAt.getTime() > MESSAGE_FRESHNESS_MS) {
+    console.log(`[Messaging] Ignoré — message trop ancien (message ${message.id}, envoyé le ${message.sentAt.toISOString()})`);
     return;
   }
 
@@ -227,6 +223,7 @@ export async function analyzeAndProcessMessage(
             sentAt: new Date(),
             status: 'sent',
             aiSuggestion: emergencyReply,
+            origin: 'ai_approved',
           },
         });
         console.log(`[Messaging] ✅ Message urgence envoyé rental ${rental.id}`);
@@ -449,6 +446,7 @@ Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) :
             sentAt: new Date(),
             status: 'sent',
             aiSuggestion: suggestedReply,
+            origin: 'ai_approved',
           },
         });
         console.log(`[Messaging] Auto-envoi message rental ${rental.id}`);
@@ -478,6 +476,7 @@ Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) :
         content: suggestedReply,
         status: 'pending_approval',
         aiSuggestion: suggestedReply,
+        origin: 'ai_approved',
       },
     });
     if (admins.length > 0) {

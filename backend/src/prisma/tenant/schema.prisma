@@ -38,6 +38,14 @@ enum MessageDirection {
   outbound
 }
 
+enum MessageOrigin {
+  manual           // Réponse tapée dans le composer
+  ai_approved      // Suggestion IA (auto-envoyée ou approuvée)
+  sequence         // Envoi automatique MessageSequence
+  getaround_system // Message système Getaround injecté (ex: "Où trouver/rendre la voiture")
+  inbound          // Message entrant locataire
+}
+
 enum MessageStatus {
   pending_approval
   approved
@@ -303,6 +311,7 @@ model Message {
   aiAnalysis   Json?            // Détection siège auto, sinistre, insatisfaction
   aiSuggestion String?          // Réponse générée par Claude
   status       MessageStatus    @default(pending_approval)
+  origin       MessageOrigin?
   approvedById String?
   approvedBy   User?            @relation("ApprovedBy", fields: [approvedById], references: [id])
   approvedAt   DateTime?

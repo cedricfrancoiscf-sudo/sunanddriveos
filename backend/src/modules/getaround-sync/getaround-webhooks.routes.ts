@@ -5,6 +5,7 @@ import { createGetaroundClient } from './getaround-api';
 import { decrypt } from '../../utils/crypto';
 import { syncSingleRental } from './getaround-sync.service';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
+import { classifySyncedMessageOrigin } from '../messages/messages.service';
 
 const router: Router = Router();
 
@@ -225,6 +226,7 @@ router.post('/', (req: Request, res: Response) => {
                 content: gaMsg.content,
                 sentAt: new Date(gaMsg.sent_at),
                 status: 'sent',
+                origin: classifySyncedMessageOrigin(direction, gaMsg.content),
               },
               update: { content: gaMsg.content },
               select: { id: true },

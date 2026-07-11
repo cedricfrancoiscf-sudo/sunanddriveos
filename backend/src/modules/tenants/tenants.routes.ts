@@ -617,7 +617,7 @@ router.post('/tenants/:slug/simulate-rental', async (req: Request, res: Response
     console.log(`[SimulateRental] Location créée — id=${rental.id}`);
 
     const message = await db.message.create({
-      data: { rentalId: rental.id, direction: 'inbound', content: "Bonjour, j'ai besoin d'un siège auto pour mon fils de 2 ans. Merci", status: 'pending_approval' },
+      data: { rentalId: rental.id, direction: 'inbound', content: "Bonjour, j'ai besoin d'un siège auto pour mon fils de 2 ans. Merci", status: 'pending_approval', origin: 'inbound' },
     });
     console.log(`[SimulateRental] Message créé — id=${message.id}`);
 
@@ -634,7 +634,7 @@ router.post('/tenants/:slug/simulate-rental', async (req: Request, res: Response
             driverGetaroundId: null, getaroundId: testGetaroundId, startAt, endAt, status: 'booked',
             vehicle: { make: vehicle.make, model: vehicle.model, licensePlate: vehicle.licensePlate, parkingZone: vehicle.parkingZone, deliveryPointName: vehicle.deliveryPointName },
           };
-          await analyzeAndProcessMessage({ id: message.id, content: message.content }, rentalData, db, ga);
+          await analyzeAndProcessMessage({ id: message.id, content: message.content, sentAt: message.sentAt }, rentalData, db, ga);
           console.log(`[SimulateRental] Messagerie proactive déclenchée`);
         }
       } catch (e) { console.error('[SimulateRental] Erreur messagerie proactive:', e); }
@@ -761,6 +761,7 @@ router.post('/seed-test-data', async (req: Request, res: Response, next: NextFun
           content: cas.message,
           status: 'pending_approval',
           isTest: true,
+          origin: 'inbound',
         },
       });
       messagesCreated++;
@@ -784,7 +785,7 @@ router.post('/seed-test-data', async (req: Request, res: Response, next: NextFun
               deliveryPointName: vehicle.deliveryPointName,
             },
           };
-          await analyzeAndProcessMessage({ id: message.id, content: cas.message }, rentalForMessaging, db, gaClient);
+          await analyzeAndProcessMessage({ id: message.id, content: cas.message, sentAt: message.sentAt }, rentalForMessaging, db, gaClient);
           console.log(`[SeedTestData] Analyse IA déclenchée — cas ${cas.getaroundId}`);
         } catch (e) {
           console.error(`[SeedTestData] Erreur analyse IA cas ${cas.getaroundId}:`, e);

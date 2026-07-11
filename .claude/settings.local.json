@@ -108,7 +108,18 @@
       "Bash(cat docker-compose.yaml)",
       "Bash(grep -n \"vehicle.create\\\\|CREATE\\\\|router.post.*/$\" backend/src/modules/vehicles/vehicles.routes.ts)",
       "Bash(grep -n \"maintenance\\\\|technical-control\\\\|\\\\/ct\\\\b\" frontend/src/App.tsx)",
-      "Bash(grep -E \"\\\\.tsx$\")"
+      "Bash(grep -E \"\\\\.tsx$\")",
+      "Bash(docker exec sunanddriveos-db-master-1 *)",
+      "Bash(python3 -c \"import json,sys; v=json.load\\(sys.stdin\\)['vehicles']; print\\(json.dumps\\([{'id':x['id'],'plate':x['licensePlate'],'make':x['make'],'model':x['model']} for x in v], indent=2\\)\\)\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend\"; $result = & \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend\\\\node_modules\\\\.bin\\\\tsc.cmd\" --noEmit 2>&1; $result | Select-Object -Last 50; Write-Host \"Exit: $LASTEXITCODE\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\frontend\"; $result = & \".\\\\node_modules\\\\.bin\\\\tsc.cmd\" --noEmit 2>&1; $result | Select-Object -Last 30; Write-Host \"Exit: $LASTEXITCODE\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend\"; $result = & \".\\\\node_modules\\\\.bin\\\\tsc.cmd\" --noEmit 2>&1; $result | Select-Object -Last 20; Write-Host \"Exit: $LASTEXITCODE\")",
+      "PowerShell($token = \"\"; try { $resp = Invoke-WebRequest -Uri \"https://appli.sunanddrive.com/api/v1/maintenance/tasks\" -Headers @{\"Authorization\"=\"Bearer $token\"} -UseBasicParsing -ErrorAction SilentlyContinue; $resp.StatusCode } catch { \"Erreur connexion: $\\($_.Exception.Message\\)\" })",
+      "Skill(claude-in-chrome)",
+      "Bash(pnpm dev *)",
+      "Bash(pkill -f \"vite.*5174\")",
+      "Skill(code-review)",
+      "Bash(xargs -I{} sh -c 'echo ---{}---; cat \"{}\"')"
     ]
   }
 }

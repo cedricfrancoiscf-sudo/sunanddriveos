@@ -2,6 +2,7 @@ import { api } from '../../utils/api';
 
 export type MessageStatus = 'pending_approval' | 'approved' | 'sent' | 'cancelled';
 export type MessageDirection = 'inbound' | 'outbound';
+export type MessageOrigin = 'manual' | 'ai_approved' | 'sequence' | 'getaround_system' | 'inbound';
 
 export interface Message {
   id: string;
@@ -20,6 +21,7 @@ export interface Message {
   } | null;
   aiSuggestion: string | null;
   status: MessageStatus;
+  origin: MessageOrigin | null;
   approvedBy: { id: string; name: string } | null;
   approvedAt: string | null;
   cancelledAt: string | null;
@@ -47,6 +49,7 @@ export interface Message {
       aiAnalysis?: unknown;
       createdAt: string;
       importedViaSync?: boolean;
+      origin?: MessageOrigin | null;
     }>;
   };
 }

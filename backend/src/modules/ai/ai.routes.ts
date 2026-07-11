@@ -149,6 +149,8 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
         body.data.rentalId,
         suggestion,
         suggestion,
+        undefined,
+        'ai_approved',
       );
       res.json({ suggestion, messageId: message.id });
       return;

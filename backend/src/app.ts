@@ -65,7 +65,10 @@ import vehicleCostsRoutes from './modules/vehicles/vehicle-costs.routes';
 import vehicleRatingsRoutes from './modules/vehicles/vehicle-ratings.routes';
 import renterProfileRoutes from './modules/rentals/renter-profile.routes';
 import renterBlacklistRoutes from './modules/blocking/renter-blacklist.routes';
-import getaroundWebhooksRoutes from './modules/getaround-sync/getaround-webhooks.routes';
+// Webhooks Getaround désactivés (2026-07-11) — toutes les données (locations,
+// messages) proviennent désormais exclusivement de la sync/cron. Import
+// conservé pour réactivation future — voir ligne app.use ci-dessous.
+// import getaroundWebhooksRoutes from './modules/getaround-sync/getaround-webhooks.routes';
 import syncStatusRoutes from './modules/getaround-sync/sync-status.routes';
 import tenantEventsRoutes from './modules/tenant-events/tenant-events.routes';
 import feedbackRoutes from './modules/feedback/feedback.routes';
@@ -103,8 +106,10 @@ export function createApp(): Express {
   // Webhook Stripe — raw body AVANT express.json()
   app.use('/api/v1/billing/webhook', express.raw({ type: 'application/json' }));
 
-  // Webhooks Getaround — raw body AVANT express.json()
-  app.use('/api/v1/webhooks/getaround', express.raw({ type: '*/*' }), getaroundWebhooksRoutes);
+  // Webhooks Getaround désactivés (2026-07-11) — décision Cédric François :
+  // toutes les données (locations, messages) proviennent exclusivement de la
+  // sync/cron. Décommenter les 2 lignes ci-dessous (+ l'import plus haut) pour réactiver.
+  // app.use('/api/v1/webhooks/getaround', express.raw({ type: '*/*' }), getaroundWebhooksRoutes);
 
   // Parsing requêtes
   app.use(express.json({ limit: '10mb' }));

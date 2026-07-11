@@ -230,6 +230,7 @@ export async function executePendingSequences(
           content,
           status: messageStatus,
           sentAt: messageStatus === 'sent' ? new Date() : undefined,
+          origin: 'sequence',
         },
       });
 

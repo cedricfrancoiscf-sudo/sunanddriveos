@@ -7,6 +7,8 @@ import { analyzeMessage, suggestReply } from '../ai/ai.service';
 import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
 import { getMasterClient } from '../../prisma/client';
 import { sendAlertEmail } from '../../utils/mailer';
+import { classifySyncedMessageOrigin } from '../messages/messages.service';
+import { analyzeAndProcessMessage } from '../messages/messaging.service';
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -725,6 +727,7 @@ async function syncMessagesForWindow(
               sentAt: new Date(msg.sent_at),
               status: 'sent',
               importedViaSync: true,
+              origin: classifySyncedMessageOrigin(direction, msg.content),
             },
             update: {
               content: msg.content,
@@ -1158,6 +1161,7 @@ async function autoReplyToMessage(
           content: reply,
           sentAt: new Date(),
           status: 'sent',
+          origin: 'ai_approved',
         },
       });
       console.log(`[IA][${tenantSlug}] Réponse auto envoyée pour rental ${rental.id}`);
@@ -1172,6 +1176,7 @@ async function autoReplyToMessage(
         content: reply,
         status: 'pending_approval',
         aiSuggestion: reply,
+        origin: 'ai_approved',
       },
     });
     await db.notification.createMany({
@@ -1292,6 +1297,7 @@ export async function syncAccountMessages(
               sentAt: new Date(msg.sent_at),
               status: 'sent',
               importedViaSync: true,
+              origin: classifySyncedMessageOrigin(direction, msg.content),
             },
             update: { content: msg.content },
             select: { id: true, createdAt: true },
@@ -1300,29 +1306,28 @@ export async function syncAccountMessages(
           if (isNew) result.created++;
           else result.skipped++;
 
-          // Analyse IA + réponse automatique sur messages entrants nouveaux
+          // Analyse IA + génération de brouillon sur messages entrants réellement nouveaux
+          // (isNew = ligne insérée <10s plus tôt — un re-fetch d'un message existant ne
+          // déclenche jamais de brouillon, cf. guard fraîcheur sur sentAt dans analyzeAndProcessMessage)
           if (direction === 'inbound' && isNew) {
             const fullRental = await db.rental.findUnique({
               where: { id: rental.id },
-              include: {
+              select: {
+                id: true, vehicleId: true, driverName: true, driverGetaroundId: true,
+                getaroundId: true, startAt: true, endAt: true, status: true,
                 vehicle: {
-                  select: {
-                    make: true, model: true, licensePlate: true,
-                    year: true, color: true, fuelType: true,
-                    parkingZone: true, pickupInstructions: true, returnInstructions: true,
-                  },
-                },
-                messages: {
-                  orderBy: { sentAt: 'asc' },
-                  select: { direction: true, content: true },
-                  take: 10,
+                  select: { make: true, model: true, licensePlate: true, parkingZone: true, deliveryPointName: true },
                 },
               },
             });
 
             if (fullRental) {
-              void autoReplyToMessage(db, ga, msg.content, fullRental, tenantSlug)
-                .catch(e => console.error('[IA] autoReply error:', e));
+              void analyzeAndProcessMessage(
+                { id: upserted.id, content: msg.content, sentAt: new Date(msg.sent_at) },
+                fullRental,
+                db,
+                ga,
+              ).catch(e => console.error('[IA] analyzeAndProcessMessage error:', e));
             }
           }
 
@@ -1881,6 +1886,7 @@ export async function syncSingleRental(
           sentAt: new Date(msg.sent_at),
           status: 'sent',
           importedViaSync: true,
+          origin: 'inbound',
         },
         update: { content: msg.content },
         select: { id: true },

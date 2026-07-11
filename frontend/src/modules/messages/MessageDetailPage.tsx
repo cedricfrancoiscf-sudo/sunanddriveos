@@ -91,12 +91,14 @@ export default function MessageDetailPage(): React.JSX.Element {
   // Dernier message inbound du fil
   const lastInbound = [...thread].reverse().find(m => m.direction === 'inbound');
 
-  // Le fil est répondu si au moins un outbound sent existe APRÈS le dernier inbound
+  // Le fil est répondu si une vraie réponse (manual/ai_approved) sent/approved existe APRÈS le dernier inbound
+  // — séquences auto et injections système Getaround ne comptent jamais comme une réponse
   const hasReplyAfterLastInbound = lastInbound
     ? thread.some(
         m =>
           m.direction === 'outbound' &&
-          m.status === 'sent' &&
+          (m.status === 'sent' || m.status === 'approved') &&
+          (m.origin === 'manual' || m.origin === 'ai_approved') &&
           new Date(m.createdAt) > new Date(lastInbound.createdAt),
       )
     : false;

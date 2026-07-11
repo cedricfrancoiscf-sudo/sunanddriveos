@@ -1,5 +1,30 @@
 import type { PrismaClient } from '../../generated/tenant';
 
+// Messages système Getaround injectés automatiquement dans le fil
+// (ex: rappel du point de remise/restitution) — jamais une vraie réponse.
+// [\s\S]* plutôt que .* pour couvrir les tournures avec retour à la ligne
+// ("Où trouver la/votre voiture", "Où rendre le véhicule"...).
+const GETAROUND_SYSTEM_PATTERNS = [
+  /où\s+trouver[\s\S]*(voiture|véhicule)/i,
+  /où\s+rendre[\s\S]*(voiture|véhicule)/i,
+  /where\s+to\s+find[\s\S]*car/i,
+  /where\s+to\s+return[\s\S]*car/i,
+];
+
+export function detectGetaroundSystemMessage(content: string): boolean {
+  return GETAROUND_SYSTEM_PATTERNS.some(p => p.test(content));
+}
+
+// Classifie l'origin d'un message synchronisé/webhook depuis Getaround —
+// partagé entre les différents points d'ingestion pour éviter la dérive.
+export function classifySyncedMessageOrigin(
+  direction: 'inbound' | 'outbound',
+  content: string,
+): 'inbound' | 'getaround_system' | 'manual' {
+  if (direction === 'inbound') return 'inbound';
+  return detectGetaroundSystemMessage(content) ? 'getaround_system' : 'manual';
+}
+
 export type MessageFilters = {
   rentalId?: string;
   vehicleId?: string;
@@ -74,10 +99,16 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
       orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
       distinct: ['rentalId'],
     }),
-    // Per-rental: has at least one sent/approved outbound?
+    // Per-rental: most recent real outbound reply (sequences/system messages never count as an answer)
     db.message.findMany({
-      where: { rentalId: { in: rentalIds }, direction: 'outbound', status: { in: ['sent', 'approved'] } },
-      select: { rentalId: true },
+      where: {
+        rentalId: { in: rentalIds },
+        direction: 'outbound',
+        status: { in: ['sent', 'approved'] },
+        origin: { in: ['manual', 'ai_approved'] },
+      },
+      select: { rentalId: true, createdAt: true },
+      orderBy: [{ rentalId: 'asc' }, { createdAt: 'desc' }],
       distinct: ['rentalId'],
     }),
     // Per-rental: timestamp of the last inbound message
@@ -89,8 +120,18 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
     }),
   ]);
 
-  const answeredSet = new Set(answeredRows.map(m => m.rentalId).filter((id): id is string => id !== null));
   const lastInboundMap = new Map(lastInboundRows.map(m => [m.rentalId, m.createdAt]));
+
+  // Un fil n'est répondu que si sa réponse (manual/ai_approved) la plus récente suit le dernier inbound
+  const answeredSet = new Set(
+    answeredRows
+      .filter((row): row is typeof row & { rentalId: string } => row.rentalId !== null)
+      .filter(row => {
+        const lastInboundAt = lastInboundMap.get(row.rentalId);
+        return !lastInboundAt || row.createdAt > lastInboundAt;
+      })
+      .map(row => row.rentalId),
+  );
 
   const messageMap = new Map(messages.map(m => [m.rentalId, m]));
   const ordered = rentalIds.map(rid => messageMap.get(rid)).filter((m): m is NonNullable<typeof m> => m != null);
@@ -134,6 +175,7 @@ export async function getMessage(db: PrismaClient, id: string) {
               aiAnalysis: true,
               createdAt: true,
               importedViaSync: true,
+              origin: true,
             },
           },
         },
@@ -149,6 +191,7 @@ export async function createOutboundMessage(
   content: string,
   aiSuggestion?: string,
   aiAnalysis?: object,
+  origin: 'manual' | 'ai_approved' = 'manual',
 ) {
   return db.message.create({
     data: {
@@ -158,6 +201,7 @@ export async function createOutboundMessage(
       aiSuggestion,
       aiAnalysis: aiAnalysis as never,
       status: 'pending_approval',
+      origin,
     },
   });
 }

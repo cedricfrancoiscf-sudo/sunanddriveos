@@ -191,7 +191,7 @@ router.post('/rental/:rentalId/regenerate', async (req: Request, res: Response, 
     const lastInbound = await db.message.findFirst({
       where: { rentalId, direction: 'inbound' },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, content: true, importedViaSync: true, createdAt: true },
+      select: { id: true, content: true, sentAt: true },
     });
 
     if (!lastInbound) {
@@ -233,7 +233,7 @@ router.post('/rental/:rentalId/regenerate', async (req: Request, res: Response, 
 
     // Lancer la régénération en arrière-plan (pas de blocage HTTP)
     void analyzeAndProcessMessage(
-      { ...lastInbound, importedViaSync: false },
+      lastInbound,
       {
         id: rental.id,
         vehicleId: rental.vehicleId,

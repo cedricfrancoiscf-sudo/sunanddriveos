@@ -140,7 +140,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           if (lastInbound) {
             await db.message.update({ where: { id: lastInbound.id }, data: { aiSuggestion } });
             await db.message.create({
-              data: { rentalId, direction: 'outbound', content: aiSuggestion, status: 'pending_approval', aiSuggestion },
+              data: { rentalId, direction: 'outbound', content: aiSuggestion, status: 'pending_approval', aiSuggestion, origin: 'ai_approved' },
             });
             console.log(`[CarSeatRequest] aiSuggestion + brouillon outbound créés — rental ${rentalId}`);
           }

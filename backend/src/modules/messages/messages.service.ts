@@ -53,6 +53,32 @@ export function isRealReplyOrigin(message: { origin: string | null; aiSuggestion
   return true;
 }
 
+type ThreadMessage = {
+  direction: string;
+  status: string;
+  origin: string | null;
+  aiSuggestion: string | null;
+  content: string;
+  createdAt: Date;
+};
+
+// Définition unique de "ce fil a-t-il une vraie réponse ?" — réutilisée par
+// getMessage, autoCloseStaleThreads et getInboxSummary pour qu'ils ne puissent
+// jamais diverger. Trie explicitement par createdAt (ne jamais compter sur
+// l'ordre de retour de la requête pour déterminer le dernier inbound).
+export function computeThreadAnswered(thread: ThreadMessage[]): { isAnswered: boolean; lastInbound: ThreadMessage | undefined } {
+  const sorted = [...thread].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const lastInbound = [...sorted].reverse().find(m => m.direction === 'inbound');
+  const isAnswered = sorted.some(
+    m =>
+      m.direction === 'outbound' &&
+      (m.status === 'sent' || m.status === 'approved') &&
+      isRealReplyOrigin(m) &&
+      (!lastInbound || m.createdAt > lastInbound.createdAt),
+  );
+  return { isAnswered, lastInbound };
+}
+
 export type MessageFilters = {
   rentalId?: string;
   vehicleId?: string;
@@ -119,6 +145,7 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
             endAt: true,
             status: true,
             threadDismissedAt: true,
+            dismissedReason: true,
             vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
           },
         },
@@ -166,6 +193,7 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
     isThreadAnswered: answeredSet.has(m.rentalId ?? ''),
     lastInboundAt: lastInboundMap.get(m.rentalId ?? '') ?? null,
     threadDismissedAt: m.rental.threadDismissedAt ?? null,
+    dismissedReason: m.rental.dismissedReason ?? null,
   }));
 
   const total = await db.message.groupBy({ by: ['rentalId'], where: msgWhere }).then(g => g.length);
@@ -186,6 +214,7 @@ export async function getMessage(db: PrismaClient, id: string) {
           endAt: true,
           status: true,
           threadDismissedAt: true,
+          dismissedReason: true,
           vehicle: { select: { id: true, make: true, model: true, licensePlate: true } },
           messages: {
             orderBy: { createdAt: 'asc' },
@@ -211,17 +240,9 @@ export async function getMessage(db: PrismaClient, id: string) {
 
   // Même définition que listMessages — calculée ici pour que le front n'ait
   // jamais à réimplémenter sa propre copie (source de dérive/régression).
-  const thread = message.rental.messages;
-  const lastInbound = [...thread].reverse().find(m => m.direction === 'inbound');
-  const isThreadAnswered = thread.some(
-    m =>
-      m.direction === 'outbound' &&
-      (m.status === 'sent' || m.status === 'approved') &&
-      isRealReplyOrigin(m) &&
-      (!lastInbound || m.createdAt > lastInbound.createdAt),
-  );
+  const { isAnswered, lastInbound } = computeThreadAnswered(message.rental.messages);
 
-  return { ...message, isThreadAnswered, lastInboundAt: lastInbound?.createdAt ?? null };
+  return { ...message, isThreadAnswered: isAnswered, lastInboundAt: lastInbound?.createdAt ?? null };
 }
 
 export async function createOutboundMessage(
@@ -276,17 +297,71 @@ export async function cancelMessage(db: PrismaClient, id: string) {
 export async function dismissThread(db: PrismaClient, rentalId: string) {
   return db.rental.update({
     where: { id: rentalId },
-    data: { threadDismissedAt: new Date() },
-    select: { id: true, threadDismissedAt: true },
+    // Une clôture manuelle explicite lève toujours le pin (nouvelle décision opérateur)
+    data: { threadDismissedAt: new Date(), dismissedReason: 'manual', operatorPinned: false },
+    select: { id: true, threadDismissedAt: true, dismissedReason: true },
   });
 }
 
+// Réouverture MANUELLE (bouton "Réouvrir le fil", sans nouvel inbound) — épingle
+// le fil : l'auto-clôture ne doit jamais annuler une décision explicite d'opérateur.
 export async function undismissThread(db: PrismaClient, rentalId: string) {
   return db.rental.update({
     where: { id: rentalId },
-    data: { threadDismissedAt: null },
-    select: { id: true, threadDismissedAt: true },
+    data: { threadDismissedAt: null, dismissedReason: null, operatorPinned: true },
+    select: { id: true, threadDismissedAt: true, dismissedReason: true },
   });
+}
+
+// Réouvre un fil clôturé (manuel ou auto) si un nouvel inbound arrive après la
+// clôture — que le locataire ait réécrit à un fil "Clôturé" doit toujours le
+// faire repasser en "À traiter", quelle que soit la raison de la clôture.
+// Distinct de undismissThread : ce n'est pas une décision opérateur, donc le
+// fil n'est PAS épinglé — il peut retomber dans l'auto-clôture normalement.
+export async function reopenThreadIfDismissed(db: PrismaClient, rentalId: string, inboundAt: Date): Promise<void> {
+  const rental = await db.rental.findUnique({ where: { id: rentalId }, select: { threadDismissedAt: true } });
+  if (rental?.threadDismissedAt && inboundAt > rental.threadDismissedAt) {
+    await db.rental.update({ where: { id: rentalId }, data: { threadDismissedAt: null, dismissedReason: null, operatorPinned: false } });
+  }
+}
+
+// Auto-clôture différée : un fil non répondu dont la location est terminée
+// depuis plus de `autoCloseDays` jours est clôturé automatiquement — jamais
+// sur une location en cours/à venir (filtré par status='completed'), et jamais
+// sur un fil épinglé par un opérateur (operatorPinned=true) quel que soit l'âge.
+// Aucune suppression : threadDismissedAt + dismissedReason='auto_rental_ended'.
+export async function autoCloseStaleThreads(db: PrismaClient, autoCloseDays: number): Promise<{ closed: number }> {
+  const cutoff = new Date(Date.now() - autoCloseDays * 86_400_000);
+
+  const candidates = await db.rental.findMany({
+    where: {
+      status: 'completed',
+      endAt: { lt: cutoff },
+      threadDismissedAt: null,
+      operatorPinned: false,
+      messages: { some: { direction: 'inbound' } },
+    },
+    select: {
+      id: true,
+      messages: {
+        select: { direction: true, status: true, origin: true, aiSuggestion: true, content: true, createdAt: true },
+      },
+    },
+  });
+
+  let closed = 0;
+  for (const rental of candidates) {
+    const { isAnswered, lastInbound } = computeThreadAnswered(rental.messages);
+    if (!lastInbound || isAnswered) continue;
+
+    await db.rental.update({
+      where: { id: rental.id },
+      data: { threadDismissedAt: new Date(), dismissedReason: 'auto_rental_ended' },
+    });
+    closed++;
+  }
+
+  return { closed };
 }
 
 export async function getInboxSummary(db: PrismaClient, vehicleIds?: string[]) {
@@ -296,65 +371,55 @@ export async function getInboxSummary(db: PrismaClient, vehicleIds?: string[]) {
 
   const vFilter = vehicleIds ? { vehicleId: { in: vehicleIds } } : {};
 
-  const [pendingCount, unansweredRentals, unansweredRentalIds] = await Promise.all([
+  const [pendingCount, activeThreads] = await Promise.all([
     db.message.count({
       where: {
         status: 'pending_approval',
         ...(vehicleIds ? { rental: vFilter } : {}),
       },
     }),
-    db.rental.count({
-      where: {
-        ...vFilter,
-        threadDismissedAt: null,
-        messages: {
-          some: { direction: 'inbound' },
-          none: { direction: 'outbound', status: { in: ['approved', 'sent'] } },
-        },
-        status: { in: ['booked', 'active'] },
-      },
-    }),
+    // Fils actifs avec au moins un inbound — classification faite en JS via
+    // isRealReplyOrigin pour rester cohérent avec listMessages/getMessage
+    // (séquences/injections système ne comptent jamais comme une réponse).
     db.rental.findMany({
       where: {
         ...vFilter,
         threadDismissedAt: null,
         status: { in: ['booked', 'active'] },
+        messages: { some: { direction: 'inbound' } },
+      },
+      select: {
+        id: true, driverName: true,
+        vehicle: { select: { make: true, model: true, licensePlate: true } },
         messages: {
-          some: { direction: 'inbound', createdAt: { lt: cutoff } },
-          none: { direction: 'outbound', status: { in: ['approved', 'sent'] } },
+          select: { direction: true, status: true, origin: true, aiSuggestion: true, content: true, createdAt: true },
         },
       },
-      select: { id: true },
-    }).then(rows => rows.map(r => r.id)),
+    }),
   ]);
 
-  const unansweredMessages = unansweredRentalIds.length > 0
-    ? await db.message.findMany({
-        where: { direction: 'inbound', createdAt: { lt: cutoff }, rentalId: { in: unansweredRentalIds } },
-        select: {
-          id: true, content: true, createdAt: true,
-          rental: {
-            select: {
-              id: true, driverName: true,
-              vehicle: { select: { make: true, model: true, licensePlate: true } },
-            },
-          },
-        },
-        orderBy: { createdAt: 'asc' },
-        take: 5,
-        distinct: ['rentalId'],
-      })
-    : [];
+  let unansweredRentals = 0;
+  const unansweredCandidates: Array<{ rentalId: string; driverName: string; vehicleLabel: string; msgPreview: string; createdAt: Date }> = [];
+  for (const rental of activeThreads) {
+    const { isAnswered, lastInbound } = computeThreadAnswered(rental.messages);
+    if (!lastInbound || isAnswered) continue;
 
-  const unansweredDetails = unansweredMessages.map(m => ({
-    rentalId: m.rental?.id ?? '',
-    driverName: m.rental?.driverName ?? '',
-    vehicleLabel: m.rental
-      ? `${m.rental.vehicle.make} ${m.rental.vehicle.model} (${m.rental.vehicle.licensePlate})`
-      : '',
-    msgPreview: m.content.slice(0, 80),
-    createdAt: m.createdAt.toISOString(),
-  }));
+    unansweredRentals++;
+    if (lastInbound.createdAt < cutoff) {
+      unansweredCandidates.push({
+        rentalId: rental.id,
+        driverName: rental.driverName,
+        vehicleLabel: `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`,
+        msgPreview: lastInbound.content.slice(0, 80),
+        createdAt: lastInbound.createdAt,
+      });
+    }
+  }
+
+  const unansweredDetails = unansweredCandidates
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .slice(0, 5)
+    .map(d => ({ ...d, createdAt: d.createdAt.toISOString() }));
 
   const pendingApprovalMsgs = await db.message.findMany({
     where: {

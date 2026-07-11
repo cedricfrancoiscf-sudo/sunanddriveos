@@ -551,6 +551,7 @@ interface CompanySettings {
   kmStopGA: number;
   defaultDepreciationRate: number;
   messageUnansweredMinutes: number | null;
+  threadAutoCloseDays: number | null;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -2147,6 +2148,7 @@ export default function SettingsPage(): React.JSX.Element {
     aiTone: 'vouvoiement',
     aiName: 'Alex',
     messageUnansweredMinutes: null as number | null,
+    threadAutoCloseDays: null as number | null,
   });
 
   const [saved, setSaved] = useState(false);
@@ -2168,6 +2170,7 @@ export default function SettingsPage(): React.JSX.Element {
         aiTone: settings.aiTone ?? 'vouvoiement',
         aiName: settings.aiName ?? 'Alex',
         messageUnansweredMinutes: settings.messageUnansweredMinutes ?? null,
+        threadAutoCloseDays: settings.threadAutoCloseDays ?? null,
       });
       if (settings.logoUrl) setLogoPreview(settings.logoUrl);
     }
@@ -2186,12 +2189,18 @@ export default function SettingsPage(): React.JSX.Element {
       aiTone: data.aiTone as 'vouvoiement' | 'tutoiement',
       aiName: data.aiName,
       messageUnansweredMinutes: data.messageUnansweredMinutes,
+      threadAutoCloseDays: data.threadAutoCloseDays,
     }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings'] });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     },
+  });
+
+  const autoCloseRunMutation = useMutation({
+    mutationFn: () => api.post<{ success: boolean; closed: number; autoCloseDays: number }>('/messages/auto-close/run').then(r => r.data),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['inbox-summary'] }); void qc.invalidateQueries({ queryKey: ['messages'] }); },
   });
 
   async function handleLogoUpload(file: File): Promise<void> {
@@ -2363,6 +2372,35 @@ export default function SettingsPage(): React.JSX.Element {
                   placeholder="30"
                   className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20" />
                 <span className="text-xs text-gray-400">minutes (défaut : 30 min)</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-gray-700">Auto-clôture des fils non répondus</label>
+              <p className="mb-2 text-[11px] text-gray-400">
+                Jours après la fin d'une location au-delà desquels un fil non répondu est clôturé automatiquement
+                (défaut : 7 jours). Le locataire peut toujours réouvrir le fil en réécrivant.
+              </p>
+              <div className="flex items-center gap-2">
+                <input type="number" min={1} max={90} step={1}
+                  value={form.threadAutoCloseDays ?? ''}
+                  onChange={e => setForm(f => ({ ...f, threadAutoCloseDays: e.target.value ? parseInt(e.target.value, 10) : null }))}
+                  placeholder="7"
+                  className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20" />
+                <span className="text-xs text-gray-400">jours (défaut : 7 jours)</span>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <button type="button"
+                  onClick={() => autoCloseRunMutation.mutate()}
+                  disabled={autoCloseRunMutation.isPending}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                  {autoCloseRunMutation.isPending ? 'Clôture en cours...' : 'Forcer la clôture auto maintenant'}
+                </button>
+                {autoCloseRunMutation.data && (
+                  <span className="text-xs text-gray-400">
+                    {autoCloseRunMutation.data.closed} fil(s) clôturé(s) (seuil : {autoCloseRunMutation.data.autoCloseDays} j)
+                  </span>
+                )}
               </div>
             </div>
           </section>

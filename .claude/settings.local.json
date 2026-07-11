@@ -119,7 +119,9 @@
       "Bash(pnpm dev *)",
       "Bash(pkill -f \"vite.*5174\")",
       "Skill(code-review)",
-      "Bash(xargs -I{} sh -c 'echo ---{}---; cat \"{}\"')"
+      "Bash(xargs -I{} sh -c 'echo ---{}---; cat \"{}\"')",
+      "Bash(npm run *)",
+      "Bash(awk -F: '$1 < 2400')"
     ]
   }
 }

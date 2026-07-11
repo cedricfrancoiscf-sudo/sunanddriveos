@@ -284,13 +284,18 @@ export default function MessageListPage(): React.JSX.Element {
                         {formatDistanceToNow(new Date(conv.lastMessage.createdAt), { addSuffix: true, locale: fr })}
                       </span>
                     </div>
-                    {(conv.isUnanswered || conv.hasPending) && (
+                    {(conv.isUnanswered || conv.hasPending || conv.lastMessage.threadDismissedAt) && (
                       <div className="mt-0.5 flex flex-wrap gap-1">
                         {conv.isUnanswered && (
                           <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Sans réponse</span>
                         )}
                         {conv.hasPending && (
                           <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">En attente</span>
+                        )}
+                        {conv.lastMessage.threadDismissedAt && (
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
+                            {conv.lastMessage.dismissedReason === 'auto_rental_ended' ? 'Clôturé auto' : 'Clôturé'}
+                          </span>
                         )}
                       </div>
                     )}

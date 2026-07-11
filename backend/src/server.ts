@@ -13,6 +13,7 @@ import { executePendingSequences, cleanupObsoleteSequences } from './modules/seq
 import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayouts, syncUnavailabilitiesForTenant, syncAccountMessages } from './modules/getaround-sync/getaround-sync.service';
 import { generateCeoReportAsync } from './modules/intelligence/report.routes';
 import { analyzeAndProcessMessage, morningConversationReview, type RentalForMessaging } from './modules/messages/messaging.service';
+import { autoCloseStaleThreads } from './modules/messages/messages.service';
 import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
 import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
@@ -457,6 +458,14 @@ async function runMorningRebalayage(): Promise<void> {
 
         // ─── Alertes ROI fenêtre de revente optimale ────────────────────────
         await runRoiAlerts(db, company.slug);
+
+        // ─── Auto-clôture des fils non répondus sur locations terminées ────
+        try {
+          const settings = await db.companySettings.findFirst({ select: { threadAutoCloseDays: true } });
+          const autoCloseDays = settings?.threadAutoCloseDays ?? 7;
+          const { closed } = await autoCloseStaleThreads(db, autoCloseDays);
+          if (closed > 0) console.log(`[Cron 7h] ${company.slug} : ${closed} fil(s) clôturé(s) automatiquement`);
+        } catch (e) { console.error(`[AutoClose] Erreur tenant ${company.slug}:`, e); }
       } catch (e) { console.error(`[Rebalayage] Erreur tenant ${company.slug}:`, e); }
     }
   } catch (e) { console.error('[Rebalayage] Erreur générale:', e); }

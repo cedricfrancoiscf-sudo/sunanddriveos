@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth, isOnlyCarkeeper, getCarekeeperVehicleIds } from '../../middleware/auth';
+import { requireAuth, requireRole, isOnlyCarkeeper, getCarekeeperVehicleIds } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import {
@@ -13,6 +13,7 @@ import {
   getInboxSummary,
   dismissThread,
   undismissThread,
+  autoCloseStaleThreads,
 } from './messages.service';
 import { analyzeAndProcessMessage } from './messaging.service';
 import { decrypt } from '../../utils/crypto';
@@ -59,6 +60,18 @@ router.get('/inbox-summary', async (req: Request, res: Response, next: NextFunct
     }
     const summary = await getInboxSummary(db, vehicleIds);
     res.json(summary);
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/messages/auto-close/run — déclenche la clôture auto immédiatement
+// (calibration/vérification du seuil sans attendre le cron 7h)
+router.post('/auto-close/run', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const settings = await db.companySettings.findFirst({ select: { threadAutoCloseDays: true } });
+    const autoCloseDays = settings?.threadAutoCloseDays ?? 7;
+    const result = await autoCloseStaleThreads(db, autoCloseDays);
+    res.json({ success: true, ...result, autoCloseDays });
   } catch (err: unknown) { next(err); }
 });
 

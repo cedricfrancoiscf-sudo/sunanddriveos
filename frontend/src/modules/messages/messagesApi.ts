@@ -3,6 +3,7 @@ import { api } from '../../utils/api';
 export type MessageStatus = 'pending_approval' | 'approved' | 'sent' | 'cancelled';
 export type MessageDirection = 'inbound' | 'outbound';
 export type MessageOrigin = 'manual' | 'ai_approved' | 'sequence' | 'getaround_system' | 'inbound';
+export type DismissedReason = 'manual' | 'auto_rental_ended';
 
 export interface Message {
   id: string;
@@ -31,6 +32,7 @@ export interface Message {
   isThreadAnswered?: boolean;
   lastInboundAt?: string | null;
   threadDismissedAt?: string | null;
+  dismissedReason?: DismissedReason | null;
   rental: {
     id: string;
     driverName: string;
@@ -38,6 +40,7 @@ export interface Message {
     endAt: string;
     status: string;
     threadDismissedAt?: string | null;
+    dismissedReason?: DismissedReason | null;
     vehicle: { id: string; make: string; model: string; licensePlate: string };
     messages?: Array<{
       id: string;

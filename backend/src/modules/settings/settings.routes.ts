@@ -106,6 +106,7 @@ router.put('/', requireRole('admin'), async (req: Request, res: Response, next: 
       kmStopGA: z.number().int().min(50000).max(400000).optional(),
       defaultDepreciationRate: z.number().min(0).max(2000).optional(),
       messageUnansweredMinutes: z.number().int().min(5).max(240).nullable().optional(),
+      threadAutoCloseDays: z.number().int().min(1).max(90).nullable().optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides', details: body.error.flatten() }); return; }
 

@@ -7,7 +7,7 @@ import { analyzeMessage, suggestReply } from '../ai/ai.service';
 import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
 import { getMasterClient } from '../../prisma/client';
 import { sendAlertEmail } from '../../utils/mailer';
-import { classifySyncedMessageOrigin } from '../messages/messages.service';
+import { classifySyncedMessageOrigin, reopenThreadIfDismissed } from '../messages/messages.service';
 import { analyzeAndProcessMessage } from '../messages/messaging.service';
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -741,6 +741,11 @@ async function syncMessagesForWindow(
           void msgDbId; // utilisé dans les closures ci-dessous
 
           if (direction === 'inbound' && isNew) {
+            // Un locataire qui réécrit sur un fil clôturé (manuel ou auto) le rouvre
+            // — attendu (pas fire-and-forget) pour que la levée soit visible avant
+            // toute lecture ultérieure de threadDismissedAt.
+            await reopenThreadIfDismissed(db, rental.id, new Date(msg.sent_at))
+              .catch(e => console.error('[Reopen] erreur:', e));
             // Détection siège auto (fire-and-forget)
             void (async () => {
               try {
@@ -1310,6 +1315,12 @@ export async function syncAccountMessages(
           // (isNew = ligne insérée <10s plus tôt — un re-fetch d'un message existant ne
           // déclenche jamais de brouillon, cf. guard fraîcheur sur sentAt dans analyzeAndProcessMessage)
           if (direction === 'inbound' && isNew) {
+            // Un locataire qui réécrit sur un fil clôturé (manuel ou auto) le rouvre
+            // — attendu (pas fire-and-forget) pour que la levée soit visible avant
+            // toute lecture ultérieure de threadDismissedAt.
+            await reopenThreadIfDismissed(db, rental.id, new Date(msg.sent_at))
+              .catch(e => console.error('[Reopen] erreur:', e));
+
             const fullRental = await db.rental.findUnique({
               where: { id: rental.id },
               select: {

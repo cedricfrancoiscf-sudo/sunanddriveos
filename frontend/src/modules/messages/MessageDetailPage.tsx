@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { messagesApi, type Message } from './messagesApi';
+import { api } from '../../utils/api';
 
 function Bubble({ msg }: { msg: { direction: string; content: string; sentAt: string | null; status: string; aiSuggestion: string | null; createdAt: string } }): React.JSX.Element {
   const isInbound = msg.direction === 'inbound';
@@ -73,6 +74,15 @@ export default function MessageDetailPage(): React.JSX.Element {
   const [replyContent, setReplyContent] = useState('');
   const [manualMode, setManualMode] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+
+  // Même seuil que l'auto-clôture backend (CompanySettings.threadAutoCloseDays) —
+  // une seule source de vérité pour "IA coupée si location terminée depuis > N jours"
+  const { data: settings } = useQuery({
+    queryKey: ['settings-thread-auto-close'],
+    queryFn: () => api.get<{ settings: { threadAutoCloseDays: number | null } }>('/settings').then(r => r.data.settings),
+    staleTime: 5 * 60_000,
+  });
+  const autoCloseDays = settings?.threadAutoCloseDays ?? 7;
 
   const { data: message, isLoading } = useQuery({
     queryKey: ['message', id],
@@ -161,7 +171,7 @@ export default function MessageDetailPage(): React.JSX.Element {
 
   const aiSuggestDisabled =
     message?.rental.status === 'completed' &&
-    differenceInDays(new Date(), new Date(message.rental.endAt)) > 7;
+    differenceInDays(new Date(), new Date(message.rental.endAt)) > autoCloseDays;
 
   if (isLoading) {
     return (
@@ -200,7 +210,9 @@ export default function MessageDetailPage(): React.JSX.Element {
               {format(new Date(message.rental.startAt), 'dd/MM', { locale: fr })} →{' '}
               {format(new Date(message.rental.endAt), 'dd/MM/yy', { locale: fr })}
               {isThreadDismissed && (
-                <span className="ml-2 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Clôturé</span>
+                <span className="ml-2 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                  {message.rental.dismissedReason === 'auto_rental_ended' ? 'Clôturé auto' : 'Clôturé'}
+                </span>
               )}
             </p>
           </div>
@@ -238,7 +250,11 @@ export default function MessageDetailPage(): React.JSX.Element {
           {/* Fil clôturé */}
           {isThreadDismissed && (
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-center">
-              <p className="text-sm text-gray-500 mb-2">Ce fil a été clôturé sans réponse.</p>
+              <p className="text-sm text-gray-500 mb-2">
+                {message.rental.dismissedReason === 'auto_rental_ended'
+                  ? `Ce fil a été clôturé automatiquement — location terminée depuis plus de ${autoCloseDays} jours, sans réponse.`
+                  : 'Ce fil a été clôturé sans réponse.'}
+              </p>
               <button
                 type="button"
                 onClick={() => undismissMutation.mutate()}

@@ -46,6 +46,11 @@ enum MessageOrigin {
   inbound          // Message entrant locataire
 }
 
+enum DismissedReason {
+  manual             // Clôturé par un opérateur (bouton "Clôturer sans réponse")
+  auto_rental_ended  // Clôturé automatiquement — location terminée depuis > threadAutoCloseDays, sans réponse
+}
+
 enum MessageStatus {
   pending_approval
   approved
@@ -296,6 +301,8 @@ model Rental {
   evaluationFlagUnblockedById String?
   rentalInvoices              RentalInvoice[]
   threadDismissedAt           DateTime?       // Fil clôturé sans réponse (dismissed)
+  dismissedReason             DismissedReason? // manual (opérateur) | auto_rental_ended (cron)
+  operatorPinned              Boolean         @default(false) // Réouvert manuellement par un opérateur SANS nouvel inbound — jamais re-clôturé par le cron auto-close tant que le flag est levé
 
   @@map("rentals")
 }
@@ -776,6 +783,7 @@ model CompanySettings {
   kmStopGA                Int      @default(200000) // Km limite GA (véhicule retiré de la plateforme)
   defaultDepreciationRate Float    @default(100)    // Pente €/mois par défaut si aucun snapshot disponible
   messageUnansweredMinutes  Int?                    // Délai avant alerte message sans réponse (null = 30 min)
+  threadAutoCloseDays       Int?                    // Jours après fin de location avant clôture auto d'un fil non répondu (null = 7)
   suggestionsCacheTtlHours  Int      @default(1)    // Durée cache suggestions IA (heures)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

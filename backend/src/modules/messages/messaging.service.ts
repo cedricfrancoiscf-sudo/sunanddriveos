@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Resend } from 'resend';
 import type { PrismaClient } from '../../generated/tenant';
 import type { GetaroundClient } from '../getaround-sync/getaround-sync.service';
+import { recomputeCarSeatStock } from '../car-seats/car-seats.service';
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -382,13 +383,10 @@ Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) :
     if (!existing) {
       const availableSeat = await db.carSeat.findFirst({ where: { isActive: true, availableStock: { gt: 0 } } });
       if (availableSeat) {
-        await db.carSeat.update({
-          where: { id: availableSeat.id },
-          data: { availableStock: { decrement: 1 } },
-        });
         await db.carSeatRequest.create({
           data: { vehicleId: rental.vehicleId, rentalId: rental.id, carSeatId: availableSeat.id, status: 'confirmed' },
         });
+        await recomputeCarSeatStock(db, availableSeat.id);
         const staff = await db.user.findMany({
           where: { role: { in: ['admin', 'carkeeper'] }, isActive: true },
           select: { email: true },
@@ -597,10 +595,10 @@ Réponds UNIQUEMENT en JSON valide, sans markdown :
     if (!existing) {
       const availableSeat = await db.carSeat.findFirst({ where: { isActive: true, availableStock: { gt: 0 } } });
       if (availableSeat) {
-        await db.carSeat.update({ where: { id: availableSeat.id }, data: { availableStock: { decrement: 1 } } });
         await db.carSeatRequest.create({
           data: { vehicleId: rental.vehicleId, rentalId: rental.id, carSeatId: availableSeat.id, status: 'confirmed' },
         });
+        await recomputeCarSeatStock(db, availableSeat.id);
         const staff = await db.user.findMany({
           where: { isActive: true, OR: [{ role: { in: ['admin', 'carkeeper'] } }, { roles: { hasSome: ['admin', 'carkeeper'] } }] },
           select: { email: true },

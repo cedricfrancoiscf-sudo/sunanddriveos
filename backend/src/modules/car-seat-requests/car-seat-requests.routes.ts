@@ -4,6 +4,7 @@ import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import { sendCarSeatEmail, type RentalForMessaging } from '../messages/messaging.service';
+import { recomputeCarSeatStock } from '../car-seats/car-seats.service';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -84,11 +85,6 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const requestStatus = matchingSeat ? 'confirmed' : 'unavailable';
 
-    // Décrémenter le stock immédiatement si un siège est assigné
-    if (matchingSeat) {
-      await db.carSeat.update({ where: { id: matchingSeat.id }, data: { availableStock: { decrement: 1 } } });
-    }
-
     const request = await db.carSeatRequest.create({
       data: {
         vehicleId: body.data.vehicleId,
@@ -100,6 +96,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       },
       include: { carSeat: { select: { id: true, name: true, minWeightKg: true, maxWeightKg: true } } },
     });
+
+    // Stock recalculé depuis les CarSeatRequest réellement en cours plutôt
+    // qu'incrémenté/décrémenté à la main (cf. car-seats.service.ts)
+    if (matchingSeat) await recomputeCarSeatStock(db, matchingSeat.id);
 
     console.log(`[CarSeatRequest] Créée — status=${requestStatus} carSeatId=${matchingSeat?.id ?? 'null'} rental=${body.data.rentalId ?? 'n/a'}`);
 
@@ -168,28 +168,22 @@ router.put('/:id/confirm', async (req: Request, res: Response, next: NextFunctio
     if (!existing.carSeatId || !existing.carSeat) {
       res.status(400).json({ error: 'Aucun siège associé — vérifiez le poids de l\'enfant' }); return;
     }
-    if (existing.carSeat.availableStock <= 0) {
+    const carSeat = existing.carSeat;
+    if (carSeat.availableStock <= 0) {
       res.status(400).json({ error: 'Rupture de stock — siège indisponible' }); return;
     }
 
-    const [updatedSeat, request] = await Promise.all([
-      db.carSeat.update({
-        where: { id: existing.carSeatId },
-        data: { availableStock: { decrement: 1 } },
-      }),
-      db.carSeatRequest.update({
-        where: { id: (req.params.id as string) },
-        data: { status: 'confirmed' },
-        include: {
-          carSeat: { select: { id: true, name: true, minWeightKg: true, maxWeightKg: true } },
-        },
-      }),
-    ]);
+    await db.carSeatRequest.update({ where: { id: (req.params.id as string) }, data: { status: 'confirmed' } });
+    const availableStock = await recomputeCarSeatStock(db, existing.carSeatId);
+    const request = await db.carSeatRequest.findUnique({
+      where: { id: (req.params.id as string) },
+      include: { carSeat: { select: { id: true, name: true, minWeightKg: true, maxWeightKg: true } } },
+    });
 
     // Alerte rupture de stock : notifier les admins
     const alerts: string[] = [];
-    if (updatedSeat.availableStock === 0) {
-      alerts.push(`Rupture de stock : ${updatedSeat.name}`);
+    if (availableStock === 0) {
+      alerts.push(`Rupture de stock : ${carSeat.name}`);
       const admins = await db.user.findMany({
         where: { role: { in: ['admin', 'exploitation'] as never[] }, isActive: true },
       });
@@ -199,9 +193,9 @@ router.put('/:id/confirm', async (req: Request, res: Response, next: NextFunctio
             userId: admin.id,
             type: 'car_seat_out_of_stock',
             title: 'Rupture de stock — siège auto',
-            body: `Le siège "${updatedSeat.name}" (${updatedSeat.minWeightKg}–${updatedSeat.maxWeightKg} kg) est épuisé.`,
+            body: `Le siège "${carSeat.name}" (${carSeat.minWeightKg}–${carSeat.maxWeightKg} kg) est épuisé.`,
             relatedEntityType: 'car_seat',
-            relatedEntityId: updatedSeat.id,
+            relatedEntityId: carSeat.id,
           },
         })
       ));
@@ -211,20 +205,27 @@ router.put('/:id/confirm', async (req: Request, res: Response, next: NextFunctio
   } catch (err: unknown) { next(err); }
 });
 
-// PUT /api/v1/car-seat-requests/:id/deny — refuser la demande
+// PUT /api/v1/car-seat-requests/:id/deny — refuser la demande. Peut arriver sur
+// une demande déjà 'confirmed' (l'opérateur annule une affectation) : le
+// recompute libère alors l'unité tenue, sans quoi le stock resterait bloqué.
 router.put('/:id/deny', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = z.object({ notes: z.string().optional() }).safeParse(req.body);
     const db = getTenantClient(req.tenantDbUrl!);
+    const existing = await db.carSeatRequest.findUnique({ where: { id: (req.params.id as string) } });
+    if (!existing) { res.status(404).json({ error: 'Demande introuvable' }); return; }
+
     const request = await db.carSeatRequest.update({
       where: { id: (req.params.id as string) },
       data: { status: 'denied', ...(body.success && body.data.notes ? { notes: body.data.notes } : {}) },
     });
+    if (existing.carSeatId) await recomputeCarSeatStock(db, existing.carSeatId);
+
     res.json({ request });
   } catch (err: unknown) { next(err); }
 });
 
-// PUT /api/v1/car-seat-requests/:id/return — retour du siège, incrémenter stock
+// PUT /api/v1/car-seat-requests/:id/return — retour du siège, libère l'unité tenue
 router.put('/:id/return', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getTenantClient(req.tenantDbUrl!);
@@ -232,16 +233,12 @@ router.put('/:id/return', async (req: Request, res: Response, next: NextFunction
     if (!existing) { res.status(404).json({ error: 'Demande introuvable' }); return; }
     if (existing.status !== 'confirmed') { res.status(400).json({ error: 'Demande non confirmée' }); return; }
 
-    const [, request] = await Promise.all([
-      existing.carSeatId
-        ? db.carSeat.update({ where: { id: existing.carSeatId }, data: { availableStock: { increment: 1 } } })
-        : Promise.resolve(null),
-      db.carSeatRequest.update({
-        where: { id: (req.params.id as string) },
-        data: { status: 'returned' },
-        include: { carSeat: { select: { id: true, name: true } } },
-      }),
-    ]);
+    const request = await db.carSeatRequest.update({
+      where: { id: (req.params.id as string) },
+      data: { status: 'returned' },
+      include: { carSeat: { select: { id: true, name: true } } },
+    });
+    if (existing.carSeatId) await recomputeCarSeatStock(db, existing.carSeatId);
 
     res.json({ request });
   } catch (err: unknown) { next(err); }

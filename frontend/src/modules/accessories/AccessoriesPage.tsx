@@ -461,8 +461,14 @@ function CarSeatsTab(): React.JSX.Element {
       minWeightKg: Number(data.minWeightKg),
       maxWeightKg: Number(data.maxWeightKg),
       carkeeperId: data.carkeeperId || null,
+      totalStock: Number(data.totalStock),
     }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['car-seats'] }); setEditId(null); setForm(EMPTY_SEAT); setShowForm(false); },
+  });
+
+  const recomputeStockMutation = useMutation({
+    mutationFn: () => api.post<{ updated: number }>('/car-seats/recompute-stock').then(r => r.data),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['car-seats'] }),
   });
 
   const deleteMutation = useMutation({
@@ -511,11 +517,19 @@ function CarSeatsTab(): React.JSX.Element {
             </span>
           )}
         </div>
-        <button type="button" onClick={() => { setShowForm(true); setEditId(null); setForm(EMPTY_SEAT); }}
-          className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: '#01696e' }}>
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          Ajouter
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => recomputeStockMutation.mutate()}
+            disabled={recomputeStockMutation.isPending}
+            title="Recalcule le stock disponible à partir des sièges réellement en location"
+            className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+            {recomputeStockMutation.isPending ? 'Recalcul...' : 'Recalculer le stock'}
+          </button>
+          <button type="button" onClick={() => { setShowForm(true); setEditId(null); setForm(EMPTY_SEAT); }}
+            className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: '#01696e' }}>
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            Ajouter
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -540,14 +554,15 @@ function CarSeatsTab(): React.JSX.Element {
                 onChange={e => setForm(f => ({ ...f, maxWeightKg: e.target.value }))}
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
             </div>
-            {!editId && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Stock initial</label>
-                <input type="number" min="0" value={form.totalStock}
-                  onChange={e => setForm(f => ({ ...f, totalStock: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
-              </div>
-            )}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">{editId ? 'Quantité totale' : 'Stock initial'}</label>
+              <input type="number" min="0" value={form.totalStock}
+                onChange={e => setForm(f => ({ ...f, totalStock: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#01696e]" />
+              {editId && (
+                <p className="mt-1 text-[11px] text-gray-400">Le stock disponible est recalculé automatiquement à l'enregistrement.</p>
+              )}
+            </div>
             <div className="sm:col-span-4">
               <label className="mb-1 block text-xs font-medium text-gray-600">Carkeeper responsable</label>
               <select value={form.carkeeperId} onChange={e => setForm(f => ({ ...f, carkeeperId: e.target.value }))}

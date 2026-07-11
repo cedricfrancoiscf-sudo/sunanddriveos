@@ -91,17 +91,9 @@ export default function MessageDetailPage(): React.JSX.Element {
   // Dernier message inbound du fil
   const lastInbound = [...thread].reverse().find(m => m.direction === 'inbound');
 
-  // Le fil est répondu si une vraie réponse (manual/ai_approved) sent/approved existe APRÈS le dernier inbound
-  // — séquences auto et injections système Getaround ne comptent jamais comme une réponse
-  const hasReplyAfterLastInbound = lastInbound
-    ? thread.some(
-        m =>
-          m.direction === 'outbound' &&
-          (m.status === 'sent' || m.status === 'approved') &&
-          (m.origin === 'manual' || m.origin === 'ai_approved') &&
-          new Date(m.createdAt) > new Date(lastInbound.createdAt),
-      )
-    : false;
+  // Calculé côté backend (getMessage) — même définition que listMessages/isThreadAnswered,
+  // jamais réimplémenté ici pour éviter toute dérive entre le fil et la liste.
+  const hasReplyAfterLastInbound = Boolean(message?.isThreadAnswered);
 
   // BLOC 3 — brouillon périmé : nouveau inbound arrivé depuis la génération du brouillon
   const isDraftStale =

@@ -27,7 +27,7 @@ export interface Message {
   cancelledAt: string | null;
   importedViaSync?: boolean;
   createdAt: string;
-  // Computed by listMessages backend
+  // Computed by the backend (listMessages and getMessage) — never recompute client-side
   isThreadAnswered?: boolean;
   lastInboundAt?: string | null;
   threadDismissedAt?: string | null;

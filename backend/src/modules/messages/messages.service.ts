@@ -9,10 +9,24 @@ const GETAROUND_SYSTEM_PATTERNS = [
   /où\s+rendre[\s\S]*(voiture|véhicule)/i,
   /where\s+to\s+find[\s\S]*car/i,
   /where\s+to\s+return[\s\S]*car/i,
+  /returning\s+the\s+car/i,
+  /devolver\s+el\s+coche/i,
+  /auto\s+finden/i,
 ];
 
 export function detectGetaroundSystemMessage(content: string): boolean {
   return GETAROUND_SYSTEM_PATTERNS.some(p => p.test(content));
+}
+
+// Templates connus des séquences auto (MessageSequence) — jamais une vraie réponse.
+const SEQUENCE_TEMPLATE_PATTERNS = [
+  /je vous remercie pour[\s\S]*demande de location/i,
+  /nous vous remercions pour votre location/i,
+  /bonjour et merci pour votre demande de location/i,
+];
+
+export function detectSequenceTemplateMessage(content: string): boolean {
+  return SEQUENCE_TEMPLATE_PATTERNS.some(p => p.test(content));
 }
 
 // Classifie l'origin d'un message synchronisé/webhook depuis Getaround —
@@ -23,6 +37,20 @@ export function classifySyncedMessageOrigin(
 ): 'inbound' | 'getaround_system' | 'manual' {
   if (direction === 'inbound') return 'inbound';
   return detectGetaroundSystemMessage(content) ? 'getaround_system' : 'manual';
+}
+
+// Un outbound compte-t-il comme une vraie réponse (manual/ai_approved) ?
+// Liste d'EXCLUSION plutôt que d'inclusion stricte : si origin est manquant
+// (ex: back-fill jamais exécuté), on ne bloque jamais tout le fil — on retombe
+// sur aiSuggestion/pattern de contenu pour deviner l'origine. Un origin=null
+// mal classé au pire compte à tort comme réponse (jamais l'inverse en masse).
+export function isRealReplyOrigin(message: { origin: string | null; aiSuggestion: string | null; content: string }): boolean {
+  if (message.origin === 'sequence' || message.origin === 'getaround_system') return false;
+  if (message.origin === 'manual' || message.origin === 'ai_approved') return true;
+  // origin null (inbound n'est jamais passé ici par les appelants)
+  if (message.aiSuggestion != null) return true;
+  if (detectGetaroundSystemMessage(message.content) || detectSequenceTemplateMessage(message.content)) return false;
+  return true;
 }
 
 export type MessageFilters = {
@@ -99,17 +127,15 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
       orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
       distinct: ['rentalId'],
     }),
-    // Per-rental: most recent real outbound reply (sequences/system messages never count as an answer)
+    // Per-rental: candidate outbound replies (sequences/system messages never count as an answer)
+    // — classification tolérante à origin=null, cf. isRealReplyOrigin
     db.message.findMany({
       where: {
         rentalId: { in: rentalIds },
         direction: 'outbound',
         status: { in: ['sent', 'approved'] },
-        origin: { in: ['manual', 'ai_approved'] },
       },
-      select: { rentalId: true, createdAt: true },
-      orderBy: [{ rentalId: 'asc' }, { createdAt: 'desc' }],
-      distinct: ['rentalId'],
+      select: { rentalId: true, createdAt: true, origin: true, aiSuggestion: true, content: true },
     }),
     // Per-rental: timestamp of the last inbound message
     db.message.findMany({
@@ -122,16 +148,14 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
 
   const lastInboundMap = new Map(lastInboundRows.map(m => [m.rentalId, m.createdAt]));
 
-  // Un fil n'est répondu que si sa réponse (manual/ai_approved) la plus récente suit le dernier inbound
-  const answeredSet = new Set(
-    answeredRows
-      .filter((row): row is typeof row & { rentalId: string } => row.rentalId !== null)
-      .filter(row => {
-        const lastInboundAt = lastInboundMap.get(row.rentalId);
-        return !lastInboundAt || row.createdAt > lastInboundAt;
-      })
-      .map(row => row.rentalId),
-  );
+  // Un fil n'est répondu que si une vraie réponse (manual/ai_approved) suit le dernier inbound
+  const answeredSet = new Set<string>();
+  for (const row of answeredRows) {
+    if (!row.rentalId || answeredSet.has(row.rentalId)) continue;
+    if (!isRealReplyOrigin(row)) continue;
+    const lastInboundAt = lastInboundMap.get(row.rentalId);
+    if (!lastInboundAt || row.createdAt > lastInboundAt) answeredSet.add(row.rentalId);
+  }
 
   const messageMap = new Map(messages.map(m => [m.rentalId, m]));
   const ordered = rentalIds.map(rid => messageMap.get(rid)).filter((m): m is NonNullable<typeof m> => m != null);
@@ -150,7 +174,7 @@ export async function listMessages(db: PrismaClient, filters: MessageFilters = {
 }
 
 export async function getMessage(db: PrismaClient, id: string) {
-  return db.message.findUnique({
+  const message = await db.message.findUnique({
     where: { id },
     include: {
       rental: {
@@ -183,6 +207,21 @@ export async function getMessage(db: PrismaClient, id: string) {
       approvedBy: { select: { id: true, name: true } },
     },
   });
+  if (!message) return null;
+
+  // Même définition que listMessages — calculée ici pour que le front n'ait
+  // jamais à réimplémenter sa propre copie (source de dérive/régression).
+  const thread = message.rental.messages;
+  const lastInbound = [...thread].reverse().find(m => m.direction === 'inbound');
+  const isThreadAnswered = thread.some(
+    m =>
+      m.direction === 'outbound' &&
+      (m.status === 'sent' || m.status === 'approved') &&
+      isRealReplyOrigin(m) &&
+      (!lastInbound || m.createdAt > lastInbound.createdAt),
+  );
+
+  return { ...message, isThreadAnswered, lastInboundAt: lastInbound?.createdAt ?? null };
 }
 
 export async function createOutboundMessage(

@@ -1,6 +1,6 @@
 // Types, helpers et modal partagés entre MaintenancePage (/maintenance) et CTPage (/ct)
 import React, { useState } from 'react';
-import { format, isPast, differenceInDays, addMonths } from 'date-fns';
+import { format, addMonths } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { DocumentScanner } from '../../components/ui/DocumentScanner';
 
@@ -20,6 +20,10 @@ export interface Vehicle {
 
 export type CtResult = 'favorable' | 'defavorable' | 'contre_visite';
 
+// Doit rester identique à TaskAlertStatus (backend, maintenance.service.ts) —
+// c'est le backend qui décide, jamais le frontend (cf. classifyTaskStatus).
+export type TaskStatus = 'contre_visite' | 'overdue' | 'urgent' | 'soon' | 'ok' | 'unknown';
+
 export interface MaintenanceTask {
   id: string;
   vehicleId: string;
@@ -37,6 +41,7 @@ export interface MaintenanceTask {
   ctCounterVisitDeadline: string | null;
   totalCost: number;
   occurrenceCount: number;
+  alertStatus: TaskStatus;
   vehicle: Vehicle;
 }
 
@@ -54,26 +59,10 @@ export interface Maintenance {
   vehicle: Vehicle;
 }
 
-// ─── Logique statut ───────────────────────────────────────────────────────────
-
-export type TaskStatus = 'contre_visite' | 'overdue' | 'urgent' | 'soon' | 'ok' | 'unknown';
+// ─── Statut — décidé par le backend (classifyTaskStatus), jamais recalculé ici ─
 
 export function computeTaskStatus(task: MaintenanceTask): TaskStatus {
-  if (task.ctCounterVisitDeadline && (task.ctResult === 'defavorable' || task.ctResult === 'contre_visite')) {
-    return 'contre_visite';
-  }
-  if (!task.nextDueDate && task.occurrenceCount === 0) return 'unknown';
-  if (!task.nextDueDate) return 'ok';
-  const d = new Date(task.nextDueDate);
-  if (isPast(d)) return 'overdue';
-  const days = differenceInDays(d, new Date());
-  if (task.type === 'ct') {
-    if (days <= 60) return 'urgent';
-    if (days <= 90) return 'soon';
-  } else {
-    if (days <= 30) return 'soon';
-  }
-  return 'ok';
+  return task.alertStatus ?? 'unknown';
 }
 
 export function alertMessage(task: MaintenanceTask): { text: string; color: 'red' | 'orange' } {

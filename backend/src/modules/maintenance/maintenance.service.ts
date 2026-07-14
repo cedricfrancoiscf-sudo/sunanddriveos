@@ -12,15 +12,56 @@ export type TaskUpdateInput = {
   ctResult?: 'favorable' | 'defavorable' | 'contre_visite';
 };
 
+// ─── Statut d'alerte — définition UNIQUE, backend, consommée telle quelle par
+// dashboard, /intelligence, le cron matinal ET le frontend (/maintenance, /ct,
+// dashboard). Le frontend n'a plus à recalculer d'urgence à partir de dates —
+// il affiche task.alertStatus tel que renvoyé par l'API.
+export type TaskAlertStatus = 'contre_visite' | 'overdue' | 'urgent' | 'soon' | 'ok' | 'unknown';
+
+export async function getCtAlertWindowDays(db: PrismaClient): Promise<number> {
+  const settings = await db.companySettings.findFirst({ select: { ctAlertWindowDays: true } });
+  return settings?.ctAlertWindowDays ?? 60;
+}
+
+export function classifyTaskStatus(
+  task: {
+    type: string;
+    nextDueDate: Date | null;
+    ctCounterVisitDeadline: Date | null;
+    ctResult: string | null;
+    occurrenceCount: number;
+  },
+  ctWindowDays: number,
+): TaskAlertStatus {
+  if (task.ctCounterVisitDeadline && (task.ctResult === 'defavorable' || task.ctResult === 'contre_visite')) {
+    return 'contre_visite';
+  }
+  if (!task.nextDueDate && task.occurrenceCount === 0) return 'unknown';
+  if (!task.nextDueDate) return 'ok';
+  const days = Math.ceil((task.nextDueDate.getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return 'overdue';
+  if (task.type === 'ct') {
+    if (days <= ctWindowDays) return 'urgent';
+    if (days <= ctWindowDays * 1.5) return 'soon';
+  } else {
+    if (days <= 30) return 'soon';
+  }
+  return 'ok';
+}
+
 // ─── Tâches récurrentes ───────────────────────────────────────────────────────
 
 export async function listTasks(db: PrismaClient) {
-  return db.maintenanceTask.findMany({
-    include: {
-      vehicle: { select: { id: true, make: true, model: true, licensePlate: true, isActive: true, vehicleCategory: true, deliveryPointName: true, parkingZone: true, currentMileage: true } },
-    },
-    orderBy: [{ vehicle: { licensePlate: 'asc' } }, { type: 'asc' }],
-  });
+  const [tasks, ctWindowDays] = await Promise.all([
+    db.maintenanceTask.findMany({
+      include: {
+        vehicle: { select: { id: true, make: true, model: true, licensePlate: true, isActive: true, vehicleCategory: true, deliveryPointName: true, parkingZone: true, currentMileage: true } },
+      },
+      orderBy: [{ vehicle: { licensePlate: 'asc' } }, { type: 'asc' }],
+    }),
+    getCtAlertWindowDays(db),
+  ]);
+  return tasks.map(t => ({ ...t, alertStatus: classifyTaskStatus(t, ctWindowDays) }));
 }
 
 export async function getTasksByVehicle(db: PrismaClient, vehicleId: string) {
@@ -171,33 +212,38 @@ export async function initMaintenanceTasks(
   }
 }
 
-// Alertes issues des tâches récurrentes — logique contextuelle selon ctResult
+// Définition UNIQUE de "entretien/CT à prévoir" — importée par intelligence
+// (KPIs + chat IA), le dashboard/page maintenance, le cron matinal, le cron
+// Telegram J-30 ET le frontend (qui consomme alertStatus, calculé ici, sans
+// jamais le recalculer). Ne pas réimplémenter cette logique ailleurs (cf.
+// incident du 14/07 : un CT à 33j n'apparaissait sur aucun écran à cause de
+// définitions divergentes ; puis 3 recalculs supplémentaires trouvés le
+// même jour dans intelligence.routes.ts, server.ts et le frontend).
+//
+// Fenêtre CT unique, contre-visite et CT normal confondus (configurable via
+// CompanySettings.ctAlertWindowDays, défaut 60j) : une contre-visite implique
+// un travail à planifier (pièces, budget, immobilisation) donc doit alerter
+// PLUS TÔT, pas plus tard — l'ancienne fenêtre 30j-si-contre-visite était à
+// l'envers. ctResult n'intervient plus dans le calcul de la fenêtre (il reste
+// utile pour l'affichage via classifyTaskStatus), ce qui rend l'alerte
+// robuste même quand ctResult n'est pas renseigné.
 export async function getTaskAlerts(db: PrismaClient, vehicleIds?: string[]) {
-  const now = new Date();
-  const in30d = new Date(now.getTime() + 30 * 86_400_000);
-  const in60d = new Date(now.getTime() + 60 * 86_400_000);
+  const [tasks, ctWindowDays] = await Promise.all([
+    db.maintenanceTask.findMany({
+      where: {
+        vehicle: { isActive: true, ...(vehicleIds ? { id: { in: vehicleIds } } : {}) },
+      },
+      include: {
+        vehicle: { select: { id: true, make: true, model: true, licensePlate: true, vehicleCategory: true } },
+      },
+      orderBy: { nextDueDate: 'asc' },
+    }),
+    getCtAlertWindowDays(db),
+  ]);
 
-  return db.maintenanceTask.findMany({
-    where: {
-      vehicle: { isActive: true, ...(vehicleIds ? { id: { in: vehicleIds } } : {}) },
-      OR: [
-        // Contre-visite CT urgente (deadline dans 30j ou dépassée)
-        { type: 'ct', ctResult: { in: ['defavorable', 'contre_visite'] }, ctCounterVisitDeadline: { lte: in30d } },
-        // CT favorable à renouveler (dans 60j ou dépassé)
-        { type: 'ct', ctResult: 'favorable', nextDueDate: { lte: in60d } },
-        // CT sans résultat renseigné mais nextDueDate approche
-        { type: 'ct', ctResult: null, nextDueDate: { lte: in60d } },
-        // Révision à prévoir (dans 30j ou dépassée)
-        { type: 'revision', nextDueDate: { lte: in30d } },
-        // Tâches jamais effectuées → à compléter
-        { nextDueDate: null, occurrenceCount: 0 },
-      ],
-    },
-    include: {
-      vehicle: { select: { id: true, make: true, model: true, licensePlate: true, vehicleCategory: true } },
-    },
-    orderBy: { nextDueDate: 'asc' },
-  });
+  return tasks
+    .map(t => ({ ...t, alertStatus: classifyTaskStatus(t, ctWindowDays) }))
+    .filter(t => t.alertStatus !== 'ok');
 }
 
 // Migration : lie les Maintenance existants aux tâches et met à jour les cumuls.
@@ -279,6 +325,14 @@ export async function migrateMaintenanceTasks(db: PrismaClient): Promise<{
             lastProvider: latest.provider,
             lastNotes: latest.notes,
             nextDueDate: latest.nextServiceDate,
+            // ctResult n'était pas propagé ici — un CT correctement saisi
+            // (ctResult renseigné sur l'entrée Maintenance) pouvait rester
+            // invisible au niveau de la tâche après un re-sync/migration.
+            ctResult: latest.ctResult,
+            ctCounterVisitDeadline:
+              latest.ctResult === 'defavorable' || latest.ctResult === 'contre_visite'
+                ? latest.nextServiceDate
+                : null,
             totalCost,
             occurrenceCount: ctHistory.length,
           },
@@ -335,13 +389,19 @@ export async function deleteMaintenance(db: PrismaClient, id: string) {
   return db.maintenance.delete({ where: { id } });
 }
 
-// Entretiens dont l'échéance date (45j) OU km (2500km avant) est atteinte
+// Entretiens PONCTUELS (pneus, freins...) dont l'échéance date (45j) OU km
+// (2500km avant) est atteinte. Exclut ct/revision/vidange : ces types sont
+// pilotés exclusivement par MaintenanceTask (cf. getTaskAlerts) — CLAUDE.md
+// désigne MaintenanceTask comme source unique de vérité pour le CT, et le
+// modèle Maintenance (historique) ne doit plus jamais être relu pour décider
+// si un CT est à prévoir.
 export async function getUpcomingMaintenances(db: PrismaClient) {
   const in45d = new Date(Date.now() + 45 * 86_400_000);
 
   // Étape 1 : candidats ayant au moins une échéance renseignée
   const candidates = await db.maintenance.findMany({
     where: {
+      type: { notIn: ['ct', 'revision', 'vidange'] },
       OR: [
         { nextServiceDate: { not: null, lte: in45d } },
         { nextServiceMileage: { not: null } },

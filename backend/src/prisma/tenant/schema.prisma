@@ -786,6 +786,7 @@ model CompanySettings {
   defaultDepreciationRate Float    @default(100)    // Pente €/mois par défaut si aucun snapshot disponible
   messageUnansweredMinutes  Int?                    // Délai avant alerte message sans réponse (null = 30 min)
   threadAutoCloseDays       Int?                    // Jours après fin de location avant clôture auto d'un fil non répondu (null = 7)
+  ctAlertWindowDays         Int?                    // Fenêtre alerte "CT à prévoir", contre-visite et CT normal confondus (null = 60j)
   suggestionsCacheTtlHours  Int      @default(1)    // Durée cache suggestions IA (heures)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

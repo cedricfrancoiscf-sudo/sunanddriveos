@@ -18,7 +18,7 @@ import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
 import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
 import { notifyMileageAnomalies } from './modules/ai/ai.service';
-import { getUpcomingMaintenances } from './modules/maintenance/maintenance.service';
+import { getUpcomingMaintenances, getTaskAlerts } from './modules/maintenance/maintenance.service';
 import { sendEmail } from './utils/mailer';
 import { trialExpiryEmailHtml } from './modules/email/templates';
 import { sendTelegramMessage, getTelegramChatId } from './utils/telegram';
@@ -759,17 +759,19 @@ async function runMorningBriefing(): Promise<void> {
         const db = getTenantClient(company.tenantDbUrl);
         const now = new Date();
         const in24h = new Date(now.getTime() + 86_400_000);
-        const in30d = new Date(now.getTime() + 30 * 86_400_000);
+        // cutoff2h : fenêtre "départ imminent sans confirmation" (concept distinct
+        // du seuil "message sans réponse" — reste fixe, hors périmètre de ce ticket).
         const cutoff2h = new Date(now.getTime() - 2 * 3_600_000);
         const dateLabel = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
         const [
           departures, returns, carSeatRequests,
-          expiringCT, expiringMaint,
+          taskAlerts, punctualMaint,
           pendingDrafts,
           anomalies,
           adminUsers,
           allCarkeepers,
+          messagingSettings,
         ] = await Promise.all([
           db.rental.findMany({
             where: { startAt: { gte: now, lte: in24h }, status: { in: ['booked', 'active'] } },
@@ -798,12 +800,10 @@ async function runMorningBriefing(): Promise<void> {
               },
             },
           }),
-          db.maintenanceTask.findMany({
-            where: { type: 'ct', nextDueDate: { gte: now, lte: in30d }, vehicle: { isActive: true } },
-            select: { nextDueDate: true, vehicle: { select: { id: true, make: true, model: true, licensePlate: true } } },
-            orderBy: { nextDueDate: 'asc' },
-          }),
-          getUpcomingMaintenances(db),
+          // Définition unique "entretien/CT à prévoir" — cf. getTaskAlerts (maintenance.service.ts),
+          // source MaintenanceTask exclusivement (conforme CLAUDE.md — pas le modèle Maintenance).
+          getTaskAlerts(db),
+          getUpcomingMaintenances(db), // ponctuels uniquement (pneus, freins...) — ct/revision exclus
           db.message.findMany({
             where: {
               direction: 'outbound', status: 'pending_approval',
@@ -835,7 +835,14 @@ async function runMorningBriefing(): Promise<void> {
             where: { isActive: true, OR: [{ role: 'carkeeper' as never }, { roles: { has: 'carkeeper' } }] },
             select: { email: true, name: true, role: true, roles: true, vehicleCarkeepers: { select: { vehicleId: true } } },
           }),
+          db.companySettings.findFirst({ select: { messageUnansweredMinutes: true } }),
         ]);
+
+        // Seuil "message sans réponse" — même source de vérité que dashboard.routes.ts
+        // et messages.service.ts (CompanySettings.messageUnansweredMinutes, défaut 30 min).
+        const unansweredMinutes = messagingSettings?.messageUnansweredMinutes ?? 30;
+        const unansweredCutoff = new Date(now.getTime() - unansweredMinutes * 60_000);
+        const unansweredLabel = unansweredMinutes % 60 === 0 ? `${unansweredMinutes / 60}h` : `${unansweredMinutes} min`;
 
         // CA du mois
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -853,12 +860,12 @@ async function runMorningBriefing(): Promise<void> {
         const caMoisEncaisse = monthRentals.filter(r => r.ownerPayout != null).reduce((s, r) => s + (r.ownerPayout ?? 0), 0);
         const caMoisPrevisionnel = monthRentals.filter(r => r.ownerPayout == null).reduce((s, r) => s + (r.grossRevenue ?? 0), 0);
 
-        // Messages sans réponse > 2h
+        // Messages sans réponse — seuil configurable (unansweredCutoff)
         const unansweredRentalIds = (await db.rental.findMany({
           where: {
             status: { in: ['booked', 'active'] },
             messages: {
-              some: { direction: 'inbound', createdAt: { lt: cutoff2h } },
+              some: { direction: 'inbound', createdAt: { lt: unansweredCutoff } },
               none: { direction: 'outbound', status: { in: ['approved', 'sent'] } },
             },
           },
@@ -867,7 +874,7 @@ async function runMorningBriefing(): Promise<void> {
 
         const unansweredMessages = unansweredRentalIds.length > 0
           ? await db.message.findMany({
-              where: { direction: 'inbound', createdAt: { lt: cutoff2h }, rentalId: { in: unansweredRentalIds } },
+              where: { direction: 'inbound', createdAt: { lt: unansweredCutoff }, rentalId: { in: unansweredRentalIds } },
               select: {
                 content: true,
                 rental: { select: { driverName: true, vehicle: { select: { make: true, model: true, licensePlate: true } } } },
@@ -883,9 +890,20 @@ async function runMorningBriefing(): Promise<void> {
         const section = (icon: string, title: string, rows: string[], emptyMsg = 'Rien à signaler') =>
           `<div style="margin:16px 0"><h3 style="font-size:14px;font-weight:bold;margin:0 0 8px;color:#1e293b">${icon} ${title}</h3>${rows.length > 0 ? `<ul style="margin:0;padding-left:20px;color:#374151;font-size:13px">${rows.map(r => `<li style="margin:2px 0">${r}</li>`).join('')}</ul>` : `<p style="color:#94a3b8;font-size:13px;margin:0">${emptyMsg}</p>`}</div>`;
 
+        // Formatage commun des lignes CT/révision (taskAlerts) — même source que
+        // dashboard et /intelligence (getTaskAlerts), donc même statut partout.
+        const formatTaskAlertRow = (t: { type: string; nextDueDate: Date | null; ctCounterVisitDeadline: Date | null; vehicle: { make: string; model: string; licensePlate: string } }): string => {
+          const label = t.type === 'ct' ? 'CT' : 'Révision';
+          const due = t.nextDueDate ?? t.ctCounterVisitDeadline;
+          const dateLabel = due
+            ? (new Date(due).getTime() <= now.getTime() ? 'échéance dépassée' : `expire le ${new Date(due).toLocaleDateString('fr-FR')}`)
+            : 'jamais effectué';
+          return `${label} — ${t.vehicle.make} ${t.vehicle.model} (${t.vehicle.licensePlate}) — ${dateLabel}`;
+        };
+
         const maintenanceRows = [
-          ...expiringCT.map(c => `CT — ${c.vehicle.make} ${c.vehicle.model} (${c.vehicle.licensePlate}) — expire le ${new Date(c.nextDueDate!).toLocaleDateString('fr-FR')}`),
-          ...expiringMaint.map(m => {
+          ...taskAlerts.map(formatTaskAlertRow),
+          ...punctualMaint.map(m => {
             const parts: string[] = [`${m.type} — ${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`];
             if (m.nextServiceDate) {
               const d = Math.ceil((new Date(m.nextServiceDate).getTime() - now.getTime()) / 86_400_000);
@@ -910,9 +928,9 @@ async function runMorningBriefing(): Promise<void> {
     ${section('🚗', `Départs du jour (${departures.length})`, departures.map(r => `<b>${fmt(new Date(r.startAt))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
     ${section('🔄', `Retours du jour (${returns.length})`, returns.map(r => `<b>${fmt(new Date(r.endAt!))}</b> — ${r.driverName} · ${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.licensePlate})${r.vehicle.parkingZone ? ` — ${r.vehicle.parkingZone}` : ''}`))}
     ${section('🪑', `Sièges auto à préparer (${carSeatRequests.length})`, carSeatRequests.filter(r => r.rental).map(r => `${r.rental!.driverName} · ${r.rental!.vehicle.make} ${r.rental!.vehicle.model} (${r.rental!.vehicle.licensePlate}) — départ ${new Date(r.rental!.startAt).toLocaleDateString('fr-FR')}`))}
-    ${section('🔧', `CT / Entretiens dans 30 j (${maintenanceRows.length})`, maintenanceRows)}
+    ${section('🔧', `CT / Entretiens à prévoir (${maintenanceRows.length})`, maintenanceRows)}
     ${section('✍️', `Brouillons IA à valider (${pendingDrafts.length})`, pendingDrafts.map(m => `${m.rental?.driverName ?? '?'} · ${m.rental?.vehicle.make} ${m.rental?.vehicle.model} (${m.rental?.vehicle.licensePlate})`))}
-    ${section('💬', `Messages sans réponse > 2h (${unansweredMessages.length})`, unansweredMessages.map(m => `${m.rental?.driverName ?? '?'} · ${m.rental?.vehicle.make} ${m.rental?.vehicle.model} — <i>${m.content.slice(0, 60)}…</i>`))}
+    ${section('💬', `Messages sans réponse > ${unansweredLabel} (${unansweredMessages.length})`, unansweredMessages.map(m => `${m.rental?.driverName ?? '?'} · ${m.rental?.vehicle.make} ${m.rental?.vehicle.model} — <i>${m.content.slice(0, 60)}…</i>`))}
     ${section('💶', 'CA du mois en cours', [
       ...(caMoisEncaisse > 0 ? [`Encaissé : <b>${fmtEur(caMoisEncaisse)}</b>`] : []),
       ...(caMoisPrevisionnel > 0 ? [`Prévisionnel : ${fmtEur(caMoisPrevisionnel)}`] : []),
@@ -929,8 +947,8 @@ async function runMorningBriefing(): Promise<void> {
           const ckReturns = returns.filter(r => ckVehicleIds.has(r.vehicle.id));
           const ckSeats = carSeatRequests.filter(r => r.rental && ckVehicleIds.has(r.rental.vehicle.id));
           const ckMaint = [
-            ...expiringCT.filter(c => ckVehicleIds.has(c.vehicle.id)).map(c => `CT — ${c.vehicle.make} ${c.vehicle.model} (${c.vehicle.licensePlate}) — expire le ${new Date(c.nextDueDate!).toLocaleDateString('fr-FR')}`),
-            ...expiringMaint.filter(m => ckVehicleIds.has(m.vehicle.id)).map(m => {
+            ...taskAlerts.filter(t => ckVehicleIds.has(t.vehicle.id)).map(formatTaskAlertRow),
+            ...punctualMaint.filter(m => ckVehicleIds.has(m.vehicle.id)).map(m => {
               const parts: string[] = [`${m.type} — ${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`];
               if (m.nextServiceDate) {
                 const d = Math.ceil((new Date(m.nextServiceDate).getTime() - now.getTime()) / 86_400_000);
@@ -1009,8 +1027,7 @@ async function checkUnresponsiveRenters(): Promise<void> {
       try {
         const db = getTenantClient(company.tenantDbUrl);
         const now = new Date();
-        const in2h = new Date(now.getTime() + 2 * 3_600_000);
-        const cutoff2h = new Date(now.getTime() - 2 * 3_600_000);
+        const in2h = new Date(now.getTime() + 2 * 3_600_000); // fenêtre "départ imminent" — hors périmètre
 
         // Locations dont le départ est dans moins de 2h
         const upcoming = await db.rental.findMany({
@@ -1021,13 +1038,18 @@ async function checkUnresponsiveRenters(): Promise<void> {
           },
         });
 
-        const admins = upcoming.length > 0
-          ? await db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } })
-          : [];
+        const [admins, unresponsiveSettings] = upcoming.length > 0
+          ? await Promise.all([
+              db.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+              db.companySettings.findFirst({ select: { messageUnansweredMinutes: true } }),
+            ])
+          : [[], null];
+        // Même source de vérité que dashboard.routes.ts / messages.service.ts
+        const unresponsiveCutoff = new Date(now.getTime() - (unresponsiveSettings?.messageUnansweredMinutes ?? 30) * 60_000);
 
         for (const rental of upcoming) {
           const lastInbound = rental.messages[0];
-          const isUnresponsive = !lastInbound || new Date(lastInbound.createdAt) < cutoff2h;
+          const isUnresponsive = !lastInbound || new Date(lastInbound.createdAt) < unresponsiveCutoff;
           if (!isUnresponsive) continue;
 
           const minUntil = Math.round((new Date(rental.startAt).getTime() - now.getTime()) / 60_000);
@@ -1385,14 +1407,13 @@ async function runDocumentExpiryAlerts(): Promise<void> {
       where: { isActive: true },
       select: { tenantDbUrl: true, slug: true },
     });
-    const in30d = new Date(Date.now() + 30 * 86_400_000);
     for (const company of companies) {
       try {
         const db = getTenantClient(company.tenantDbUrl);
-        const expiring = await db.maintenanceTask.findMany({
-          where: { type: 'ct', nextDueDate: { gte: new Date(), lte: in30d }, vehicle: { isActive: true } },
-          select: { id: true, vehicleId: true, nextDueDate: true, vehicle: { select: { make: true, model: true, licensePlate: true } } },
-        });
+        // Définition unique "CT à prévoir" — cf. getTaskAlerts (maintenance.service.ts).
+        // Plus de fenêtre 30j recalculée ici : le sous-ensemble CT de la liste
+        // canonique (contre-visite ou normal, fenêtre configurable) suffit.
+        const expiring = (await getTaskAlerts(db)).filter(t => t.type === 'ct');
         if (expiring.length === 0) continue;
 
         // Fetch admins + chatId en parallèle (commun à tous les CT)
@@ -1403,7 +1424,9 @@ async function runDocumentExpiryAlerts(): Promise<void> {
 
         // BLOC 3C — traiter chaque CT en parallèle
         await Promise.allSettled(expiring.map(async ct => {
-          const days = Math.ceil((new Date(ct.nextDueDate!).getTime() - Date.now()) / 86_400_000);
+          const dueDate = ct.nextDueDate ?? ct.ctCounterVisitDeadline;
+          const days = dueDate ? Math.ceil((new Date(dueDate).getTime() - Date.now()) / 86_400_000) : null;
+          const dayLabel = days == null ? 'échéance non renseignée' : days < 0 ? `en retard de ${Math.abs(days)} jour${Math.abs(days) > 1 ? 's' : ''}` : `dans ${days} jour${days > 1 ? 's' : ''}`;
           const label = `${ct.vehicle.make} ${ct.vehicle.model} (${ct.vehicle.licensePlate})`;
 
           // Admins + carkeepers assignés en parallèle
@@ -1420,8 +1443,8 @@ async function runDocumentExpiryAlerts(): Promise<void> {
               data: {
                 userId,
                 type: 'ct_expiry_30d',
-                title: `🔧 CT expire dans ${days} jour${days > 1 ? 's' : ''} — ${label}`,
-                body: `Expiration : ${new Date(ct.nextDueDate!).toLocaleDateString('fr-FR')}`,
+                title: `🔧 CT ${dayLabel} — ${label}`,
+                body: dueDate ? `Échéance : ${new Date(dueDate).toLocaleDateString('fr-FR')}` : 'Échéance non renseignée',
                 relatedEntityType: 'vehicle',
                 relatedEntityId: ct.vehicleId,
               },
@@ -1430,7 +1453,7 @@ async function runDocumentExpiryAlerts(): Promise<void> {
 
           if (chatId) {
             await sendTelegramMessage(chatId,
-              `🔧 <b>CT expire dans ${days} jour${days > 1 ? 's' : ''}</b>\n${label}\nExpiration : ${new Date(ct.nextDueDate!).toLocaleDateString('fr-FR')}`,
+              `🔧 <b>CT ${dayLabel}</b>\n${label}${dueDate ? `\nÉchéance : ${new Date(dueDate).toLocaleDateString('fr-FR')}` : ''}`,
             );
           }
         }));

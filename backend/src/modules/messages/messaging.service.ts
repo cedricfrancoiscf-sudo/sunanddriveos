@@ -290,6 +290,7 @@ export async function analyzeAndProcessMessage(
     select: {
       aiModeCarSeat: true, aiModeIncident: true, aiModeGeneral: true,
       aiTone: true, aiName: true, senderName: true, getaroundRules: true,
+      messageUnansweredMinutes: true,
     },
   });
   if (!settings) return;
@@ -541,13 +542,14 @@ Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) :
 
   // mode === 'manual'
   console.log(`[Messaging] Mode manuel — pas de brouillon rental ${rental.id}`);
-  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+  // Même source de vérité que dashboard.routes.ts / messages.service.ts (getInboxSummary)
+  const unansweredCutoff = new Date(Date.now() - (settings.messageUnansweredMinutes ?? 30) * 60_000);
   const hasRecentReply = await db.message.count({
     where: {
       rentalId: rental.id,
       direction: 'outbound',
       status: { in: ['sent', 'approved'] },
-      createdAt: { gte: twoHoursAgo },
+      createdAt: { gte: unansweredCutoff },
     },
   });
   if (hasRecentReply === 0 && admins.length > 0) {

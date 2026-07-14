@@ -78,6 +78,8 @@ export default function DashboardPage(): React.JSX.Element {
     ctResult: string | null;
     ctCounterVisitDeadline: string | null;
     occurrenceCount: number;
+    // Décidé par le backend (classifyTaskStatus) — jamais recalculé côté client.
+    alertStatus: 'contre_visite' | 'overdue' | 'urgent' | 'soon' | 'ok' | 'unknown';
     vehicle: { id: string; make: string; model: string; licensePlate: string; vehicleCategory: string };
   };
 
@@ -206,21 +208,21 @@ export default function DashboardPage(): React.JSX.Element {
     })),
     ...upcomingMaintenances.slice(0, 3).map(m => {
       const vLabel = `${m.vehicle.make} ${m.vehicle.model} (${m.vehicle.licensePlate})`;
-      const isCtContreVisite = m.type === 'ct' && (m.ctResult === 'defavorable' || m.ctResult === 'contre_visite');
-      const deadline = isCtContreVisite && m.ctCounterVisitDeadline ? new Date(m.ctCounterVisitDeadline) : m.nextDueDate ? new Date(m.nextDueDate) : null;
-      const overdue = deadline ? isPast(deadline) : false;
-      const severity = overdue ? 'high' as const : 'medium' as const;
+      // Statut décidé par le backend (classifyTaskStatus) — jamais recalculé ici.
+      const isCtContreVisite = m.alertStatus === 'contre_visite';
+      const overdue = m.alertStatus === 'overdue';
+      const severity = (overdue || isCtContreVisite) ? 'high' as const : 'medium' as const;
       const link = m.type === 'ct' ? '/ct' : '/maintenance';
       let label: string;
       if (m.occurrenceCount === 0) {
         label = `${m.type === 'ct' ? 'CT' : 'Révision'} ${vLabel} — à renseigner`;
       } else if (m.type === 'ct' && isCtContreVisite) {
         const dl = m.ctCounterVisitDeadline ? new Date(m.ctCounterVisitDeadline) : null;
-        label = `Contre-visite CT ${vLabel}${dl ? (isPast(dl) ? ` — délai dépassé le ${format(dl, 'dd/MM/yy', { locale: fr })}` : ` — avant le ${format(dl, 'dd/MM/yy', { locale: fr })}`) : ''}`;
+        label = `Contre-visite CT ${vLabel}${dl ? ` — avant le ${format(dl, 'dd/MM/yy', { locale: fr })}` : ''}`;
       } else if (m.type === 'ct') {
-        label = `CT ${vLabel}${m.nextDueDate ? (isPast(new Date(m.nextDueDate)) ? ` — expiré le ${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })}` : ` — à renouveler avant le ${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })}`) : ''}`;
+        label = `CT ${vLabel}${m.nextDueDate ? (overdue ? ` — expiré le ${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })}` : ` — à renouveler avant le ${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })}`) : ''}`;
       } else {
-        label = `Révision ${vLabel}${m.nextDueDate ? (isPast(new Date(m.nextDueDate)) ? ` — date dépassée (${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })})` : ` — à prévoir avant le ${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })}`) : ''}`;
+        label = `Révision ${vLabel}${m.nextDueDate ? (overdue ? ` — date dépassée (${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })})` : ` — à prévoir avant le ${format(new Date(m.nextDueDate), 'dd/MM/yy', { locale: fr })}`) : ''}`;
         if (m.nextDueMileage != null) {
           label += ` · ${m.nextDueMileage.toLocaleString('fr-FR')} km`;
         }

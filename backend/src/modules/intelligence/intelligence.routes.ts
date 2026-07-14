@@ -4,6 +4,7 @@ import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
 import { computeUnavailableDaysSet } from '../../utils/availability';
+import { getTaskAlerts } from '../maintenance/maintenance.service';
 import reportRouter from './report.routes';
 
 const router: Router = Router();
@@ -31,7 +32,7 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
     const thirtyDaysFromNow = new Date(Date.now() + 30 * 86_400_000);
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-    const [currentRentals, prevRentals, vehicles, pendingMaints, expiringCTs, monthBlockings, monthUnavailabilities] = await Promise.all([
+    const [currentRentals, prevRentals, vehicles, pendingMaints, monthBlockings, monthUnavailabilities] = await Promise.all([
       db.rental.findMany({
         where: { startAt: { gte: monthStart }, status: { in: ['booked', 'active', 'completed'] } },
         select: {
@@ -45,17 +46,8 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
         select: { grossRevenue: true, ownerPayout: true, vehicleId: true },
       }),
       db.vehicle.findMany({ where: { isActive: true }, select: { id: true, healthScore: true } }),
-      db.maintenanceTask.count({
-        where: {
-          vehicle: { isActive: true },
-          OR: [
-            { nextDueDate: { lte: thirtyDaysFromNow } },
-            { ctCounterVisitDeadline: { lte: thirtyDaysFromNow } },
-            { nextDueDate: null, occurrenceCount: 0 },
-          ],
-        },
-      }),
-      db.maintenanceTask.count({ where: { type: 'ct', vehicle: { isActive: true }, nextDueDate: { gte: now, lte: thirtyDaysFromNow } } }),
+      // Définition unique "entretien/CT à prévoir" — cf. getTaskAlerts (maintenance.service.ts)
+      getTaskAlerts(db),
       db.blocking.findMany({
         where: { startAt: { lte: now }, endAt: { gte: monthStart } },
         select: { vehicleId: true, startAt: true, endAt: true, type: true, reason: true },
@@ -65,6 +57,11 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
         select: { vehicleId: true, startsAt: true, endsAt: true },
       }),
     ]);
+    // Sous-ensemble "CT dans les 30j" dérivé de la même source (pendingMaints),
+    // pas d'une requête séparée — ancienne 4ᵉ implémentation éliminée.
+    const expiringCTs = pendingMaints.filter(t =>
+      t.type === 'ct' && t.nextDueDate != null && t.nextDueDate >= now && t.nextDueDate <= thirtyDaysFromNow,
+    ).length;
 
     const safe = (v: number | null | undefined): number => Math.max(0, v ?? 0);
     const sum  = (arr: Array<number | null | undefined>): number => arr.reduce<number>((s, v) => s + safe(v), 0);
@@ -171,7 +168,7 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
       totalKm,
       fleetHealthScore,
       vehicleCount,
-      alerts: { pendingMaintenances: pendingMaints, expiringCT: expiringCTs },
+      alerts: { pendingMaintenances: pendingMaints.length, expiringCT: expiringCTs },
     });
   } catch (err) { next(err); }
 });
@@ -901,16 +898,8 @@ router.get('/suggestions', async (req: Request, res: Response, next: NextFunctio
         where: { startAt: { gte: sixMonthsAgo }, status: { in: ['completed', 'active', 'booked'] } },
         select: { vehicleId: true, ownerPayout: true, grossRevenue: true, startAt: true, endAt: true },
       }),
-      db.maintenanceTask.count({
-        where: {
-          vehicle: { isActive: true },
-          OR: [
-            { nextDueDate: { lte: new Date(Date.now() + 30 * 86_400_000) } },
-            { ctCounterVisitDeadline: { lte: new Date(Date.now() + 30 * 86_400_000) } },
-            { nextDueDate: null, occurrenceCount: 0 },
-          ],
-        },
-      }),
+      // Définition unique "entretien/CT à prévoir" — cf. getTaskAlerts (maintenance.service.ts)
+      getTaskAlerts(db),
       db.incident.count({ where: { status: { in: ['open', 'in_progress'] } } }),
     ]);
 
@@ -937,7 +926,7 @@ router.get('/suggestions', async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    const context = JSON.stringify({ vehicules: vehicleStats, fleetCA: vehicleStats.reduce((s, v) => s + v.caMois, 0), avgOccupancy: vehicleStats.length > 0 ? Math.round(vehicleStats.reduce((s, v) => s + v.occupancy, 0) / vehicleStats.length) : 0, pendingMaintenances: pendingMaints, openIncidents });
+    const context = JSON.stringify({ vehicules: vehicleStats, fleetCA: vehicleStats.reduce((s, v) => s + v.caMois, 0), avgOccupancy: vehicleStats.length > 0 ? Math.round(vehicleStats.reduce((s, v) => s + v.occupancy, 0) / vehicleStats.length) : 0, pendingMaintenances: pendingMaints.length, openIncidents });
     console.log('[Suggestions] Données collectées:', context.slice(0, 500));
 
     if (!process.env.ANTHROPIC_API_KEY) { res.status(503).json({ error: 'IA non disponible' }); return; }

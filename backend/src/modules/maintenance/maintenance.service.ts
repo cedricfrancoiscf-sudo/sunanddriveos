@@ -18,9 +18,22 @@ export type TaskUpdateInput = {
 // il affiche task.alertStatus tel que renvoyé par l'API.
 export type TaskAlertStatus = 'contre_visite' | 'overdue' | 'urgent' | 'soon' | 'ok' | 'unknown';
 
+const DEFAULT_CT_ALERT_WINDOW_DAYS = 60;
+
+// Défensif : sur ce projet, les migrations Prisma ne sont PAS exécutées
+// automatiquement au déploiement (déploiement NAS = copie de fichiers, pas de
+// `pnpm migrate`) — un déploiement peut donc arriver avant la migration qui
+// ajoute cette colonne. Une requête qui échoue ici (colonne absente) ne doit
+// jamais faire tomber tout le dashboard : on retombe sur le défaut, comme un
+// null. Cf. incident du 14/07 (/dashboard en 500).
 export async function getCtAlertWindowDays(db: PrismaClient): Promise<number> {
-  const settings = await db.companySettings.findFirst({ select: { ctAlertWindowDays: true } });
-  return settings?.ctAlertWindowDays ?? 60;
+  try {
+    const settings = await db.companySettings.findFirst({ select: { ctAlertWindowDays: true } });
+    return settings?.ctAlertWindowDays ?? DEFAULT_CT_ALERT_WINDOW_DAYS;
+  } catch (e) {
+    console.error('[Maintenance] ctAlertWindowDays illisible (migration pas encore appliquée ?) — fallback 60j:', e instanceof Error ? e.message : e);
+    return DEFAULT_CT_ALERT_WINDOW_DAYS;
+  }
 }
 
 export function classifyTaskStatus(

@@ -29,7 +29,6 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-    const thirtyDaysFromNow = new Date(Date.now() + 30 * 86_400_000);
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
     const [currentRentals, prevRentals, vehicles, pendingMaints, monthBlockings, monthUnavailabilities] = await Promise.all([
@@ -57,11 +56,15 @@ router.get('/kpis', async (req: Request, res: Response, next: NextFunction) => {
         select: { vehicleId: true, startsAt: true, endsAt: true },
       }),
     ]);
-    // Sous-ensemble "CT dans les 30j" dérivé de la même source (pendingMaints),
-    // pas d'une requête séparée — ancienne 4ᵉ implémentation éliminée.
-    const expiringCTs = pendingMaints.filter(t =>
-      t.type === 'ct' && t.nextDueDate != null && t.nextDueDate >= now && t.nextDueDate <= thirtyDaysFromNow,
-    ).length;
+    // Sous-ensemble CT dérivé de la même source (pendingMaints) — pas une
+    // requête séparée. BUG corrigé (14/07) : un re-filtre sur une fenêtre de
+    // date (nextDueDate) ignorait les statuts contre_visite/overdue, qui
+    // n'ont pas forcément nextDueDate dans les 30j (ex: ctCounterVisitDeadline
+    // seul renseigné). pendingMaints exclut déjà 'ok' — tout CT présent y est
+    // par définition "à prévoir", quel que soit son statut (contre_visite,
+    // overdue, urgent, soon) — le cas contre_visite est justement le plus
+    // grave et DOIT être compté.
+    const expiringCTs = pendingMaints.filter(t => t.type === 'ct').length;
 
     const safe = (v: number | null | undefined): number => Math.max(0, v ?? 0);
     const sum  = (arr: Array<number | null | undefined>): number => arr.reduce<number>((s, v) => s + safe(v), 0);

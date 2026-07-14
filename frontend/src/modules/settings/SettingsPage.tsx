@@ -552,6 +552,7 @@ interface CompanySettings {
   defaultDepreciationRate: number;
   messageUnansweredMinutes: number | null;
   threadAutoCloseDays: number | null;
+  getaroundRules: string | null;
 }
 
 interface SyncStateData { isRunning: boolean; currentStep: string; progress: number; error: string | null; }
@@ -2149,6 +2150,7 @@ export default function SettingsPage(): React.JSX.Element {
     aiName: 'Alex',
     messageUnansweredMinutes: null as number | null,
     threadAutoCloseDays: null as number | null,
+    getaroundRules: '',
   });
 
   const [saved, setSaved] = useState(false);
@@ -2171,6 +2173,7 @@ export default function SettingsPage(): React.JSX.Element {
         aiName: settings.aiName ?? 'Alex',
         messageUnansweredMinutes: settings.messageUnansweredMinutes ?? null,
         threadAutoCloseDays: settings.threadAutoCloseDays ?? null,
+        getaroundRules: settings.getaroundRules ?? '',
       });
       if (settings.logoUrl) setLogoPreview(settings.logoUrl);
     }
@@ -2190,6 +2193,7 @@ export default function SettingsPage(): React.JSX.Element {
       aiName: data.aiName,
       messageUnansweredMinutes: data.messageUnansweredMinutes,
       threadAutoCloseDays: data.threadAutoCloseDays,
+      getaroundRules: data.getaroundRules || null,
     }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings'] });
@@ -2416,6 +2420,22 @@ export default function SettingsPage(): React.JSX.Element {
                 </p>
               )}
             </div>
+          </section>
+
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Règles Getaround</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Ces règles s'appliquent à toute la flotte. L'IA s'en sert pour répondre sans inventer.
+              </p>
+            </div>
+            <textarea
+              value={form.getaroundRules}
+              onChange={e => setForm(f => ({ ...f, getaroundRules: e.target.value }))}
+              rows={16}
+              placeholder="# Règles Getaround (plateforme)&#10;&#10;## Localisation du véhicule&#10;..."
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 font-mono text-xs outline-none focus:border-[#01696e] focus:ring-2 focus:ring-[#01696e]/20"
+            />
           </section>
 
           <ICalSection />

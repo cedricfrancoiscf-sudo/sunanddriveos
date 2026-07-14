@@ -277,7 +277,7 @@ export async function analyzeAndProcessMessage(
   const settings = await db.companySettings.findFirst({
     select: {
       aiModeCarSeat: true, aiModeIncident: true, aiModeGeneral: true,
-      aiTone: true, aiName: true, senderName: true,
+      aiTone: true, aiName: true, senderName: true, getaroundRules: true,
     },
   });
   if (!settings) return;
@@ -317,6 +317,12 @@ export async function analyzeAndProcessMessage(
     ? `\nHistorique de la conversation :\n${threadLines.slice(0, -1).join('\n')}\n\nDernier message du locataire : "${message.content}"`
     : `Message du locataire : "${message.content}"`;
 
+  // Règles plateforme Getaround (identiques pour toute la flotte) — priorité 1,
+  // avant la fiche véhicule (priorité 2) et l'historique du fil (priorité 3).
+  const getaroundRulesBlock = settings.getaroundRules
+    ? `\n\n=== RÈGLES GETAROUND (plateforme, priorité 1 — valables pour toute la flotte) ===\n${settings.getaroundRules}\n=== FIN DES RÈGLES GETAROUND ===\n`
+    : '';
+
   // 1. Analyse Claude
   let analysis: ProactiveAnalysis;
   try {
@@ -327,6 +333,11 @@ export async function analyzeAndProcessMessage(
 Tu analyses les messages de locataires et génères une réponse courte et professionnelle.
 Tiens compte de TOUT l'historique de la conversation pour contextualiser ta réponse.
 
+Hiérarchie des sources, dans cet ordre :
+1) Règles Getaround (plateforme, ci-dessous) — valables pour toute la flotte
+2) Fiche du véhicule concerné (équipements, instructions spécifiques à cette voiture)
+3) Historique du fil de conversation
+${getaroundRulesBlock}
 Réponds en JSON uniquement, sans markdown :
 {"type":"car_seat"|"remise"|"incident"|"general"|"remerciement","urgent":boolean,"details":{"childAge":number|null,"question":string|null,"incidentType":string|null},"suggestedReply":string}
 
@@ -338,7 +349,10 @@ Règles STRICTES pour suggestedReply :
 - Langue : français uniquement
 - Style : direct, chaleureux, professionnel
 - Pas de formules cérémonieuses ("excellent séjour", "à votre entière disposition")
-- Se concentrer sur l'essentiel : répondre à la question ou confirmer l'information demandée`,
+- Se concentrer sur l'essentiel : répondre à la question ou confirmer l'information demandée
+- Si la réponse figure dans les règles Getaround ci-dessus, RÉPONDS-Y directement — ne jamais esquiver une question dont la réponse est connue et stable
+- Ne jamais inventer une information absente des règles Getaround, de la fiche véhicule ou de l'historique
+- Interdiction d'utiliser "je transmets votre question à notre équipe" ou toute formule d'esquive vague. Si tu ne sais vraiment pas, dis précisément ce que tu vas faire et sous quel délai (ex: "Je vérifie ce point et je reviens vers vous aujourd'hui")`,
       messages: [{
         role: 'user',
         content: `${threadContext}

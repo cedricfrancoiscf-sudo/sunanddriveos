@@ -1036,7 +1036,7 @@ async function autoReplyToMessage(
   const settings = await db.companySettings.findFirst({
     select: {
       aiModeCarSeat: true, aiModeIncident: true, aiModeGeneral: true,
-      aiTone: true, aiName: true, senderName: true, alertEmails: true,
+      aiTone: true, aiName: true, senderName: true, alertEmails: true, getaroundRules: true,
     },
   });
   if (!settings) return;
@@ -1059,6 +1059,7 @@ async function autoReplyToMessage(
     endDate: new Date(rental.endAt).toLocaleDateString('fr-FR'),
     companyName: settings.senderName ?? 'notre service',
     aiName: settings.aiName ?? undefined,
+    getaroundRules: settings.getaroundRules ?? undefined,
   };
 
   const admins = await db.user.findMany({

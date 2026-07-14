@@ -134,6 +134,7 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
       endDate: new Date(rental.endAt).toLocaleDateString('fr-FR'),
       companyName: 'Sun and Drive',
       aiName: aiName,
+      getaroundRules: settings?.getaroundRules ?? undefined,
     };
 
     const suggestion = await suggestReply(

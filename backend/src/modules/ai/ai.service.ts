@@ -60,6 +60,9 @@ export interface RentalContext {
   companyName?: string;
   aiName?: string;
   equipment?: VehicleEquipment;
+  // Règles plateforme Getaround (identiques pour toute la flotte) — priorité 1,
+  // avant la fiche véhicule (priorité 2) et l'historique (priorité 3).
+  getaroundRules?: string | null;
 }
 
 export async function analyzeMessage(content: string, platformName = 'Getaround'): Promise<MessageAnalysis> {
@@ -424,15 +427,27 @@ export async function suggestReply(
           .join('\n')
       : '';
 
+  // Règles plateforme Getaround (identiques pour toute la flotte) — priorité 1,
+  // avant la fiche véhicule (priorité 2) et l'historique (priorité 3).
+  const getaroundRulesBlock = context.getaroundRules
+    ? `\n\n=== RÈGLES GETAROUND (plateforme, priorité 1 — valables pour toute la flotte) ===\n${context.getaroundRules}\n=== FIN DES RÈGLES GETAROUND ===\n`
+    : '';
+
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
     system: `Tu es ${context.aiName ?? 'un assistant'} pour ${context.companyName ?? 'notre service'}.
+
+Hiérarchie des sources, dans cet ordre :
+1) Règles Getaround (plateforme, ci-dessous) — valables pour toute la flotte
+2) Fiche du véhicule concerné (équipements, instructions spécifiques à cette voiture)
+3) Historique du fil de conversation
+${getaroundRulesBlock}
 RÈGLES ABSOLUES :
-- Tu ne réponds QUE sur les informations fournies dans ce contexte
-- Si tu ne sais pas → réponds UNIQUEMENT "Je transmets votre question à notre équipe qui vous contactera très rapidement."
+- Tu ne réponds QUE sur les informations fournies dans ce contexte (règles Getaround + fiche véhicule + historique)
+- Si la réponse figure dans les règles Getaround, RÉPONDS-Y directement — ne jamais esquiver une question dont la réponse est connue et stable
 - Ne jamais inventer une adresse, un code, une procédure, un délai
-- Ne jamais dire "je vais vérifier"`,
+- Interdiction d'utiliser "je transmets votre question à notre équipe" ou toute formule d'esquive vague. Si tu ne sais vraiment pas, dis précisément ce que tu vas faire et sous quel délai (ex: "Je vérifie ce point et je reviens vers vous aujourd'hui")`,
     messages: [
       {
         role: 'user',
@@ -443,9 +458,9 @@ Contexte de la location :
 - Véhicule : ${context.vehicleMake} ${context.vehicleModel}${context.vehicleYear ? ` ${context.vehicleYear}` : ''}${context.vehicleColor ? ` (${context.vehicleColor})` : ''} — ${context.licensePlate}
 ${context.fuelType ? `- Carburant : ${context.fuelType}` : ''}${context.parkingZone ? `\n- Zone : ${context.parkingZone}` : ''}
 - Du ${context.startDate} au ${context.endDate}
-${context.pickupInstructions ? `INSTRUCTIONS DE DÉPART :\n${context.pickupInstructions}` : context.equipment?.pickupAccessProcedure ? `INSTRUCTIONS DE DÉPART :\n${context.equipment.pickupAccessProcedure}${context.equipment.pickupAddress ? `\nAdresse : ${context.equipment.pickupAddress}` : ''}${context.equipment.pickupVehiclePosition ? `\nPosition : ${context.equipment.pickupVehiclePosition}` : ''}` : "INSTRUCTIONS DE DÉPART : Non renseignées — si question sur récupération → transférer à l'équipe"}
-${context.returnInstructions ? `INSTRUCTIONS DE RETOUR :\n${context.returnInstructions}` : context.equipment?.returnAccessProcedure ? `INSTRUCTIONS DE RETOUR :\n${context.equipment.returnAccessProcedure}${context.equipment.returnAddress ? `\nAdresse : ${context.equipment.returnAddress}` : ''}${context.equipment.returnVehiclePosition ? `\nPosition : ${context.equipment.returnVehiclePosition}` : ''}` : "INSTRUCTIONS DE RETOUR : Non renseignées — si question sur restitution → transférer à l'équipe"}
-${context.equipment ? `ÉQUIPEMENTS DU VÉHICULE (utiliser UNIQUEMENT ces valeurs — si null → ne JAMAIS affirmer ni inventer, répondre : "Je vérifie cette information et reviens vers vous rapidement.") :
+${context.pickupInstructions ? `INSTRUCTIONS DE DÉPART :\n${context.pickupInstructions}` : context.equipment?.pickupAccessProcedure ? `INSTRUCTIONS DE DÉPART :\n${context.equipment.pickupAccessProcedure}${context.equipment.pickupAddress ? `\nAdresse : ${context.equipment.pickupAddress}` : ''}${context.equipment.pickupVehiclePosition ? `\nPosition : ${context.equipment.pickupVehiclePosition}` : ''}` : "INSTRUCTIONS DE DÉPART : Non renseignées — si question sur récupération et non couverte par les règles Getaround, dire précisément que tu vérifies et reviens dans la journée"}
+${context.returnInstructions ? `INSTRUCTIONS DE RETOUR :\n${context.returnInstructions}` : context.equipment?.returnAccessProcedure ? `INSTRUCTIONS DE RETOUR :\n${context.equipment.returnAccessProcedure}${context.equipment.returnAddress ? `\nAdresse : ${context.equipment.returnAddress}` : ''}${context.equipment.returnVehiclePosition ? `\nPosition : ${context.equipment.returnVehiclePosition}` : ''}` : "INSTRUCTIONS DE RETOUR : Non renseignées — si question sur restitution et non couverte par les règles Getaround, dire précisément que tu vérifies et reviens dans la journée"}
+${context.equipment ? `ÉQUIPEMENTS DU VÉHICULE (utiliser UNIQUEMENT ces valeurs — si null → ne JAMAIS affirmer ni inventer, répondre : "Je vérifie cette information et je reviens vers vous aujourd'hui.") :
 GPS : ${context.equipment.gpsIntegre == null ? 'Non renseigné' : context.equipment.gpsIntegre ? 'Oui' : 'Non'}
 Android Auto/CarPlay : ${context.equipment.androidAutoCarplay == null ? 'Non renseigné' : context.equipment.androidAutoCarplay ? 'Oui' : 'Non'}
 Climatisation : ${context.equipment.climatisation == null ? 'Non renseigné' : context.equipment.climatisation ? 'Oui' : 'Non'}

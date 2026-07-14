@@ -559,7 +559,8 @@ model CarSeat {
   minWeightKg    Float            // Poids minimum enfant supporté
   maxWeightKg    Float            // Poids maximum enfant supporté
   totalStock     Int              @default(0)
-  availableStock Int              @default(0)
+  availableStock Int              @default(0) // dérivé, jamais incrémenté/décrémenté directement — cf. computeAvailableStock (car-seats.service.ts)
+  isAvailable    Boolean          @default(true) // bascule manuelle opérateur "Disponible / Pris" (niveau 1 — pas de réservation à l'avance)
   outOfService   Int              @default(0)
   isActive       Boolean          @default(true)
   carkeeperId    String?
@@ -581,7 +582,7 @@ model CarSeatRequest {
   carSeat       CarSeat?  @relation(fields: [carSeatId], references: [id])
   childWeightKg Float?    // Poids de l'enfant en kg
   requestedAt   DateTime  @default(now())
-  status        String    @default("pending") // pending | confirmed | denied | returned
+  status        String    @default("pending") // pending | cancelled — trace la demande détectée par l'IA, ne pilote plus le stock (niveau 1, 14/07). confirmed|denied|returned = ancien workflow, vestige historique.
   notes         String?
   isTest        Boolean   @default(false)
   createdAt     DateTime  @default(now())

@@ -91,7 +91,14 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
     if (!rental) { res.status(404).json({ error: 'Location introuvable' }); return; }
 
     // Récupère les paramètres IA de la société
-    const settings = await db.companySettings.findFirst();
+    const [settings, carSeats] = await Promise.all([
+      db.companySettings.findFirst(),
+      db.carSeat.findMany({
+        where: { isActive: true },
+        select: { name: true, minWeightKg: true, maxWeightKg: true, availableStock: true },
+        orderBy: { minWeightKg: 'asc' },
+      }),
+    ]);
     const tone = (settings?.aiTone as 'vouvoiement' | 'tutoiement') ?? 'vouvoiement';
     const aiName = settings?.aiName ?? 'Alex';
 
@@ -135,6 +142,7 @@ router.post('/suggest', async (req: Request, res: Response, next: NextFunction) 
       companyName: 'Sun and Drive',
       aiName: aiName,
       getaroundRules: settings?.getaroundRules ?? undefined,
+      carSeats,
     };
 
     const suggestion = await suggestReply(

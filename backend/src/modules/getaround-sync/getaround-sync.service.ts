@@ -3,10 +3,9 @@ import { Prisma } from '../../generated/tenant';
 import { decrypt, encrypt } from '../../utils/crypto';
 import { createGetaroundClient, type GetaroundRental, type ApiCallCounters, parseInvoiceCharges } from './getaround-api';
 import { scheduleSequencesForRental } from '../sequences/sequences.service';
-import { analyzeMessage, suggestReply } from '../ai/ai.service';
+import { analyzeMessage } from '../ai/ai.service';
 import { sendTelegramMessage, getTelegramChatId } from '../../utils/telegram';
 import { getMasterClient } from '../../prisma/client';
-import { sendAlertEmail } from '../../utils/mailer';
 import { classifySyncedMessageOrigin, reopenThreadIfDismissed } from '../messages/messages.service';
 import { analyzeAndProcessMessage } from '../messages/messaging.service';
 
@@ -53,12 +52,15 @@ export function updateSyncState(tenantSlug: string, update: Partial<SyncState>):
 // ─── Cache fraîcheur messages : évite de re-fetcher des messages déjà récents ─
 // Clé : `${tenantSlug}:${rentalGetaroundId}` → timestamp du dernier fetch
 const messageFreshnessCache = new Map<string, number>();
-const MESSAGE_FRESHNESS_MS = 15 * 60_000; // 15 min
+// Nom distinct de MESSAGE_FRESHNESS_MS (messaging.service.ts) — concept différent :
+// ici, fréquence min. entre deux fetch de l'API Getaround (perf/rate-limit),
+// pas la fraîcheur du message pour le traitement IA.
+const MESSAGE_REFETCH_CACHE_MS = 15 * 60_000; // 15 min
 
 function isMessageFresh(tenantSlug: string, rentalGetaroundId: string): boolean {
   const key = `${tenantSlug}:${rentalGetaroundId}`;
   const last = messageFreshnessCache.get(key) ?? 0;
-  return Date.now() - last < MESSAGE_FRESHNESS_MS;
+  return Date.now() - last < MESSAGE_REFETCH_CACHE_MS;
 }
 
 function markMessageFetched(tenantSlug: string, rentalGetaroundId: string): void {
@@ -703,7 +705,7 @@ async function syncMessagesForWindow(
     if (rental.getaroundId.startsWith('test_')) continue;
     const gaRentalId = parseInt(rental.getaroundId, 10);
 
-    // Skip si ce rental a été sync'd il y a moins de MESSAGE_FRESHNESS_MS
+    // Skip si ce rental a été sync'd il y a moins de MESSAGE_REFETCH_CACHE_MS
     if (isMessageFresh(tenantSlug, rental.getaroundId)) continue;
     markMessageFetched(tenantSlug, rental.getaroundId);
 
@@ -792,19 +794,22 @@ async function syncMessagesForWindow(
                 })();
               } catch (e) { console.error('[CarSeatDetect]', e); }
             })();
-            // Réponse IA automatique (fire-and-forget)
+            // Réponse IA automatique (fire-and-forget) — pipeline unique, cf. analyzeAndProcessMessage
             const fullRental = await db.rental.findUnique({
               where: { id: rental.id },
               include: {
                 vehicle: {
-                  select: { make: true, model: true, licensePlate: true, year: true, color: true, fuelType: true, parkingZone: true, pickupInstructions: true, returnInstructions: true },
+                  select: { make: true, model: true, licensePlate: true, parkingZone: true, deliveryPointName: true },
                 },
-                messages: { orderBy: { sentAt: 'asc' }, select: { direction: true, content: true }, take: 10 },
               },
             });
             if (fullRental) {
-              void autoReplyToMessage(db, ga, msg.content, fullRental, tenantSlug)
-                .catch(e => console.error('[IA] autoReply error syncMsg:', e));
+              void analyzeAndProcessMessage(
+                { id: msgDbId, content: msg.content, sentAt: new Date(msg.sent_at) },
+                fullRental,
+                db,
+                ga,
+              ).catch(e => console.error('[IA] analyzeAndProcessMessage error syncMsg:', e));
             }
           }
         } catch { /* ignorer erreurs message individuel */ }
@@ -1002,239 +1007,6 @@ export async function syncAccountRentals(
   return result;
 }
 
-// ─── 3. Réponse IA automatique ───────────────────────────────────────────────
-
-async function autoReplyToMessage(
-  db: PrismaClient,
-  ga: GetaroundClient,
-  messageContent: string,
-  rental: {
-    id: string;
-    getaroundId: string;
-    driverName: string;
-    startAt: Date;
-    endAt: Date;
-    status: string;
-    vehicleId: string;
-    vehicle: {
-      make: string; model: string; licensePlate: string;
-      year: number | null; color: string | null; fuelType: string | null;
-      parkingZone: string | null;
-      pickupInstructions: string | null;
-      returnInstructions: string | null;
-    };
-    messages: Array<{ direction: string; content: string }>;
-  },
-  tenantSlug: string,
-): Promise<void> {
-  // Guard : JAMAIS sur locations terminées ou annulées
-  if (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date()) {
-    console.log(`[autoReply][${tenantSlug}] Ignoré — location non actionnable (rental ${rental.id}, status=${rental.status})`);
-    return;
-  }
-
-  const settings = await db.companySettings.findFirst({
-    select: {
-      aiModeCarSeat: true, aiModeIncident: true, aiModeGeneral: true,
-      aiTone: true, aiName: true, senderName: true, alertEmails: true, getaroundRules: true,
-    },
-  });
-  if (!settings) return;
-
-  const tone = (settings.aiTone as 'vouvoiement' | 'tutoiement') ?? 'vouvoiement';
-  const analysis = await analyzeMessage(messageContent);
-
-  const context = {
-    driverName: rental.driverName,
-    vehicleMake: rental.vehicle.make,
-    vehicleModel: rental.vehicle.model,
-    vehicleYear: rental.vehicle.year ?? undefined,
-    vehicleColor: rental.vehicle.color ?? undefined,
-    fuelType: rental.vehicle.fuelType ?? undefined,
-    licensePlate: rental.vehicle.licensePlate,
-    parkingZone: rental.vehicle.parkingZone ?? undefined,
-    pickupInstructions: rental.vehicle.pickupInstructions ?? undefined,
-    returnInstructions: rental.vehicle.returnInstructions ?? undefined,
-    startDate: new Date(rental.startAt).toLocaleDateString('fr-FR'),
-    endDate: new Date(rental.endAt).toLocaleDateString('fr-FR'),
-    companyName: settings.senderName ?? 'notre service',
-    aiName: settings.aiName ?? undefined,
-    getaroundRules: settings.getaroundRules ?? undefined,
-  };
-
-  const admins = await db.user.findMany({
-    where: { isActive: true, OR: [{ role: 'admin' }, { roles: { has: 'admin' } }] },
-    select: { id: true },
-  });
-
-  const mode = analysis.isIncidentReport || analysis.needsHumanReply
-    ? settings.aiModeIncident
-    : analysis.isCarSeatRequest || analysis.isAccessoryRequest
-    ? settings.aiModeCarSeat
-    : settings.aiModeGeneral;
-
-  if (mode === 'manual' || analysis.isUrgent || analysis.needsHumanReply) {
-    await db.notification.createMany({
-      data: admins.map(a => ({
-        userId: a.id,
-        type: analysis.isUrgent ? 'urgent_message' : 'human_reply_needed',
-        title: analysis.isUrgent ? '🚨 Message urgent' : '👤 Réponse humaine requise',
-        body: `${rental.driverName} : ${messageContent.slice(0, 100)}`,
-        relatedEntityId: rental.id,
-        targetUrl: `/rentals/${rental.id}`,
-      })),
-      skipDuplicates: true,
-    });
-    return;
-  }
-
-  if (analysis.isCarSeatRequest) {
-    // Ignorer les locations passées ou terminées
-    if (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date()) {
-      console.log(`[autoReply] Demande siège ignorée — location passée (rental ${rental.id}, status=${rental.status})`);
-    } else {
-      const existing = await db.carSeatRequest.findFirst({
-        where: { rentalId: rental.id, status: 'pending' },
-      });
-      if (!existing) {
-        await db.carSeatRequest.create({
-          data: { rentalId: rental.id, vehicleId: rental.vehicleId, status: 'pending' },
-        });
-      }
-      const seatCarkeepers = await db.carSeat.findMany({
-        where: { isActive: true, carkeeperId: { not: null } },
-        select: { carkeeperId: true },
-      });
-      const seatCarkeeperIds = seatCarkeepers.map(s => s.carkeeperId).filter((id): id is string => id !== null);
-      const carSeatRecipientIds = [...new Set([...admins.map(a => a.id), ...seatCarkeeperIds])];
-      await db.notification.createMany({
-        data: carSeatRecipientIds.map(userId => ({
-          userId,
-          type: 'car_seat_request',
-          title: '🪑 Demande de siège auto',
-          body: `${rental.driverName} demande un siège auto`,
-          relatedEntityId: rental.id,
-          targetUrl: `/rentals/${rental.id}`,
-        })),
-        skipDuplicates: true,
-      });
-    }
-  }
-
-  if (analysis.isAccessoryRequest && analysis.detectedAccessory) {
-    const accCarkeepers = await db.accessory.findMany({
-      where: { carkeeperId: { not: null } },
-      select: { carkeeperId: true },
-    });
-    const accCarkeeperIds = accCarkeepers.map(a => a.carkeeperId).filter((id): id is string => id !== null);
-    const accRecipientIds = [...new Set([...admins.map(a => a.id), ...accCarkeeperIds])];
-    await db.notification.createMany({
-      data: accRecipientIds.map(userId => ({
-        userId,
-        type: 'accessory_request',
-        title: `🎒 Demande ${analysis.detectedAccessory}`,
-        body: `${rental.driverName} demande ${analysis.detectedAccessory}`,
-        relatedEntityId: rental.id,
-        targetUrl: `/rentals/${rental.id}`,
-      })),
-      skipDuplicates: true,
-    });
-  }
-
-  const reply = await suggestReply(messageContent, context, tone, rental.messages);
-
-  if (reply.includes('Je transmets votre question')) {
-    await db.notification.createMany({
-      data: admins.map(a => ({
-        userId: a.id,
-        type: 'ai_transfer',
-        title: '❓ Question sans réponse IA',
-        body: `${rental.driverName} : ${messageContent.slice(0, 100)}`,
-        relatedEntityId: rental.id,
-        targetUrl: `/rentals/${rental.id}`,
-      })),
-      skipDuplicates: true,
-    });
-  }
-
-  if (mode === 'auto') {
-    try {
-      await ga.sendMessage(parseInt(rental.getaroundId, 10), reply);
-      await db.message.create({
-        data: {
-          rentalId: rental.id,
-          direction: 'outbound',
-          content: reply,
-          sentAt: new Date(),
-          status: 'sent',
-          origin: 'ai_approved',
-        },
-      });
-      console.log(`[IA][${tenantSlug}] Réponse auto envoyée pour rental ${rental.id}`);
-    } catch (err) {
-      console.error(`[IA][${tenantSlug}] Erreur envoi:`, err instanceof Error ? err.message : err);
-    }
-  } else {
-    await db.message.create({
-      data: {
-        rentalId: rental.id,
-        direction: 'outbound',
-        content: reply,
-        status: 'pending_approval',
-        aiSuggestion: reply,
-        origin: 'ai_approved',
-      },
-    });
-    await db.notification.createMany({
-      data: admins.map(a => ({
-        userId: a.id,
-        type: 'ai_draft',
-        title: '✍️ Brouillon IA à approuver',
-        body: `Réponse générée pour ${rental.driverName} — à valider`,
-        relatedEntityId: rental.id,
-        targetUrl: `/rentals/${rental.id}`,
-      })),
-      skipDuplicates: true,
-    });
-    console.log(`[IA][${tenantSlug}] Brouillon créé pour rental ${rental.id}`);
-
-    // Notification email brouillon IA aux alertEmails
-    void (async () => {
-      try {
-        const alertEmails = settings.alertEmails ?? [];
-        if (alertEmails.length === 0) return;
-        const vehicleLabel = `${rental.vehicle.make} ${rental.vehicle.model} (${rental.vehicle.licensePlate})`;
-        const appUrl = (process.env.FRONTEND_URL ?? 'https://appli.sunanddrive.com').replace(/\/$/, '');
-        await sendAlertEmail({
-          alertEmails,
-          subject: `✍️ Brouillon IA à valider — ${rental.driverName}`,
-          senderName: settings.senderName ?? undefined,
-          html: `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#f8fafc">
-<div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
-  <div style="background:#01696e;padding:16px 24px">
-    <h1 style="color:#fff;font-size:16px;margin:0">✍️ Brouillon IA à valider</h1>
-  </div>
-  <div style="padding:20px 24px">
-    <p style="margin:0 0 8px;color:#374151;font-size:14px"><b>Conducteur :</b> ${rental.driverName}</p>
-    <p style="margin:0 0 16px;color:#374151;font-size:14px"><b>Véhicule :</b> ${vehicleLabel}</p>
-    <div style="background:#f8fafc;border-left:3px solid #94a3b8;padding:12px 16px;margin:12px 0;border-radius:4px">
-      <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Message reçu</p>
-      <p style="margin:0;color:#374151;font-size:13px">${messageContent.slice(0, 300)}${messageContent.length > 300 ? '…' : ''}</p>
-    </div>
-    <div style="background:#f0fdf4;border-left:3px solid #01696e;padding:12px 16px;margin:12px 0;border-radius:4px">
-      <p style="margin:0 0 4px;font-size:11px;color:#01696e;text-transform:uppercase;letter-spacing:.05em">Réponse suggérée par l'IA</p>
-      <p style="margin:0;color:#374151;font-size:13px">${reply.slice(0, 500)}${reply.length > 500 ? '…' : ''}</p>
-    </div>
-    <a href="${appUrl}/messages" style="display:inline-block;margin-top:16px;background:#01696e;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600">Voir et valider dans l'app →</a>
-  </div>
-  <div style="background:#f1f5f9;padding:10px 24px;font-size:11px;color:#94a3b8">SunanddriveOS — notification automatique</div>
-</div></body></html>`,
-        });
-      } catch (e) { console.error('[IA] Email brouillon:', e); }
-    })();
-  }
-}
-
 // ─── 4. Messages (endpoint manuel) ──────────────────────────────────────────
 
 export interface MessageSyncResult {
@@ -1277,7 +1049,7 @@ export async function syncAccountMessages(
     if (!rental.getaroundId) continue;
     const gaRentalId = parseInt(rental.getaroundId, 10);
 
-    // Skip si ce rental a été sync'd il y a moins de MESSAGE_FRESHNESS_MS
+    // Skip si ce rental a été sync'd il y a moins de MESSAGE_REFETCH_CACHE_MS
     if (isMessageFresh(tenantSlug, rental.getaroundId)) continue;
     markMessageFetched(tenantSlug, rental.getaroundId);
 

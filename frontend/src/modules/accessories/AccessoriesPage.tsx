@@ -21,12 +21,8 @@ interface AccReservation {
 }
 interface CarSeat {
   id: string; name: string; minWeightKg: number; maxWeightKg: number;
-  totalStock: number; availableStock: number; outOfService: number; isActive: boolean;
+  totalStock: number; availableStock: number; isAvailable: boolean; outOfService: number; isActive: boolean;
   carkeeperId: string | null;
-}
-interface UpcomingRental {
-  id: string; driverName: string; startAt: string; endAt: string; status: string;
-  vehicle: { make: string; model: string; licensePlate: string };
 }
 interface CarkeeperUser { id: string; name: string; role: string; roles: string[]; }
 type Tab = 'accessories' | 'car-seats' | 'marketplace';
@@ -422,14 +418,6 @@ function CarSeatsTab(): React.JSX.Element {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_SEAT);
   const [editId, setEditId] = useState<string | null>(null);
-  const [upcomingOpenId, setUpcomingOpenId] = useState<string | null>(null);
-
-  const { data: upcomingRentalsData } = useQuery({
-    queryKey: ['car-seat-upcoming', upcomingOpenId],
-    queryFn: () => api.get<{ rentals: UpcomingRental[] }>(`/car-seats/${upcomingOpenId}/upcoming-rentals`).then(r => r.data.rentals),
-    enabled: upcomingOpenId !== null,
-    staleTime: 60_000,
-  });
 
   const { data: seats = [], isLoading } = useQuery({
     queryKey: ['car-seats'],
@@ -466,11 +454,8 @@ function CarSeatsTab(): React.JSX.Element {
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['car-seats'] }); setEditId(null); setForm(EMPTY_SEAT); setShowForm(false); },
   });
 
-  const recomputeStockMutation = useMutation({
-    mutationFn: () => api.post<{
-      updated: number;
-      details: Array<{ seatName: string; heldCount: number; availableStock: number; neutralized: number }>;
-    }>('/car-seats/recompute-stock').then(r => r.data),
+  const toggleAvailableMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/car-seats/${id}/toggle-available`, {}),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['car-seats'] }),
   });
 
@@ -521,22 +506,6 @@ function CarSeatsTab(): React.JSX.Element {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex flex-col items-end">
-            <button type="button" onClick={() => recomputeStockMutation.mutate()}
-              disabled={recomputeStockMutation.isPending}
-              title="Recalcule le stock disponible à partir des sièges réellement en location"
-              className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40">
-              {recomputeStockMutation.isPending ? 'Recalcul...' : 'Recalculer le stock'}
-            </button>
-            {recomputeStockMutation.data && (
-              <p className="mt-1 text-[11px] text-gray-400">
-                {recomputeStockMutation.data.updated} siège(s) recalculé(s)
-                {recomputeStockMutation.data.details.some(d => d.neutralized > 0) && (
-                  <> · {recomputeStockMutation.data.details.reduce((s, d) => s + d.neutralized, 0)} demande(s) périmée(s) neutralisée(s)</>
-                )}
-              </p>
-            )}
-          </div>
           <button type="button" onClick={() => { setShowForm(true); setEditId(null); setForm(EMPTY_SEAT); }}
             className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: '#01696e' }}>
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -626,10 +595,20 @@ function CarSeatsTab(): React.JSX.Element {
                         </span>
                       )}
                     </div>
-                    <div className="mt-1.5 flex items-center gap-3">
-                      <StockBar seat={s} />
-                      <span data-testid="stock-disponible" className="shrink-0 text-xs text-gray-500">
-                        {s.availableStock} dispo / {s.totalStock}
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                      <button type="button" data-testid="stock-disponible"
+                        title="Basculer disponible / pris"
+                        onClick={() => toggleAvailableMutation.mutate(s.id)}
+                        disabled={toggleAvailableMutation.isPending || s.totalStock === 0}
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                          s.isAvailable
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                        }`}>
+                        {s.totalStock === 0 ? 'Aucun stock' : s.isAvailable ? '✓ Disponible' : 'Pris'}
+                      </button>
+                      <span className="shrink-0 text-xs text-gray-400">
+                        {s.totalStock} au total
                         {s.outOfService > 0 && <span className="ml-1 text-orange-500">· {s.outOfService} HS</span>}
                       </span>
                     </div>
@@ -639,11 +618,6 @@ function CarSeatsTab(): React.JSX.Element {
                     })()}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <button type="button" title="Locations à venir"
-                      onClick={() => setUpcomingOpenId(id => id === s.id ? null : s.id)}
-                      className={`rounded-lg border px-2 py-1.5 text-xs font-medium hover:bg-gray-50 ${upcomingOpenId === s.id ? 'border-[#01696e] text-[#01696e] bg-[#01696e]/5' : 'border-gray-200 text-gray-600'}`}>
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    </button>
                     <button type="button" title="Ajouter au stock" onClick={() => addStockMutation.mutate(s.id)}
                       disabled={addStockMutation.isPending}
                       className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40">Ajouter au stock</button>
@@ -670,57 +644,11 @@ function CarSeatsTab(): React.JSX.Element {
                     </button>
                   </div>
                 </div>
-                {/* Tiroir locations à venir */}
-                {upcomingOpenId === s.id && (
-                  <div className="border-t border-gray-100 px-4 pb-3 pt-2">
-                    <p className="mb-2 text-xs font-semibold text-gray-600">Locations à venir</p>
-                    {upcomingRentalsData === undefined ? (
-                      <p className="text-xs text-gray-400">Chargement…</p>
-                    ) : upcomingRentalsData.length === 0 ? (
-                      <p className="text-xs text-gray-400">Aucune location à venir.</p>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {upcomingRentalsData.map(r => (
-                          <div key={r.id} className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="truncate text-xs font-medium text-gray-800">{r.driverName}</p>
-                              <p className="text-[11px] text-gray-400">{r.vehicle.make} {r.vehicle.model} · {r.vehicle.licensePlate}</p>
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <p className="text-[11px] text-gray-600">
-                                {new Date(r.startAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                                {' → '}
-                                {new Date(r.endAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                              </p>
-                              <span className={`text-[10px] font-medium ${r.status === 'confirmed' ? 'text-green-600' : 'text-yellow-600'}`}>
-                                {r.status === 'confirmed' ? 'Confirmée' : 'En attente'}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-function StockBar({ seat }: { seat: CarSeat }): React.JSX.Element {
-  if (seat.totalStock === 0) return <div className="h-1.5 w-24 rounded-full bg-gray-100" />;
-  const availPct = (seat.availableStock / seat.totalStock) * 100;
-  const hsPct = (seat.outOfService / seat.totalStock) * 100;
-  return (
-    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
-      <div className="flex h-full">
-        <div className="h-full bg-[#01696e] transition-all" style={{ width: `${availPct}%` }} />
-        <div className="h-full bg-orange-300 transition-all" style={{ width: `${hsPct}%` }} />
-      </div>
     </div>
   );
 }

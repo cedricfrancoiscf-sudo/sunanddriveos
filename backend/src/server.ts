@@ -14,7 +14,6 @@ import { syncAllAccounts, syncRecentWindowForAccount, recalculateHistoricalPayou
 import { generateCeoReportAsync } from './modules/intelligence/report.routes';
 import { analyzeAndProcessMessage, morningConversationReview, type RentalForMessaging } from './modules/messages/messaging.service';
 import { autoCloseStaleThreads } from './modules/messages/messages.service';
-import { recomputeAllCarSeatStock } from './modules/car-seats/car-seats.service';
 import { decrypt } from './utils/crypto';
 import { createGetaroundClient } from './modules/getaround-sync/getaround-api';
 import { registerSyncTrigger } from './modules/getaround-sync/getaround-webhooks.routes';
@@ -466,12 +465,6 @@ async function runMorningRebalayage(): Promise<void> {
           const autoCloseDays = settings?.threadAutoCloseDays ?? 7;
           await autoCloseStaleThreads(db, autoCloseDays, company.slug);
         } catch (e) { console.error(`[AutoClose] Erreur tenant ${company.slug}:`, e); }
-
-        // ─── Self-heal stock sièges auto (dérivé des CarSeatRequest en cours) ───
-        try {
-          const { updated } = await recomputeAllCarSeatStock(db);
-          console.log(`[CarSeatStock] ${company.slug} : ${updated} siège(s) recalculé(s)`);
-        } catch (e) { console.error(`[CarSeatStock] Erreur tenant ${company.slug}:`, e); }
       } catch (e) { console.error(`[Rebalayage] Erreur tenant ${company.slug}:`, e); }
     }
   } catch (e) { console.error('[Rebalayage] Erreur générale:', e); }

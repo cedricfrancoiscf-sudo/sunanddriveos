@@ -1,97 +1,34 @@
-import type { PrismaClient } from '../../generated/tenant';
-
-// availableStock est un CACHE d'une valeur dérivée, jamais une source de
-// vérité en soi : total − hors service − unités actuellement affectées à une
-// location en cours (booked/active). Recalculer plutôt qu'incrémenter/
-// décrémenter à la main évite qu'un chemin de code oublié (il y en avait
-// déjà 4 différents : création manuelle, confirm, AI auto-assign x2) ne
-// fasse dériver le stock de façon irréversible.
-//
-// IMPORTANT : une demande 'confirmed' SANS location (rentalId null) ne tient
-// PAS d'unité — elle ne compte que si elle est rattachée à une location
-// dont le statut est booked/active. Une demande orpheline ou dont la
-// location est completed/cancelled ne doit jamais immobiliser de stock
-// indéfiniment (bug du 11/07 : le fallback "sans location => tenue" faisait
-// tomber tous les sièges à 0 dès qu'une demande de test/historique traînait).
-type CarSeatRequestRow = { id: string; status: string; rentalId: string | null; rental: { status: string } | null };
-
-function isHeld(r: CarSeatRequestRow): boolean {
-  return r.status === 'confirmed' && r.rental != null && (r.rental.status === 'booked' || r.rental.status === 'active');
+// Niveau 1 (14/07) : plus de calcul cumulatif ni de comptage de CarSeatRequest.
+// availableStock est une pure fonction de l'état du siège — recalculée à chaque
+// écriture, jamais incrémentée/décrémentée. Ne peut plus dériver de la réalité.
+export function computeAvailableStock(seat: { totalStock: number; outOfService: number; isAvailable: boolean }): number {
+  if (!seat.isAvailable) return 0;
+  return Math.max(0, seat.totalStock - seat.outOfService);
 }
 
-export interface CarSeatDiagnostic {
-  seatId: string;
-  seatName: string;
-  totalStock: number;
-  outOfService: number;
-  heldCount: number;
-  availableStock: number;
-  // Demandes 'confirmed' périmées (sans location, ou location terminée/
-  // annulée) basculées vers 'returned' — neutralisation, aucune suppression.
-  neutralized: number;
-  requests: Array<{ id: string; status: string; rentalId: string | null; rentalStatus: string | null }>;
+// Bloc "liste des sièges" injecté dans les prompts IA (messaging.service.ts ET
+// ai.service.ts/suggestReply) — une seule implémentation pour que les deux
+// pipelines ne puissent jamais afficher une disponibilité différente pour le
+// même siège (c'est exactement ce type de divergence qui a causé l'esquive
+// sur la demande de Karim : un chemin avait la liste, l'autre non).
+export function buildCarSeatsPromptBlock(seats: Array<{ name: string; minWeightKg: number; maxWeightKg: number; availableStock: number }>): string {
+  if (seats.length === 0) return '';
+  const lines = seats.map(s => `- ${s.name} : ${s.minWeightKg}-${s.maxWeightKg} kg — ${s.availableStock > 0 ? 'DISPONIBLE' : 'PRIS/INDISPONIBLE'}`);
+  return `\n\n=== SIÈGES AUTO (liste exhaustive — ne jamais inventer un siège absent d'ici) ===\n${lines.join('\n')}\n=== FIN DES SIÈGES AUTO ===\n`;
 }
 
-async function computeCarSeatDiagnostic(db: PrismaClient, carSeatId: string): Promise<CarSeatDiagnostic | null> {
-  const seat = await db.carSeat.findUnique({
-    where: { id: carSeatId },
-    select: { name: true, totalStock: true, outOfService: true },
-  });
-  if (!seat) return null;
+// Consignes de traitement d'une demande de siège auto — partagées entre les
+// deux pipelines IA pour éviter toute divergence de comportement.
+export const CAR_SEAT_PROMPT_CONSIGNES = `Poids de l'enfant inconnu (ni dans ce message ni dans l'historique) → demande UNIQUEMENT le poids, une seule question.
+Poids connu → déduis la plage adaptée parmi les sièges listés ci-dessus et vérifie s'il existe un siège DISPONIBLE couvrant ce poids.
+  - Siège adapté DISPONIBLE → confirme la mise à disposition en nommant le siège.
+  - Aucun siège adapté disponible → le dire honnêtement, sans promettre de délai ni de solution.
+Ne jamais inventer un siège absent de la liste fournie.`;
 
-  const requests = await db.carSeatRequest.findMany({
-    where: { carSeatId },
-    select: { id: true, status: true, rentalId: true, rental: { select: { status: true } } },
-  });
-
-  const staleConfirmed = requests.filter(r => r.status === 'confirmed' && !isHeld(r));
-  if (staleConfirmed.length > 0) {
-    await db.carSeatRequest.updateMany({
-      where: { id: { in: staleConfirmed.map(r => r.id) } },
-      data: { status: 'returned' },
-    });
-    for (const r of staleConfirmed) r.status = 'returned';
-  }
-
-  const heldCount = requests.filter(isHeld).length;
-  const availableStock = Math.max(0, seat.totalStock - seat.outOfService - heldCount);
-
-  return {
-    seatId: carSeatId,
-    seatName: seat.name,
-    totalStock: seat.totalStock,
-    outOfService: seat.outOfService,
-    heldCount,
-    availableStock,
-    neutralized: staleConfirmed.length,
-    requests: requests.map(r => ({ id: r.id, status: r.status, rentalId: r.rentalId, rentalStatus: r.rental?.status ?? null })),
-  };
-}
-
-function logDiagnostic(diag: CarSeatDiagnostic): void {
-  console.log(`[CarSeatStock] "${diag.seatName}" total=${diag.totalStock} hs=${diag.outOfService} tenues=${diag.heldCount}/${diag.requests.length} neutralisées=${diag.neutralized} -> dispo=${diag.availableStock}`);
-  if (diag.requests.length > 0) {
-    console.log(`[CarSeatStock]   requêtes: ${diag.requests.map(r => `${r.id.slice(0, 8)}:${r.status}${r.rentalId ? `(location:${r.rentalStatus ?? 'introuvable'})` : '(sans location)'}`).join(', ')}`);
-  }
-}
-
-export async function recomputeCarSeatStock(db: PrismaClient, carSeatId: string): Promise<number> {
-  const diag = await computeCarSeatDiagnostic(db, carSeatId);
-  if (!diag) return 0;
-  await db.carSeat.update({ where: { id: carSeatId }, data: { availableStock: diag.availableStock } });
-  logDiagnostic(diag);
-  return diag.availableStock;
-}
-
-export async function recomputeAllCarSeatStock(db: PrismaClient): Promise<{ updated: number; details: CarSeatDiagnostic[] }> {
-  const seats = await db.carSeat.findMany({ select: { id: true } });
-  const details: CarSeatDiagnostic[] = [];
-  for (const seat of seats) {
-    const diag = await computeCarSeatDiagnostic(db, seat.id);
-    if (!diag) continue;
-    await db.carSeat.update({ where: { id: seat.id }, data: { availableStock: diag.availableStock } });
-    logDiagnostic(diag);
-    details.push(diag);
-  }
-  return { updated: details.length, details };
-}
+// Interdiction d'esquive vague — partagée entre les deux pipelines IA. Une
+// interdiction de PHRASE ne suffit pas (elle a déjà été contournée par
+// synonyme : "notre équipe vous contactera très rapidement" au lieu de "je
+// transmets votre question à notre équipe") — c'est le COMPORTEMENT qui est
+// interdit, avec une liste de synonymes connus.
+export const ESCALATION_BAN_RULE = `INTERDICTION de toute formule d'attente vague, y compris par synonyme : "je transmets votre question à notre équipe", "notre équipe vous contactera", "très rapidement", "dans les meilleurs délais", "nous revenons vers vous", ou toute variation similaire. Ce n'est pas une interdiction de phrase précise, c'est une interdiction du COMPORTEMENT "promettre sans engager".
+Si tu ne sais vraiment pas : donne un engagement PRÉCIS avec délai concret, ex: "Je vérifie ce point et je vous confirme aujourd'hui" — jamais une promesse vague sans délai.`;

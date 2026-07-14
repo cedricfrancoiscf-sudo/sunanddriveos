@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { PrismaClient } from '../../generated/tenant';
+import { buildCarSeatsPromptBlock, CAR_SEAT_PROMPT_CONSIGNES, ESCALATION_BAN_RULE } from '../car-seats/car-seats.service';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -61,8 +62,10 @@ export interface RentalContext {
   aiName?: string;
   equipment?: VehicleEquipment;
   // Règles plateforme Getaround (identiques pour toute la flotte) — priorité 1,
-  // avant la fiche véhicule (priorité 2) et l'historique (priorité 3).
+  // avant les sièges auto (priorité 2), la fiche véhicule (priorité 3) et
+  // l'historique (priorité 4).
   getaroundRules?: string | null;
+  carSeats?: Array<{ name: string; minWeightKg: number; maxWeightKg: number; availableStock: number }>;
 }
 
 export async function analyzeMessage(content: string, platformName = 'Getaround'): Promise<MessageAnalysis> {
@@ -428,10 +431,13 @@ export async function suggestReply(
       : '';
 
   // Règles plateforme Getaround (identiques pour toute la flotte) — priorité 1,
-  // avant la fiche véhicule (priorité 2) et l'historique (priorité 3).
+  // avant les sièges auto (priorité 2), la fiche véhicule (priorité 3) et
+  // l'historique (priorité 4).
   const getaroundRulesBlock = context.getaroundRules
     ? `\n\n=== RÈGLES GETAROUND (plateforme, priorité 1 — valables pour toute la flotte) ===\n${context.getaroundRules}\n=== FIN DES RÈGLES GETAROUND ===\n`
     : '';
+
+  const carSeatsBlock = buildCarSeatsPromptBlock(context.carSeats ?? []);
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
@@ -440,14 +446,18 @@ export async function suggestReply(
 
 Hiérarchie des sources, dans cet ordre :
 1) Règles Getaround (plateforme, ci-dessous) — valables pour toute la flotte
-2) Fiche du véhicule concerné (équipements, instructions spécifiques à cette voiture)
-3) Historique du fil de conversation
-${getaroundRulesBlock}
+2) Sièges auto disponibles (ci-dessous, si la demande concerne un siège auto)
+3) Fiche du véhicule concerné (équipements, instructions spécifiques à cette voiture)
+4) Historique du fil de conversation
+${getaroundRulesBlock}${carSeatsBlock}
+SI LA DEMANDE CONCERNE UN SIÈGE AUTO :
+${CAR_SEAT_PROMPT_CONSIGNES}
+
 RÈGLES ABSOLUES :
-- Tu ne réponds QUE sur les informations fournies dans ce contexte (règles Getaround + fiche véhicule + historique)
+- Tu ne réponds QUE sur les informations fournies dans ce contexte (règles Getaround + sièges auto + fiche véhicule + historique)
 - Si la réponse figure dans les règles Getaround, RÉPONDS-Y directement — ne jamais esquiver une question dont la réponse est connue et stable
 - Ne jamais inventer une adresse, un code, une procédure, un délai
-- Interdiction d'utiliser "je transmets votre question à notre équipe" ou toute formule d'esquive vague. Si tu ne sais vraiment pas, dis précisément ce que tu vas faire et sous quel délai (ex: "Je vérifie ce point et je reviens vers vous aujourd'hui")`,
+- ${ESCALATION_BAN_RULE}`,
     messages: [
       {
         role: 'user',

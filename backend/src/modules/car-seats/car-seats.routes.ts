@@ -1,9 +1,9 @@
-﻿import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth, requireRole } from '../../middleware/auth';
+import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
-import { recomputeCarSeatStock, recomputeAllCarSeatStock } from './car-seats.service';
+import { computeAvailableStock } from './car-seats.service';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -40,7 +40,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         minWeightKg: body.data.minWeightKg,
         maxWeightKg: body.data.maxWeightKg,
         totalStock: body.data.totalStock,
-        availableStock: body.data.totalStock,
+        availableStock: computeAvailableStock({ totalStock: body.data.totalStock, outOfService: 0, isAvailable: true }),
       },
     });
     res.status(201).json({ seat });
@@ -55,16 +55,21 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       minWeightKg: z.number().min(0).optional(),
       maxWeightKg: z.number().min(0).optional(),
       carkeeperId: z.string().nullable().optional(),
-      // Quantité totale — seul levier éditable, availableStock est toujours
-      // recalculé (jamais fixé à la main, cf. recomputeCarSeatStock).
       totalStock: z.number().int().min(0).optional(),
     }).safeParse(req.body);
     if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
     const db = getTenantClient(req.tenantDbUrl!);
     const id = req.params.id as string;
-    await db.carSeat.update({ where: { id }, data: body.data });
-    if (body.data.totalStock !== undefined) await recomputeCarSeatStock(db, id);
-    const seat = await db.carSeat.findUnique({ where: { id } });
+    const current = await db.carSeat.findUnique({ where: { id } });
+    if (!current) { res.status(404).json({ error: 'Siège introuvable' }); return; }
+    const totalStock = body.data.totalStock ?? current.totalStock;
+    const seat = await db.carSeat.update({
+      where: { id },
+      data: {
+        ...body.data,
+        availableStock: computeAvailableStock({ totalStock, outOfService: current.outOfService, isAvailable: current.isAvailable }),
+      },
+    });
     res.json({ seat });
   } catch (err: unknown) { next(err); }
 });
@@ -85,9 +90,29 @@ router.post('/:id/add-stock', async (req: Request, res: Response, next: NextFunc
     if (!body.success) { res.status(400).json({ error: 'Données invalides' }); return; }
     const db = getTenantClient(req.tenantDbUrl!);
     const id = req.params.id as string;
-    await db.carSeat.update({ where: { id }, data: { totalStock: { increment: body.data.count } } });
-    await recomputeCarSeatStock(db, id);
-    const seat = await db.carSeat.findUnique({ where: { id } });
+    const current = await db.carSeat.findUnique({ where: { id } });
+    if (!current) { res.status(404).json({ error: 'Siège introuvable' }); return; }
+    const totalStock = current.totalStock + body.data.count;
+    const seat = await db.carSeat.update({
+      where: { id },
+      data: { totalStock, availableStock: computeAvailableStock({ totalStock, outOfService: current.outOfService, isAvailable: current.isAvailable }) },
+    });
+    res.json({ seat });
+  } catch (err: unknown) { next(err); }
+});
+
+// POST /api/v1/car-seats/:id/toggle-available — bascule manuelle "Disponible / Pris"
+router.post('/:id/toggle-available', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const db = getTenantClient(req.tenantDbUrl!);
+    const id = req.params.id as string;
+    const current = await db.carSeat.findUnique({ where: { id } });
+    if (!current) { res.status(404).json({ error: 'Siège introuvable' }); return; }
+    const isAvailable = !current.isAvailable;
+    const seat = await db.carSeat.update({
+      where: { id },
+      data: { isAvailable, availableStock: computeAvailableStock({ totalStock: current.totalStock, outOfService: current.outOfService, isAvailable }) },
+    });
     res.json({ seat });
   } catch (err: unknown) { next(err); }
 });
@@ -102,36 +127,12 @@ router.post('/:id/out-of-service', async (req: Request, res: Response, next: Nex
     if (current.availableStock <= 0) {
       res.status(400).json({ error: 'Aucune unité disponible à mettre hors service' }); return;
     }
-    await db.carSeat.update({ where: { id }, data: { outOfService: { increment: 1 } } });
-    await recomputeCarSeatStock(db, id);
-    const seat = await db.carSeat.findUnique({ where: { id } });
-    res.json({ seat });
-  } catch (err: unknown) { next(err); }
-});
-
-// POST /api/v1/car-seats/:id/in-service — remettre 1 unité en service
-// GET /api/v1/car-seats/:id/upcoming-rentals — locations à venir pour ce type de siège
-router.get('/:id/upcoming-rentals', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const db = getTenantClient(req.tenantDbUrl!);
-    const now = new Date();
-    const rentals = await db.carSeatRequest.findMany({
-      where: {
-        carSeatId: req.params['id'] as string,
-        status: { in: ['pending', 'confirmed'] },
-        rental: { endAt: { gte: now } },
-      },
-      include: {
-        rental: {
-          select: {
-            id: true, startAt: true, endAt: true, driverName: true,
-            vehicle: { select: { make: true, model: true, licensePlate: true } },
-          },
-        },
-      },
-      orderBy: { rental: { startAt: 'asc' } },
+    const outOfService = current.outOfService + 1;
+    const seat = await db.carSeat.update({
+      where: { id },
+      data: { outOfService, availableStock: computeAvailableStock({ totalStock: current.totalStock, outOfService, isAvailable: current.isAvailable }) },
     });
-    res.json({ rentals: rentals.map(r => ({ ...r.rental, status: r.status })) });
+    res.json({ seat });
   } catch (err: unknown) { next(err); }
 });
 
@@ -144,20 +145,12 @@ router.post('/:id/in-service', async (req: Request, res: Response, next: NextFun
     if (current.outOfService <= 0) {
       res.status(400).json({ error: 'Aucune unité hors service à remettre en service' }); return;
     }
-    await db.carSeat.update({ where: { id }, data: { outOfService: { decrement: 1 } } });
-    await recomputeCarSeatStock(db, id);
-    const seat = await db.carSeat.findUnique({ where: { id } });
+    const outOfService = current.outOfService - 1;
+    const seat = await db.carSeat.update({
+      where: { id },
+      data: { outOfService, availableStock: computeAvailableStock({ totalStock: current.totalStock, outOfService, isAvailable: current.isAvailable }) },
+    });
     res.json({ seat });
-  } catch (err: unknown) { next(err); }
-});
-
-// POST /api/v1/car-seats/recompute-stock — recalcule availableStock pour tous les
-// sièges à partir des CarSeatRequest réellement en cours (self-heal manuel)
-router.post('/recompute-stock', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const db = getTenantClient(req.tenantDbUrl!);
-    const result = await recomputeAllCarSeatStock(db);
-    res.json({ success: true, ...result });
   } catch (err: unknown) { next(err); }
 });
 

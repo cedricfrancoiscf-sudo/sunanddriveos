@@ -1,10 +1,8 @@
-﻿import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middleware/auth';
 import { resolveTenant } from '../../middleware/tenant';
 import { getTenantClient } from '../../prisma/client';
-import { sendCarSeatEmail, type RentalForMessaging } from '../messages/messaging.service';
-import { recomputeCarSeatStock } from '../car-seats/car-seats.service';
 
 const router: Router = Router();
 router.use(requireAuth, resolveTenant);
@@ -33,7 +31,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   } catch (err: unknown) { next(err); }
 });
 
-// POST /api/v1/car-seat-requests — créer une demande et exécuter le flux complet
+// POST /api/v1/car-seat-requests — trace une demande siège auto détectée
+// (niveau 1, 14/07 : ne pilote plus le stock — cf. CarSeat.isAvailable)
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = z.object({
@@ -46,201 +45,29 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const db = getTenantClient(req.tenantDbUrl!);
 
-    // Vérifier que la location est active/réservée et non terminée — récupère toute l'info rental
-    let rentalInfo: RentalForMessaging | null = null;
     if (body.data.rentalId) {
       const rental = await db.rental.findUnique({
         where: { id: body.data.rentalId },
-        select: {
-          id: true, status: true, endAt: true, startAt: true, driverName: true,
-          vehicleId: true, driverGetaroundId: true, getaroundId: true,
-          vehicle: { select: { make: true, model: true, licensePlate: true, parkingZone: true, deliveryPointName: true } },
-        },
+        select: { status: true, endAt: true },
       });
       if (rental && (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date())) {
-        console.log(`[CarSeatRequest] Demande siège ignorée — location passée (rentalId ${body.data.rentalId}, status=${rental.status})`);
+        console.log(`[CarSeatRequest] Demande ignorée — location passée (rentalId ${body.data.rentalId}, status=${rental.status})`);
         res.status(422).json({ error: 'Demande ignorée — la location est terminée ou passée' });
         return;
       }
-      rentalInfo = rental as RentalForMessaging | null;
     }
-
-    // Chercher un siège adapté au poids de l'enfant ET avec stock disponible
-    let matchingSeat: { id: string; name: string; minWeightKg: number; maxWeightKg: number } | null = null;
-    if (body.data.childWeightKg) {
-      matchingSeat = await db.carSeat.findFirst({
-        where: {
-          isActive: true,
-          minWeightKg: { lte: body.data.childWeightKg },
-          maxWeightKg: { gte: body.data.childWeightKg },
-          availableStock: { gt: 0 },
-        },
-        orderBy: { minWeightKg: 'asc' },
-      });
-    }
-    // Fallback : n'importe quel siège disponible si pas de correspondance par poids
-    if (!matchingSeat) {
-      matchingSeat = await db.carSeat.findFirst({ where: { isActive: true, availableStock: { gt: 0 } } });
-    }
-
-    const requestStatus = matchingSeat ? 'confirmed' : 'unavailable';
 
     const request = await db.carSeatRequest.create({
       data: {
         vehicleId: body.data.vehicleId,
         rentalId: body.data.rentalId,
         childWeightKg: body.data.childWeightKg,
-        carSeatId: matchingSeat?.id,
         notes: body.data.notes,
-        status: requestStatus,
       },
-      include: { carSeat: { select: { id: true, name: true, minWeightKg: true, maxWeightKg: true } } },
     });
 
-    // Stock recalculé depuis les CarSeatRequest réellement en cours plutôt
-    // qu'incrémenté/décrémenté à la main (cf. car-seats.service.ts)
-    if (matchingSeat) await recomputeCarSeatStock(db, matchingSeat.id);
-
-    console.log(`[CarSeatRequest] Créée — status=${requestStatus} carSeatId=${matchingSeat?.id ?? 'null'} rental=${body.data.rentalId ?? 'n/a'}`);
-
-    // Traitements asynchrones (email + aiSuggestion) si location connue
-    if (body.data.rentalId && rentalInfo) {
-      const rentalId = body.data.rentalId;
-      const seatName = matchingSeat?.name ?? '';
-      const confirmed = requestStatus === 'confirmed';
-      const rental = rentalInfo;
-      void (async () => {
-        try {
-          const settings = await db.companySettings.findFirst({ select: { aiName: true, senderName: true } });
-          const assistantName = settings?.aiName ?? settings?.senderName ?? 'Sun and Drive';
-
-          // Email carkeeper + admin
-          const staff = await db.user.findMany({
-            where: { isActive: true, OR: [{ role: { in: ['admin', 'carkeeper'] } }, { roles: { hasSome: ['admin', 'carkeeper'] } }] },
-            select: { email: true },
-          });
-          const emails = staff.map(u => u.email).filter((e): e is string => Boolean(e));
-          void sendCarSeatEmail(emails, rental, assistantName, confirmed).catch(e =>
-            console.error('[CarSeatRequest] Erreur email carkeeper:', e),
-          );
-
-          // Générer aiSuggestion (template)
-          const firstName = rental.driverName.split(' ')[0] ?? rental.driverName;
-          const startStr = rental.startAt.toLocaleDateString('fr-FR');
-          const endStr = rental.endAt.toLocaleDateString('fr-FR');
-          const aiSuggestion = confirmed
-            ? `Bonjour ${firstName}, nous avons bien noté votre demande de siège auto. Nous vous confirmons la disponibilité d'un siège ${seatName} pour votre location du ${startStr} au ${endStr}. Il sera préparé par notre équipe. Cordialement, ${assistantName}`
-            : `Bonjour ${firstName}, nous avons bien reçu votre demande de siège auto. Malheureusement nous ne disposons pas de siège adapté pour le moment. Nous vous recontacterons dès que possible. Cordialement, ${assistantName}`;
-
-          // Trouver le dernier message inbound de cette location et y attacher l'aiSuggestion
-          const lastInbound = await db.message.findFirst({
-            where: { rentalId, direction: 'inbound' },
-            orderBy: { createdAt: 'desc' },
-          });
-          if (lastInbound) {
-            await db.message.update({ where: { id: lastInbound.id }, data: { aiSuggestion } });
-            await db.message.create({
-              data: { rentalId, direction: 'outbound', content: aiSuggestion, status: 'pending_approval', aiSuggestion, origin: 'ai_approved' },
-            });
-            console.log(`[CarSeatRequest] aiSuggestion + brouillon outbound créés — rental ${rentalId}`);
-          }
-        } catch (e) {
-          console.error('[CarSeatRequest] Erreur traitement async:', e);
-        }
-      })();
-    }
-
+    console.log(`[CarSeatRequest] Tracée — rental=${body.data.rentalId ?? 'n/a'} poids=${body.data.childWeightKg ?? 'n/a'}`);
     res.status(201).json({ request });
-  } catch (err: unknown) { next(err); }
-});
-
-// PUT /api/v1/car-seat-requests/:id/confirm — confirmer et décrémenter stock
-router.put('/:id/confirm', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const db = getTenantClient(req.tenantDbUrl!);
-
-    const existing = await db.carSeatRequest.findUnique({
-      where: { id: (req.params.id as string) },
-      include: { carSeat: true },
-    });
-    if (!existing) { res.status(404).json({ error: 'Demande introuvable' }); return; }
-    if (existing.status !== 'pending') { res.status(400).json({ error: 'Demande déjà traitée' }); return; }
-    if (!existing.carSeatId || !existing.carSeat) {
-      res.status(400).json({ error: 'Aucun siège associé — vérifiez le poids de l\'enfant' }); return;
-    }
-    const carSeat = existing.carSeat;
-    if (carSeat.availableStock <= 0) {
-      res.status(400).json({ error: 'Rupture de stock — siège indisponible' }); return;
-    }
-
-    await db.carSeatRequest.update({ where: { id: (req.params.id as string) }, data: { status: 'confirmed' } });
-    const availableStock = await recomputeCarSeatStock(db, existing.carSeatId);
-    const request = await db.carSeatRequest.findUnique({
-      where: { id: (req.params.id as string) },
-      include: { carSeat: { select: { id: true, name: true, minWeightKg: true, maxWeightKg: true } } },
-    });
-
-    // Alerte rupture de stock : notifier les admins
-    const alerts: string[] = [];
-    if (availableStock === 0) {
-      alerts.push(`Rupture de stock : ${carSeat.name}`);
-      const admins = await db.user.findMany({
-        where: { role: { in: ['admin', 'exploitation'] as never[] }, isActive: true },
-      });
-      await Promise.all(admins.map(admin =>
-        db.notification.create({
-          data: {
-            userId: admin.id,
-            type: 'car_seat_out_of_stock',
-            title: 'Rupture de stock — siège auto',
-            body: `Le siège "${carSeat.name}" (${carSeat.minWeightKg}–${carSeat.maxWeightKg} kg) est épuisé.`,
-            relatedEntityType: 'car_seat',
-            relatedEntityId: carSeat.id,
-          },
-        })
-      ));
-    }
-
-    res.json({ request, alerts });
-  } catch (err: unknown) { next(err); }
-});
-
-// PUT /api/v1/car-seat-requests/:id/deny — refuser la demande. Peut arriver sur
-// une demande déjà 'confirmed' (l'opérateur annule une affectation) : le
-// recompute libère alors l'unité tenue, sans quoi le stock resterait bloqué.
-router.put('/:id/deny', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const body = z.object({ notes: z.string().optional() }).safeParse(req.body);
-    const db = getTenantClient(req.tenantDbUrl!);
-    const existing = await db.carSeatRequest.findUnique({ where: { id: (req.params.id as string) } });
-    if (!existing) { res.status(404).json({ error: 'Demande introuvable' }); return; }
-
-    const request = await db.carSeatRequest.update({
-      where: { id: (req.params.id as string) },
-      data: { status: 'denied', ...(body.success && body.data.notes ? { notes: body.data.notes } : {}) },
-    });
-    if (existing.carSeatId) await recomputeCarSeatStock(db, existing.carSeatId);
-
-    res.json({ request });
-  } catch (err: unknown) { next(err); }
-});
-
-// PUT /api/v1/car-seat-requests/:id/return — retour du siège, libère l'unité tenue
-router.put('/:id/return', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const db = getTenantClient(req.tenantDbUrl!);
-    const existing = await db.carSeatRequest.findUnique({ where: { id: (req.params.id as string) } });
-    if (!existing) { res.status(404).json({ error: 'Demande introuvable' }); return; }
-    if (existing.status !== 'confirmed') { res.status(400).json({ error: 'Demande non confirmée' }); return; }
-
-    const request = await db.carSeatRequest.update({
-      where: { id: (req.params.id as string) },
-      data: { status: 'returned' },
-      include: { carSeat: { select: { id: true, name: true } } },
-    });
-    if (existing.carSeatId) await recomputeCarSeatStock(db, existing.carSeatId);
-
-    res.json({ request });
   } catch (err: unknown) { next(err); }
 });
 

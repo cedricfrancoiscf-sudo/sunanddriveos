@@ -122,7 +122,12 @@
       "Bash(xargs -I{} sh -c 'echo ---{}---; cat \"{}\"')",
       "Bash(npm run *)",
       "Bash(awk -F: '$1 < 2400')",
-      "Bash(awk 'NR==246,/^model [A-Za-z]+ \\\\{/{if\\(NR>246 && /^model /\\) exit; print NR\": \"$0}' \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend\\\\src\\\\prisma\\\\tenant\\\\schema.prisma\")"
+      "Bash(awk 'NR==246,/^model [A-Za-z]+ \\\\{/{if\\(NR>246 && /^model /\\) exit; print NR\": \"$0}' \"C:\\\\Users\\\\Cedric\\\\sunanddriveos\\\\backend\\\\src\\\\prisma\\\\tenant\\\\schema.prisma\")",
+      "Bash(xargs grep -l \"cron\\\\|scheduled\\\\|node-cron\\\\|schedule\")",
+      "Bash(awk 'NR==1011{print \"// ─── 4. Messages \\(endpoint manuel\\) ──────────────────────────────────────────\"} NR<1011 || NR>1257' backend/src/modules/getaround-sync/getaround-sync.service.ts)",
+      "Read(//tmp/**)",
+      "Bash(pnpm exec *)",
+      "Bash(pnpm --filter . exec true)"
     ]
   }
 }

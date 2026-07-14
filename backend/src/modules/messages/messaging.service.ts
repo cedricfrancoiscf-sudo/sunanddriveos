@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Resend } from 'resend';
 import type { PrismaClient } from '../../generated/tenant';
 import type { GetaroundClient } from '../getaround-sync/getaround-sync.service';
-import { recomputeCarSeatStock } from '../car-seats/car-seats.service';
+import { buildCarSeatsPromptBlock, CAR_SEAT_PROMPT_CONSIGNES, ESCALATION_BAN_RULE } from '../car-seats/car-seats.service';
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -23,7 +23,12 @@ function cleanClaudeJson(raw: string): string {
 interface ProactiveAnalysis {
   type: 'car_seat' | 'remise' | 'incident' | 'general' | 'remerciement';
   urgent: boolean;
-  details: { childAge?: number | null; question?: string | null; incidentType?: string | null };
+  details: {
+    childWeightKg?: number | null;
+    carSeatOutcome?: 'confirmed' | 'unavailable' | 'weight_needed' | null;
+    question?: string | null;
+    incidentType?: string | null;
+  };
   suggestedReply: string;
 }
 
@@ -206,11 +211,18 @@ export async function analyzeAndProcessMessage(
     const civility = tone === 'tutoiement' ? 'Nous sommes désolés pour ce désagrément.' : 'Nous sommes désolés pour ce désagrément.';
     const emergencyReply = `${civility} Pour une prise en charge rapide en cas de panne ou d'accident, merci de contacter directement l'assistance Getaround depuis votre page de location. — ${assistantName}`;
 
-    // Marquer le message inbound comme traité en urgence
-    await db.message.update({
-      where: { id: message.id },
-      data: { aiAnalysis: { isEmergency: true } },
+    // Idempotence : ne réclame le message que s'il n'a pas déjà été traité par un
+    // autre passage (cron horaire / 15 min / 30 min / rebalayage 7h peuvent tous
+    // voir le même message inbound). Sans ce verrou, l'urgence était renvoyée au
+    // locataire à chaque nouveau passage tant que le message restait "frais".
+    const emergencyClaim = await db.message.updateMany({
+      where: { id: message.id, aiSuggestion: null },
+      data: { aiAnalysis: { isEmergency: true }, aiSuggestion: emergencyReply },
     });
+    if (emergencyClaim.count === 0) {
+      console.log(`[Messaging] Urgence déjà traitée — message ${message.id} ignoré (idempotence)`);
+      return;
+    }
 
     // Envoi immédiat du message de redirection (status='sent', bypass approval)
     if (rental.getaroundId) {
@@ -318,10 +330,21 @@ export async function analyzeAndProcessMessage(
     : `Message du locataire : "${message.content}"`;
 
   // Règles plateforme Getaround (identiques pour toute la flotte) — priorité 1,
-  // avant la fiche véhicule (priorité 2) et l'historique du fil (priorité 3).
+  // avant les sièges auto (priorité 2), la fiche véhicule (priorité 3) et
+  // l'historique du fil (priorité 4).
   const getaroundRulesBlock = settings.getaroundRules
     ? `\n\n=== RÈGLES GETAROUND (plateforme, priorité 1 — valables pour toute la flotte) ===\n${settings.getaroundRules}\n=== FIN DES RÈGLES GETAROUND ===\n`
     : '';
+
+  // Liste des sièges auto — injectée systématiquement pour que l'IA puisse
+  // répondre directement à une demande de siège au lieu d'esquiver (elle ne
+  // recevait auparavant NI cette liste NI les règles Getaround).
+  const carSeats = await db.carSeat.findMany({
+    where: { isActive: true },
+    select: { name: true, minWeightKg: true, maxWeightKg: true, availableStock: true },
+    orderBy: { minWeightKg: 'asc' },
+  });
+  const carSeatsBlock = buildCarSeatsPromptBlock(carSeats);
 
   // 1. Analyse Claude
   let analysis: ProactiveAnalysis;
@@ -335,11 +358,15 @@ Tiens compte de TOUT l'historique de la conversation pour contextualiser ta rép
 
 Hiérarchie des sources, dans cet ordre :
 1) Règles Getaround (plateforme, ci-dessous) — valables pour toute la flotte
-2) Fiche du véhicule concerné (équipements, instructions spécifiques à cette voiture)
-3) Historique du fil de conversation
-${getaroundRulesBlock}
+2) Sièges auto disponibles (ci-dessous, si la demande concerne un siège auto)
+3) Fiche du véhicule concerné (équipements, instructions spécifiques à cette voiture)
+4) Historique du fil de conversation
+${getaroundRulesBlock}${carSeatsBlock}
 Réponds en JSON uniquement, sans markdown :
-{"type":"car_seat"|"remise"|"incident"|"general"|"remerciement","urgent":boolean,"details":{"childAge":number|null,"question":string|null,"incidentType":string|null},"suggestedReply":string}
+{"type":"car_seat"|"remise"|"incident"|"general"|"remerciement","urgent":boolean,"details":{"childWeightKg":number|null,"carSeatOutcome":"confirmed"|"unavailable"|"weight_needed"|null,"question":string|null,"incidentType":string|null},"suggestedReply":string}
+
+CONSIGNES SIÈGE AUTO (si type="car_seat") — champ details.carSeatOutcome à remplir en conséquence ("weight_needed"|"confirmed"|"unavailable") :
+${CAR_SEAT_PROMPT_CONSIGNES}
 
 Règles STRICTES pour suggestedReply :
 - En ${tone}, signée ${assistantName}
@@ -351,8 +378,8 @@ Règles STRICTES pour suggestedReply :
 - Pas de formules cérémonieuses ("excellent séjour", "à votre entière disposition")
 - Se concentrer sur l'essentiel : répondre à la question ou confirmer l'information demandée
 - Si la réponse figure dans les règles Getaround ci-dessus, RÉPONDS-Y directement — ne jamais esquiver une question dont la réponse est connue et stable
-- Ne jamais inventer une information absente des règles Getaround, de la fiche véhicule ou de l'historique
-- Interdiction d'utiliser "je transmets votre question à notre équipe" ou toute formule d'esquive vague. Si tu ne sais vraiment pas, dis précisément ce que tu vas faire et sous quel délai (ex: "Je vérifie ce point et je reviens vers vous aujourd'hui")`,
+- Ne jamais inventer une information absente des règles Getaround, de la liste des sièges, de la fiche véhicule ou de l'historique
+- ${ESCALATION_BAN_RULE}`,
       messages: [{
         role: 'user',
         content: `${threadContext}
@@ -366,6 +393,20 @@ Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) :
     analysis = JSON.parse(cleanClaudeJson(text)) as ProactiveAnalysis;
   } catch (error) {
     console.error('[Messaging] Erreur Claude API:', error);
+    return;
+  }
+
+  // Idempotence : réclamer le message ATOMIQUEMENT dès qu'on a une réponse,
+  // avant toute décision d'action (envoi/brouillon/notification). Un même
+  // message inbound peut être vu par le cron horaire, le cron 15 min, le cron
+  // proactif 30 min et le rebalayage 7h — seul le premier qui gagne la course
+  // continue ; les autres s'arrêtent ici, sans jamais agir deux fois.
+  const claim = await db.message.updateMany({
+    where: { id: message.id, aiSuggestion: null },
+    data: { aiSuggestion: analysis.suggestedReply },
+  });
+  if (claim.count === 0) {
+    console.log(`[Messaging] Message ${message.id} déjà traité entre-temps — ignoré (idempotence)`);
     return;
   }
 
@@ -385,8 +426,11 @@ Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) :
     mode = settings.aiModeGeneral ?? 'manual';
   }
 
-  // 4. Adapter la réponse selon le type (siège auto + stock)
-  let suggestedReply = analysis.suggestedReply;
+  // 4. Siège auto : suggestedReply vient déjà de Claude (informé de la liste des
+  // sièges ci-dessus) — plus de matching/décrément déterministe ici. On trace
+  // seulement la demande (une fois par location) et on alerte l'équipe si un
+  // siège a été confirmé ou si aucun n'est disponible, pour l'action physique.
+  const suggestedReply = analysis.suggestedReply;
   if (analysis.type === 'car_seat') {
     // Ignorer les demandes de siège sur locations terminées ou passées
     if (!['booked', 'active'].includes(rental.status) || rental.endAt <= new Date()) {
@@ -395,50 +439,37 @@ Locataire : ${rental.driverName}${vehicleEquip ? buildEquipBlock(vehicleEquip) :
     }
     const existing = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
     if (!existing) {
-      const availableSeat = await db.carSeat.findFirst({ where: { isActive: true, availableStock: { gt: 0 } } });
-      if (availableSeat) {
-        await db.carSeatRequest.create({
-          data: { vehicleId: rental.vehicleId, rentalId: rental.id, carSeatId: availableSeat.id, status: 'confirmed' },
-        });
-        await recomputeCarSeatStock(db, availableSeat.id);
-        const staff = await db.user.findMany({
-          where: { role: { in: ['admin', 'carkeeper'] }, isActive: true },
-          select: { email: true },
-        });
-        const emails = staff.map(u => u.email).filter(Boolean);
-        void sendCarSeatEmail(emails, rental, assistantName, true).catch(e =>
-          console.error('[Messaging] Erreur email siège auto:', e),
-        );
-        console.log(`[Messaging] Siège auto attribué rental ${rental.id}`);
-      } else {
-        await db.carSeatRequest.create({
-          data: { vehicleId: rental.vehicleId, rentalId: rental.id, status: 'unavailable' },
-        });
-        const staff = await db.user.findMany({
-          where: { role: { in: ['admin', 'carkeeper'] }, isActive: true },
-          select: { email: true },
-        });
-        const emails = staff.map(u => u.email).filter(Boolean);
-        void sendCarSeatEmail(emails, rental, assistantName, false).catch(e =>
-          console.error('[Messaging] Erreur email alerte siège:', e),
-        );
-        suggestedReply = `Bonjour ${rental.driverName}, je suis désolé(e), nous n'avons pas de siège auto disponible pour votre location. Cordialement, ${assistantName}`;
-        console.warn(`[Messaging] Stock siège auto épuisé — rental ${rental.id}`);
-      }
-    } else {
-      if (existing.status === 'unavailable') {
-        suggestedReply = `Bonjour ${rental.driverName}, je suis désolé(e), nous n'avons pas de siège auto disponible pour votre location. Cordialement, ${assistantName}`;
-      }
+      await db.carSeatRequest.create({
+        data: {
+          vehicleId: rental.vehicleId,
+          rentalId: rental.id,
+          childWeightKg: analysis.details.childWeightKg ?? undefined,
+        },
+      });
+    } else if (existing.childWeightKg == null && analysis.details.childWeightKg != null) {
+      // Poids donné dans un message de suivi (pas le premier) — compléter la trace
+      await db.carSeatRequest.update({ where: { id: existing.id }, data: { childWeightKg: analysis.details.childWeightKg } });
+    }
+
+    const outcome = analysis.details.carSeatOutcome;
+    if (outcome === 'confirmed' || outcome === 'unavailable') {
+      // Vérification serveur avant d'alerter l'équipe : ne jamais confirmer sur
+      // la seule foi du JSON de Claude si aucun siège n'est réellement disponible.
+      const reallyConfirmed = outcome === 'confirmed' && carSeats.some(s => s.availableStock > 0);
+      const staff = await db.user.findMany({
+        where: { role: { in: ['admin', 'carkeeper'] }, isActive: true },
+        select: { email: true },
+      });
+      const emails = staff.map(u => u.email).filter(Boolean);
+      void sendCarSeatEmail(emails, rental, assistantName, reallyConfirmed).catch(e =>
+        console.error('[Messaging] Erreur email siège auto:', e),
+      );
+      console.log(`[Messaging] Siège auto — rental ${rental.id} : ${outcome} (vérifié=${reallyConfirmed})`);
     }
   }
 
-  // Toujours sauvegarder aiSuggestion sur le message inbound source
-  try {
-    await db.message.update({ where: { id: message.id }, data: { aiSuggestion: suggestedReply } });
-    console.log(`[Messaging] aiSuggestion sauvegardée — message ${message.id}`);
-  } catch (e) {
-    console.error('[Messaging] Erreur sauvegarde aiSuggestion:', e);
-  }
+  // aiSuggestion déjà sauvegardée sur le message inbound source par le claim
+  // d'idempotence ci-dessus — pas de deuxième écriture nécessaire ici.
 
   const admins = await db.user.findMany({
     where: { role: 'admin', isActive: true },
@@ -603,30 +634,28 @@ Réponds UNIQUEMENT en JSON valide, sans markdown :
     select: { id: true, email: true },
   });
 
-  // 1. Siège auto demandé non traité → rattraper
+  // 1. Siège auto demandé non traité → rattraper (trace uniquement, ne pilote
+  // plus le stock — l'équipe vérifie la disponibilité et répond manuellement)
   if (analysis.carSeatRequested && !analysis.carSeatHandled) {
     const existing = await db.carSeatRequest.findFirst({ where: { rentalId: rental.id } });
     if (!existing) {
-      const availableSeat = await db.carSeat.findFirst({ where: { isActive: true, availableStock: { gt: 0 } } });
-      if (availableSeat) {
-        await db.carSeatRequest.create({
-          data: { vehicleId: rental.vehicleId, rentalId: rental.id, carSeatId: availableSeat.id, status: 'confirmed' },
-        });
-        await recomputeCarSeatStock(db, availableSeat.id);
-        const staff = await db.user.findMany({
+      await db.carSeatRequest.create({
+        data: { vehicleId: rental.vehicleId, rentalId: rental.id },
+      });
+      const [staff, anyAvailable] = await Promise.all([
+        db.user.findMany({
           where: { isActive: true, OR: [{ role: { in: ['admin', 'carkeeper'] } }, { roles: { hasSome: ['admin', 'carkeeper'] } }] },
           select: { email: true },
-        });
-        const emails = staff.map(u => u.email).filter(Boolean);
-        void sendCarSeatEmail(emails, rental, assistantName, true).catch(e =>
-          console.error('[MorningReview] Erreur email siège:', e),
-        );
-      } else {
-        await db.carSeatRequest.create({
-          data: { vehicleId: rental.vehicleId, rentalId: rental.id, status: 'unavailable' },
-        });
-      }
-      console.log(`[MorningReview] Demande siège rattrapée — rentalId ${rental.id}`);
+        }),
+        db.carSeat.count({ where: { isActive: true, availableStock: { gt: 0 } } }),
+      ]);
+      const emails = staff.map(u => u.email).filter(Boolean);
+      // Pas de poids/plage connue ici (ConversationAnalysis ne les extrait pas) —
+      // on ne peut confirmer qu'un siège EXISTE en stock, pas qu'il est adapté.
+      void sendCarSeatEmail(emails, rental, assistantName, anyAvailable > 0).catch(e =>
+        console.error('[MorningReview] Erreur email siège:', e),
+      );
+      console.log(`[MorningReview] Demande siège rattrapée — rentalId ${rental.id} (stock dispo=${anyAvailable > 0})`);
       result.carSeatCaught = true;
     }
   }
